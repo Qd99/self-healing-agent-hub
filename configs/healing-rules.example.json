@@ -1,0 +1,141 @@
+{
+  "version": "1.0.0",
+  "rules": [
+    {
+      "id": "lint-auto-fix",
+      "name": "Lint错误自动修复",
+      "enabled": true,
+      "match": {
+        "taskType": "lint-error"
+      },
+      "processor": {
+        "engine": "fast",
+        "action": "auto-commit",
+        "priority": "high"
+      }
+    },
+    {
+      "id": "format-auto-fix",
+      "name": "格式问题自动修复",
+      "enabled": true,
+      "match": {
+        "taskType": "format-error"
+      },
+      "processor": {
+        "engine": "fast",
+        "action": "auto-commit",
+        "priority": "high"
+      }
+    },
+    {
+      "id": "type-error-fix",
+      "name": "类型错误修复",
+      "enabled": true,
+      "match": {
+        "taskType": "type-error"
+      },
+      "processor": {
+        "engine": "fast",
+        "action": "auto-commit",
+        "priority": "high"
+      }
+    },
+    {
+      "id": "unit-test-fix",
+      "name": "单元测试失败修复",
+      "enabled": true,
+      "match": {
+        "taskType": "unit-test-failure"
+      },
+      "processor": {
+        "engine": "complex",
+        "action": "auto-commit",
+        "priority": "high",
+        "workflow": "diagnose-and-fix"
+      }
+    },
+    {
+      "id": "e2e-test-fix",
+      "name": "E2E测试失败修复",
+      "enabled": true,
+      "match": {
+        "taskType": "e2e-test-failure"
+      },
+      "processor": {
+        "engine": "complex",
+        "action": "auto-commit",
+        "priority": "urgent",
+        "workflow": "diagnose-and-fix"
+      }
+    },
+    {
+      "id": "architecture-violation",
+      "name": "架构违规检测",
+      "enabled": true,
+      "match": {
+        "taskType": "architecture-violation"
+      },
+      "processor": {
+        "engine": "complex",
+        "action": "create-issue",
+        "priority": "medium",
+        "workflow": "analyze-and-suggest"
+      }
+    },
+    {
+      "id": "security-issue",
+      "name": "安全问题检测",
+      "enabled": true,
+      "match": {
+        "taskType": "security-issue"
+      },
+      "processor": {
+        "engine": "complex",
+        "action": "create-issue",
+        "priority": "urgent",
+        "workflow": "security-audit"
+      }
+    },
+    {
+      "id": "doc-sync",
+      "name": "文档同步",
+      "enabled": true,
+      "match": {
+        "taskType": "doc-outdated"
+      },
+      "processor": {
+        "engine": "fast",
+        "action": "auto-commit",
+        "priority": "low"
+      }
+    },
+    {
+      "id": "ci-retry",
+      "name": "CI失败重试",
+      "enabled": true,
+      "match": {
+        "taskType": "ci-failure",
+        "context.retryCount": { "$lt": 3 }
+      },
+      "processor": {
+        "engine": "fast",
+        "action": "retry",
+        "priority": "high"
+      }
+    },
+    {
+      "id": "dependency-update",
+      "name": "依赖更新检查",
+      "enabled": false,
+      "match": {
+        "taskType": "dependency-issue"
+      },
+      "processor": {
+        "engine": "complex",
+        "action": "create-pr",
+        "priority": "low",
+        "workflow": "dependency-audit"
+      }
+    }
+  ]
+}

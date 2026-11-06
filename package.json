@@ -1,0 +1,50 @@
+{
+  "name": "@healing/root",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "通用项目自愈 Agent Hub：事件驱动、可插拔编排引擎与安全执行层",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Qd99/self-healing-agent-hub.git"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "engines/*"
+  ],
+  "scripts": {
+    "dev": "node apps/healing-hub/src/index.mjs",
+    "build": "tsc -b",
+    "test": "vitest",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "agent",
+    "self-healing",
+    "automation",
+    "github",
+    "ci-cd",
+    "workflow"
+  ],
+  "author": "Qd99",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.0",
+    "prettier": "^3.0.0",
+    "eslint": "^9.0.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "redis": "^4.7.0",
+    "mysql2": "^3.11.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

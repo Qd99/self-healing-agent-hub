@@ -1,0 +1,95 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "id": "your-project-id",
+    "repo": "owner/repo-name",
+    "defaultBranch": "main"
+  },
+  "triggers": {
+    "webhooks": {
+      "enabled": true,
+      "events": ["push", "issues", "pull_request", "workflow_run"],
+      "secret": "{{WEBHOOK_SECRET}}"
+    },
+    "cron": {
+      "healthCheck": {
+        "schedule": "*/30 * * * *",
+        "enabled": true
+      },
+      "qualityScan": {
+        "schedule": "0 2 * * *",
+        "enabled": true
+      },
+      "dependencyAudit": {
+        "schedule": "0 9 * * 1",
+        "enabled": false
+      }
+    },
+    "manual": {
+      "enabled": true,
+      "apiEndpoint": "/api/healing/trigger",
+      "requireAuth": true
+    }
+  },
+  "engines": {
+    "fast": {
+      "type": "direct-ai",
+      "provider": "anthropic",
+      "model": "claude-sonnet-4",
+      "apiKey": "{{ANTHROPIC_API_KEY}}",
+      "timeout": 60000
+    },
+    "complex": {
+      "type": "zcode-workflow",
+      "endpoint": "http://localhost:8080",
+      "timeout": 300000,
+      "config": {
+        "model": "claude-sonnet-4.5",
+        "thoughtLevel": "high"
+      }
+    }
+  },
+  "safety": {
+    "maxFilesPerFix": 5,
+    "protectedPaths": [
+      "deploy/",
+      ".github/workflows/",
+      "*.env",
+      "*.key",
+      "*.pem",
+      "server/healing-hub.mjs"
+    ],
+    "requiredChecks": [
+      "npm run typecheck",
+      "npm run lint",
+      "npm run test"
+    ],
+    "circuitBreaker": {
+      "enabled": true,
+      "failureThreshold": 3,
+      "windowMinutes": 60,
+      "cooldownMinutes": 30
+    },
+    "autoRollback": {
+      "enabled": true,
+      "ciTimeout": 600000,
+      "notifyOn": ["slack", "github-issue"]
+    }
+  },
+  "github": {
+    "appId": "{{GITHUB_APP_ID}}",
+    "privateKey": "{{GITHUB_APP_PRIVATE_KEY}}",
+    "installationId": "{{GITHUB_INSTALLATION_ID}}",
+    "botUsername": "your-healing-bot"
+  },
+  "audit": {
+    "logPath": ".healing/audit.jsonl",
+    "retention": "30d",
+    "includeContext": true
+  },
+  "metrics": {
+    "enabled": true,
+    "exportPath": ".healing/metrics.json",
+    "exportInterval": 300000
+  }
+}
