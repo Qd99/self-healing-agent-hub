@@ -508,6 +508,51 @@ export function createTaskController({
     handleInput,
     handleKeydown,
     redraw,
+    applyReportFilter({ dimension, value, days } = {}) {
+      if (!["all", "status", "type", "engine"].includes(dimension))
+        return false;
+      if (dimension !== "all") {
+        if (
+          typeof value !== "string" ||
+          !value ||
+          ["all", "unknown"].includes(value)
+        )
+          return false;
+        const valid =
+          dimension === "status"
+            ? [
+                "completed",
+                "failed",
+                "running",
+                "review",
+                "pending",
+                "cancelled",
+                "skipped",
+              ].includes(value)
+            : (state.snapshot?.tasks || []).some(
+                (item) =>
+                  (dimension === "type" ? item.task?.type : item.engineId) ===
+                  value,
+              );
+        if (!valid) return false;
+      }
+      closeBulk();
+      state.taskFilters = {
+        ...DEFAULT_TASK_FILTERS,
+        days: [1, 7, 30].includes(Number(days)) ? Number(days) : 7,
+        ...(dimension === "all" ? {} : { [dimension]: value }),
+      };
+      state.taskPage = 1;
+      state.taskSort = "created-desc";
+      state.selectedTaskIds = [];
+      state.taskFilterOpen = false;
+      state.taskDisplayOpen = false;
+      state.taskRowMenu = "";
+      state.bulkType = "";
+      state.bulkPlan = null;
+      state.bulkResult = null;
+      return true;
+    },
     reconcile() {
       const ids = new Set(state.snapshot?.tasks.map((t) => t.task.id) || []);
       state.selectedTaskIds = state.selectedTaskIds.filter((id) => ids.has(id));

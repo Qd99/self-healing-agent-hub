@@ -429,7 +429,16 @@ document.addEventListener("click", (event) => {
     render();
     document.querySelector(".mobile-menu")?.focus();
   } else if (action === "navigate") go(view);
-  else if (action === "monitoring-configure") go("monitoring");
+  else if (action === "dashboard-filter") {
+    if (
+      taskController.applyReportFilter({
+        dimension: button.dataset.dimension,
+        value: button.dataset.value,
+        days: state.days,
+      })
+    )
+      go("tasks");
+  } else if (action === "monitoring-configure") go("monitoring");
   else if (action === "select-approval") selectApproval(id);
   else if (action === "flow-node") {
     const nodeId = button.dataset.nodeId;
