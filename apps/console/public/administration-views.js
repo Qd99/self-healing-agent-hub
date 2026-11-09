@@ -67,12 +67,12 @@ function renderOperation(entry, tasks) {
     ACTIVITY_CATEGORIES.find((item) => item.value === description.category)
       ?.label || "其他操作";
   return `<li class="adm-operation adm-operation-${tone}">
-    <span class="adm-operation-icon" aria-hidden="true" title="${e(category)}">${icon(description.icon, 17)}</span>
+    <span class="adm-operation-icon" aria-hidden="true" title="${e(category)}">${icon(description.icon, 16)}</span>
     <div class="adm-operation-body">
-      <div class="adm-operation-heading"><p><strong>${e(description.label)}</strong><span class="adm-operation-category">${e(category)}</span></p><time datetime="${e(entry.at || "")}" title="${e(entry.at || "时间未提供")}">${e(timeOf(entry.at))}</time></div>
-      ${description.message ? `<p class="adm-operation-message">${e(description.message)}</p>` : ""}
-      <div class="adm-operation-meta"><span class="adm-operation-actor">${icon("Fingerprint", 13)}${e(description.actor)}</span>
-        ${entry.taskId ? `<div class="adm-operation-target">${relatedTask ? `${taskButton(entry.taskId, entry.taskId)}${taskButton(entry.taskId, "执行日志", "logs")}` : `<span class="adm-operation-task-id">${icon("ListChecks", 12)}${e(entry.taskId)}</span><span>关联任务未提供</span>`}</div>` : entry.ruleId ? `<span class="adm-operation-rule-id">${icon("Workflow", 12)}${e(entry.ruleId)}</span>` : ""}
+      <div class="adm-operation-heading"><p><strong>${e(description.label)}</strong><span class="adm-operation-category sr-only">${e(category)}</span><span class="adm-operation-actor">${icon("Fingerprint", 12)}${e(description.actor)}</span></p><time datetime="${e(entry.at || "")}" title="${e(entry.at || "时间未提供")}">${e(timeOf(entry.at))}</time></div>
+      <div class="adm-operation-detail">
+        ${description.message ? `<p class="adm-operation-message">${e(description.message)}</p>` : ""}
+        ${entry.taskId ? `<div class="adm-operation-meta"><div class="adm-operation-target">${relatedTask ? `${taskButton(entry.taskId, entry.taskId)}${taskButton(entry.taskId, "执行日志", "logs")}` : `<span class="adm-operation-task-id">${icon("ListChecks", 12)}${e(entry.taskId)}</span><span>关联任务未提供</span>`}</div></div>` : entry.ruleId ? `<div class="adm-operation-meta"><span class="adm-operation-rule-id">${icon("Workflow", 12)}${e(entry.ruleId)}</span></div>` : ""}
       </div>
     </div>
   </li>`;

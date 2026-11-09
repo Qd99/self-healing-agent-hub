@@ -95,32 +95,44 @@ function renderDashboard(s) {
   const datasourceName =
     config.datasource?.name ||
     (config.datasource?.uid ? "Prometheus" : "未配置数据源");
+  const previewTitle = placeholder
+    ? "示例预览 · 尚未查询指标"
+    : config.status === "invalid"
+      ? "接入配置需要修正"
+      : configured
+        ? "连接与指标尚未验证"
+        : "尚未接入监控";
+  const previewDescription = placeholder
+    ? "替换示例配置后，在 Grafana 中验证连接与指标。"
+    : config.status === "invalid"
+      ? "当前未查询指标，请检查 Grafana 地址、数据源 UID 与命名空间。"
+      : configured
+        ? "此处不查询实时数据，请在 Grafana 中查看所选范围的指标。"
+        : "绑定 Grafana、数据源 UID 与命名空间；当前未查询指标。";
   return `<div class="mon-dashboard">
     <section class="ui-card mon-overview" aria-label="Grafana 面板布局预览，未查询指标">
       <div class="mon-toolbar">
-        <div class="mon-control"><span class="mon-control-label">${icon("Boxes", 14)}监控范围</span>${uiSelect({ id: "monitoring-scope", value: scope, label: "监控命名空间", disabled: !configured, options: [{ value: MONITORING_ALL_SCOPE, label: configured ? `全部已配置 · ${config.namespaces.length}` : "尚未配置命名空间" }, ...config.namespaces.map((value) => ({ value, label: value }))] })}</div>
+        <div class="mon-control"><span class="mon-control-label">${icon("Boxes", 14)}命名空间</span>${uiSelect({ id: "monitoring-scope", value: scope, label: "监控命名空间", disabled: !configured, options: [{ value: MONITORING_ALL_SCOPE, label: configured ? `全部已配置 · ${config.namespaces.length}` : "尚未配置命名空间" }, ...config.namespaces.map((value) => ({ value, label: value }))] })}</div>
         <div class="mon-control"><span class="mon-control-label">${icon("Clock3", 14)}时间范围</span>${uiSelect({ id: "monitoring-range", value: s.monitoringRange || "6h", label: "监控时间范围", disabled: !configured, options: MONITORING_TIME_RANGES.map(({ id, label }) => ({ value: id, label })) })}</div>
         <div class="mon-source"><span class="mon-control-label">${icon("Database", 14)}Prometheus 数据源</span><div class="mon-source-value"><strong title="${e(datasourceName)}">${e(datasourceName)}</strong><code title="${e(config.datasource?.uid || "尚未绑定 UID")}">${e(config.datasource?.uid ? `UID · ${config.datasource.uid}` : "尚未绑定 UID")}</code></div></div>
         ${externalButton(s, "mon-open-grafana")}
       </div>
       <div class="mon-summary" aria-label="抓取指标与已配置范围">
-        ${uiMetric({ label: "可抓取目标", value: "—", unit: "个", icon: "Activity", detail: "尚未查询 Prometheus" })}
-        ${uiMetric({ label: "抓取异常", value: "—", unit: "个", icon: "CircleAlert", detail: "尚未查询 Prometheus" })}
-        ${uiMetric({ label: "已配置命名空间", value: configured ? config.namespaces.length : 0, unit: "个", icon: "Boxes", detail: configured ? `当前视图 · ${namespaces.length} 个命名空间` : "配置后可按范围筛选" })}
+        ${uiMetric({ label: "可抓取目标", value: "—", unit: "个", icon: "Activity" })}
+        ${uiMetric({ label: "抓取异常", value: "—", unit: "个", icon: "CircleAlert" })}
+        ${uiMetric({ label: "已配置命名空间", value: configured ? config.namespaces.length : 0, unit: "个", icon: "Boxes", detail: configured ? `当前范围 · ${namespaces.length} 个` : "配置后可按范围筛选" })}
       </div>
       <section class="mon-chart-panel">
-        <header><h2>${icon("ChartNoAxesCombined", 16)}目标抓取状态<span>布局预览</span></h2>${uiStatus({ label: "尚未验证连接", icon: "CircleDashed", tone: "neutral" })}</header>
+        <header><h2>${icon("ChartNoAxesCombined", 16)}目标抓取状态</h2><span class="mon-panel-caption">Grafana 布局预览</span></header>
         <div class="mon-chart-empty"><div class="mon-chart-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>${uiEmpty(
           {
-            icon: "Plug",
-            title: placeholder
-              ? "替换示例配置，接入真实监控"
-              : "接入 Grafana，查看实时指标",
-            description: placeholder
-              ? "当前为 Grafana 示例占位，尚未查询 Prometheus。"
-              : configured
-                ? "配置已填写，连接与指标尚未验证；当前仅预览布局。"
-                : "绑定 Grafana、数据源 UID 与监控命名空间。",
+            icon: placeholder
+              ? "FlaskConical"
+              : config.status === "invalid"
+                ? "CircleAlert"
+                : "Plug",
+            title: previewTitle,
+            description: previewDescription,
             className: "mon-chart-message",
             action: `${uiButton({ label: "配置接入", icon: "Settings2", action: "monitoring-tab", attrs: 'data-tab="configuration"', variant: "primary" })}${uiButton({ label: "导出仪表盘模板", icon: "Download", action: "monitoring-export-dashboard", variant: "ghost", disabled: !configured || s.monitoringDirty, title: s.monitoringDirty ? "请先保存接入配置中的修改" : !configured ? "完成接入配置后可导出模板" : "导入 Grafana 后验证数据源与指标" })}`,
           },
@@ -128,7 +140,7 @@ function renderDashboard(s) {
         <footer class="mon-scope-footer"><div class="mon-namespace-tags"><span class="mon-footer-label">当前范围</span>${namespaces.length ? namespaces.map((namespace) => `<span class="mon-namespace">${icon("Box", 12)}${e(namespace)}</span>`).join("") : '<span class="mon-no-scope">尚未配置</span>'}</div><span class="mon-config-source">${icon(s.mode === "demo" && s.monitoringSource === "example" ? "FlaskConical" : s.monitoringSource === "local" || s.monitoringSource === "session" ? "Laptop" : "Database", 13)}${e(sourceLabel(s))}</span></footer>
       </section>
     </section>
-    <details class="mon-integration-note"><summary>${icon("CircleHelp", 14)}指标与范围说明${icon("ChevronDown", 13)}</summary><p>抓取指标使用带 namespace 标签的 Prometheus up 数据；抓取成功不代表 Agent 健康。范围筛选仅影响仪表盘，不改变 Agent 的监听范围。</p><p>此处尚未嵌入实时面板，请在 Grafana 中验证数据源与指标。</p></details>
+    <details class="mon-integration-note"><summary>${icon("CircleHelp", 14)}指标与范围说明${icon("ChevronDown", 13)}</summary><p>抓取指标使用带 namespace 标签的 Prometheus up 数据；抓取成功不代表 Agent 健康。范围筛选仅影响仪表盘，不改变 Agent 的监听范围。</p></details>
   </div>`;
 }
 

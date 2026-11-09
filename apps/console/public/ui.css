@@ -1,15 +1,15 @@
 /* One token source and component system for every console module. */
 :root {
-  --paper: #fff;
-  --side: #f7f8fa;
+  --paper: #f7f8fa;
+  --side: #f3f4f7;
   --surface: #fff;
   --surface-raised: #fff;
   --subtle: #f7f8fa;
   --hover: #eef0f3;
-  --line: #e8e9ed;
+  --line: #e3e6eb;
   --ink: #24272e;
-  --muted: #6c727e;
-  --faint: #818895;
+  --muted: #606875;
+  --faint: #747d8b;
   --blue: #586bd6;
   --blue-soft: #f0f2fc;
   --accent: #292d36;
@@ -21,9 +21,9 @@
   --red: #be5d64;
   --red-bg: #fcf0f1;
   --code: #f5f6f8;
-  --panel-shadow: none;
+  --panel-shadow: 0 2px 5px #18213103;
   --shadow: 0 20px 70px #1c2c4924;
-  --sidebar: 208px;
+  --sidebar: 200px;
   --ui-radius: 8px;
   --ui-card-radius: 10px;
   --ui-control-height: 36px;
@@ -123,17 +123,23 @@
   background: var(--subtle);
   border-color: color-mix(in srgb, var(--blue) 32%, var(--line));
   box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--blue) 5%, transparent),
+    0 0 0 2px color-mix(in srgb, var(--blue) 4%, transparent),
     0 2px 5px #18213108;
-  transform: translateY(-1px);
 }
 .ui-button.ui-button-primary,
 .ui-button.tl-button-primary,
 .ui-button.primary,
 .ui-button.af-button-approve {
   color: var(--on-accent);
-  background: var(--accent);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--accent) 92%, #fff),
+    var(--accent)
+  );
   border-color: var(--accent);
+  box-shadow:
+    inset 0 1px 0 #ffffff14,
+    0 1px 2px #18213112;
 }
 .ui-button.ui-button-primary > svg,
 .ui-button.primary > svg,
@@ -184,7 +190,7 @@
 }
 .ui-button.ui-button:active:not(:disabled),
 .ui-icon-button.ui-icon-button:active:not(:disabled) {
-  transform: translateY(1px) scale(0.97);
+  transform: translateY(1px);
   box-shadow: inset 0 1px 3px #18213116;
 }
 .ui-button.ui-button:disabled,
@@ -344,19 +350,7 @@
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--ui-card-radius);
-  box-shadow: 0 1px 3px #18213103;
-  transition:
-    border-color 0.2s ease,
-    box-shadow 0.2s ease;
-}
-.ui-card.ui-card:hover {
-  border-color: color-mix(in srgb, var(--blue) 21%, var(--line));
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--blue) 4%, transparent),
-    0 4px 16px #18213105;
-}
-.ui-card.ui-card:focus-within {
-  border-color: color-mix(in srgb, var(--blue) 40%, var(--line));
+  box-shadow: var(--panel-shadow);
 }
 .ui-metric {
   min-width: 0;
@@ -369,13 +363,6 @@
     color-mix(in srgb, var(--subtle) 40%, var(--surface))
   );
   box-shadow: 0 1px 2px #18213103;
-  transition:
-    border-color 0.2s,
-    box-shadow 0.2s;
-}
-.ui-metric:hover {
-  border-color: color-mix(in srgb, var(--blue) 30%, var(--line));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 4%, transparent);
 }
 .ui-metric-heading {
   display: flex;

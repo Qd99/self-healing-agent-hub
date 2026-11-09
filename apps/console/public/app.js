@@ -220,6 +220,7 @@ function go(view) {
   state.view = view;
   render();
   window.scrollTo({ top: 0 });
+  document.querySelector("#main-content")?.focus({ preventScroll: true });
 }
 function selectApproval(id, nodeId) {
   const item = state.snapshot?.tasks.find((t) => t.task.id === id);

@@ -111,6 +111,14 @@ export function createTaskController({
     } catch {}
   }
   function updateFilters(patch, preferred = "") {
+    if (
+      Object.entries(patch).every(
+        ([key, value]) => state.taskFilters[key] === value,
+      )
+    ) {
+      redraw(preferred);
+      return;
+    }
     const hadSelection = state.selectedTaskIds.length > 0;
     state.taskFilters = { ...state.taskFilters, ...patch };
     state.taskPage = 1;
