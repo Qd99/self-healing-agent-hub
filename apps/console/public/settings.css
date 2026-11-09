@@ -65,9 +65,9 @@
   min-width: 0;
   min-height: 73px;
   padding: 14px 17px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--subtle);
   text-align: left;
 }
 
@@ -93,13 +93,12 @@
 }
 
 .cs-source:hover {
-  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
-  background: var(--subtle);
+  background: var(--hover);
 }
 
 .cs-source.is-active {
-  border-color: color-mix(in srgb, var(--blue) 60%, var(--line));
-  background: color-mix(in srgb, var(--blue-soft) 65%, var(--surface));
+  background: var(--blue-soft);
+  box-shadow: inset 3px 0 var(--blue);
 }
 
 .cs-source.is-active > svg,
@@ -361,7 +360,6 @@
 
 [data-theme="dark"] .cs-source.is-active {
   background: color-mix(in srgb, var(--blue-soft) 65%, var(--surface));
-  border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
 }
 
 [data-theme="dark"] .cs-error {

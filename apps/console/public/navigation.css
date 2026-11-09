@@ -9,7 +9,7 @@ body::before {
   width: var(--sidebar);
   padding: 18px 12px 14px;
   background: var(--side);
-  border-right: 1px solid var(--line);
+  border: 0;
   box-shadow: none;
   display: flex;
   flex-direction: column;
@@ -40,7 +40,7 @@ body::before {
     color-mix(in srgb, var(--accent) 80%, var(--blue)),
     var(--accent)
   );
-  border: 1px solid color-mix(in srgb, var(--accent) 85%, var(--surface));
+  border: 0;
   box-shadow:
     inset 0 1px 0 #ffffff21,
     0 2px 4px #1821310a;
@@ -75,10 +75,10 @@ body::before {
   width: 100%;
   min-height: 38px;
   height: auto;
-  padding: 0 11px;
+  padding: 0 12px;
   gap: 11px;
-  border: 1px solid transparent;
-  border-radius: 7px;
+  border: 0;
+  border-radius: 9px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 450;
@@ -96,14 +96,13 @@ body::before {
 }
 .sidebar .nav-item:hover:not(.active) {
   color: var(--ink);
-  background: var(--hover);
+  background: var(--nav-hover);
 }
 .sidebar .nav-item.active {
-  color: var(--blue);
-  background: color-mix(in srgb, var(--blue-soft) 65%, var(--surface));
-  border-color: color-mix(in srgb, var(--blue) 12%, var(--line));
+  color: var(--ink);
+  background: var(--nav-active);
   font-weight: 550;
-  box-shadow: 0 1px 2px #20242e04;
+  box-shadow: none;
 }
 .sidebar .nav-item.active > svg {
   filter: none;
@@ -128,9 +127,9 @@ body::before {
   font-weight: 500;
 }
 .nav-divider {
-  height: 1px;
-  margin: 18px 11px;
-  background: var(--line);
+  height: 20px;
+  margin: 0;
+  background: transparent;
 }
 .nav-tooltip {
   display: none;
@@ -139,6 +138,7 @@ body::before {
   flex: none;
   margin-top: 30px;
   padding: 0;
+  border: 0;
 }
 .sidebar .sidebar-utilities {
   border: 0;
@@ -151,7 +151,7 @@ body::before {
   align-items: center;
   margin: 15px 6px 0;
   padding-top: 14px;
-  border-top: 1px solid var(--line);
+  border: 0;
 }
 .sidebar-tools .icon-button {
   width: 30px;
@@ -170,7 +170,7 @@ body::before {
   position: relative;
   z-index: 25;
   background: var(--paper);
-  border-bottom: 1px solid var(--line);
+  border: 0;
   backdrop-filter: none;
   box-shadow: none;
 }
@@ -196,12 +196,12 @@ body::before {
   width: 154px;
   height: 30px;
   min-height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
   padding: 0 10px;
   justify-content: flex-start;
   gap: 8px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 74%, transparent);
   font-size: 11px;
 }
 .topbar .search-trigger:hover {

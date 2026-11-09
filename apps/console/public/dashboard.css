@@ -9,7 +9,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 20px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--ui-card-radius);
   background: var(--surface);
   box-shadow: var(--panel-shadow);
@@ -18,8 +18,15 @@
   position: relative;
   min-width: 0;
 }
-.home-stat + .home-stat {
-  border-left: 1px solid var(--line);
+.home-stat + .home-stat::before {
+  content: "";
+  position: absolute;
+  top: 24px;
+  bottom: 24px;
+  left: 0;
+  width: 1px;
+  background: var(--line-soft);
+  pointer-events: none;
 }
 .home-metric.ui-metric {
   min-height: 112px;
@@ -37,9 +44,9 @@
 .home-metric .ui-metric-icon {
   width: 30px;
   height: 30px;
-  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  border: 0;
   border-radius: 9px;
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: none;
 }
 .home-metric .ui-metric-icon svg {
   width: 17px;
@@ -122,9 +129,9 @@
   flex: none;
   width: 26px;
   height: 26px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 7px;
-  background: var(--subtle);
+  background: transparent;
   color: var(--muted);
 }
 .report-glyph svg {
@@ -135,13 +142,9 @@
 .report-trend .report-glyph,
 .report-types .report-glyph {
   color: var(--blue);
-  background: var(--blue-soft);
-  border-color: color-mix(in srgb, var(--blue) 15%, var(--line));
 }
 .report-status .report-glyph {
   color: var(--green);
-  background: var(--green-bg);
-  border-color: color-mix(in srgb, var(--green) 15%, var(--line));
 }
 .report-header-note,
 .report-caption,
@@ -466,7 +469,7 @@ button.report-engine:focus-visible,
   outline-offset: -2px;
 }
 .report-status .report-footer {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
 }
 .report-rank-list {
   display: flex;
@@ -572,7 +575,7 @@ button.report-rank-row:hover .report-rank-fill {
   transition: background 0.16s;
 }
 .report-engine + .report-engine {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
 }
 .report-engine-heading {
   display: flex;
@@ -586,10 +589,10 @@ button.report-rank-row:hover .report-rank-fill {
   flex: none;
   width: 23px;
   height: 23px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 6px;
   color: var(--blue);
-  background: var(--subtle);
+  background: transparent;
 }
 .report-engine-icon svg {
   width: 14px;
@@ -692,7 +695,7 @@ button.report-rank-row:hover .report-rank-fill {
 .home-task-tabs .ui-tab.is-active {
   background: var(--surface);
   color: var(--ink);
-  border-color: var(--line);
+  border-color: transparent;
   box-shadow: 0 1px 2px #18213108;
 }
 .home-task-tabs .ui-tab-count {
@@ -707,7 +710,7 @@ button.report-rank-row:hover .report-rank-fill {
   width: 100%;
   min-height: 50px;
   padding: 6px 15px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
   border-radius: 0;
   color: var(--ink);
   background: transparent;
@@ -726,10 +729,10 @@ button.report-rank-row:hover .report-rank-fill {
   place-items: center;
   width: 24px;
   height: 25px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 6px;
   color: var(--muted);
-  background: var(--surface);
+  background: transparent;
 }
 .home-task-glyph svg {
   width: 14px;
@@ -822,7 +825,15 @@ button.report-rank-row:hover .report-rank-fill {
     min-height: 50px;
   }
   .home-stat-action.ui-button span {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
   .home-metric.ui-metric {
     padding-inline: 14px;
@@ -842,11 +853,8 @@ button.report-rank-row:hover .report-rank-fill {
   .home-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .home-stat:nth-child(3) {
-    border-left: 0;
-  }
-  .home-stat:nth-child(n + 3) {
-    border-top: 1px solid var(--line);
+  .home-stat:nth-child(3)::before {
+    display: none;
   }
   .home-report-main {
     grid-template-columns: minmax(0, 1.5fr) minmax(250px, 1fr);

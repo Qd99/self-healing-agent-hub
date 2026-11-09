@@ -4,7 +4,7 @@
 
 ## Web 工作台
 
-当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v8 将首页改为报表优先：四项指标、任务趋势、状态环形图、问题类型排行和引擎表现组成分析区，最近任务缩为四条紧凑记录。报表分类可带着首页时间范围进入全部任务，并清理旧筛选、选择和页码；所有统计来自同一范围的任务快照。现有任务筛选、分页、跨页选择、批量操作、两级审批、监控配置和导出能力继续保留。
+当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v9 统一静态面板和导航表面：取消重复整圈描边与侧栏分组线，用底色、留白和轻阴影建立层次；表单、表格、审批节点和键盘焦点仍保留必要边界。首页继续提供四项指标、四类报表和四条紧凑最近任务，分类可带着当前时间范围进入全部任务。现有筛选、分页、跨页选择、批量操作、两级审批、监控配置和导出能力保留；本轮只修改样式，没有改变 JavaScript、数据契约或依赖。
 
 在仓库根目录运行，要求 Node.js 18 或更新版本：
 
@@ -15,7 +15,8 @@ npm run dev
 - [打开本地工作台](http://127.0.0.1:8787/)：读取配置，当前管理接口只读。
 - [打开交互演示](http://127.0.0.1:8787/?demo=1)：体验 48 条虚构任务，以及模拟创建、取消、重试和审批。
 - [工作台使用与设计说明](docs/console-guide.md) · [API 与框架对接](docs/console-api.md)
-- [v8 报表首页与验收](docs/design/console-v8-review.md) · [v7 界面细化与交付记录](docs/design/console-v7.md)
+- [v9 表面与侧栏精修](docs/design/console-v9.md) · [v8 报表首页与验收](docs/design/console-v8-review.md)
+- [v7 界面细化与交付记录](docs/design/console-v7.md)
 - [v6 界面与交互验收](docs/design/console-v6.md) · [v5 功能记录](docs/design/console-v5.md)
 - [Grafana 接入说明](docs/monitoring-integration.md)
 - [v4 任务工作区与验收](docs/design/task-workspace-v4.md) · [v3 审批验收](docs/design/validation.md) · [交互预览（演示）](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
