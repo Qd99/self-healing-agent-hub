@@ -178,18 +178,86 @@ interface ConsoleTask {
   title: string;
   engineId: string;
   reviewState?: 'pending' | 'approved' | 'rejected';
+  approvalFlow?: ConsoleApprovalFlow;
   trace: ConsoleTraceStep[];
   diff: ConsoleFileDiff[];
   result?: Serialized<Result>;
 }
 ```
 
-`reviewState` 属于 UI 扩展元数据，不给原有 `TaskStatus` 增加“待审批”等状态。Trace、diff、活动记录也有单独的展示契约。真实执行器接入时，需要把事件、状态和结果转换到此结构，并在 capability 中只开放已经可用的操作。浏览器内存中的演示数据使用 `mode: "demo"`；真实服务连接失败必须显示错误，不能自动替换成演示成功。
+`reviewState` 与 `approvalFlow` 属于 UI 扩展元数据，不给原有 `TaskStatus` 增加“待审批”等状态。Trace、diff、活动记录也有单独的展示契约。真实执行器接入时，需要把事件、状态和结果转换到此结构，并在 capability 中只开放已经可用的操作。浏览器内存中的演示数据使用 `mode: "demo"`；真实服务连接失败必须显示错误，不能自动替换成演示成功。
+
+## v3 审批展示与内存演示协议
+
+独立审批中心消费 `ConsoleTask.approvalFlow`，并通过 `apps/console/public/approvals.js` 的 `getApprovalFlow(entry)` 投影为节点图。该扩展没有新增可执行 HTTP 写接口：上表中的 `POST /api/healing/approvals/:id/decision` 仍返回 `501 NOT_IMPLEMENTED`，真实快照仍是空任务与关闭的 capability。
+
+### 审批记录与节点投影
+
+`ConsoleApprovalFlow` 在 `packages/framework/src/types/console.ts` 中定义。它包含：
+
+| 字段 | 含义 |
+| --- | --- |
+| `schemaVersion` | 当前审批元数据版本 `1` |
+| `source` | `demo-fixture` 或未来服务端的 `server`；当前演示写操作只接受前者 |
+| `round` | 审批轮次，重新发起后递增 |
+| `status` | `pending`、`approved`、`rejected` 或 `cancelled` |
+| `checks` | `plan`、`quality`、`safety` 的显式状态、说明及证据时间；缺失内容不能推断为通过 |
+| `gates` | 顺序固定的 `code-review`、`execution-auth` 人工关卡，包含标题、角色、负责人、状态、处理时间与意见 |
+| `history` | 跨轮次历史；每项包含 `id`、`round`、`nodeId`、`decision`、`actor`、`at` 和 `comment` |
+
+历史中的 `decision` 使用 `submitted`、`approved`、`rejected`、`resubmitted` 或 `cancelled`。演示负责人 Qd99 只是展示字段，不构成身份认证或真实岗位授权。
+
+`getApprovalFlow(entry)` 返回 `{ taskId, round, status, currentNodeId, nodes, edges, history, currentGate }`。六个节点为：
+
+| ID | 展示含义 |
+| --- | --- |
+| `plan` | Agent 诊断与候选方案 |
+| `quality` | 质量验证，与安全检查并行呈现 |
+| `safety` | 变更范围与保护路径检查 |
+| `code-review` | 第一个人工关卡：代码审阅 |
+| `execution-auth` | 第二个人工关卡：执行授权 |
+| `execute` | 执行与归档，当前只可能等待执行器或被阻塞、取消 |
+
+连接关系为 `plan` 分别指向 `quality` 和 `safety`，两者汇入 `code-review`，再依次进入 `execution-auth` 与 `execute`。只有显式自动检查均完成、此前人工关卡已通过时，才提供可操作的 `currentGate`。无审批元数据时 `status` 为 `unavailable`，节点为 `unknown`；不能由配置存在、规则启用或笼统的任务成功字段生成检查通过结论。
+
+### 浏览器内存命令
+
+以下是 `applyDemoAction` 的本地 JavaScript 命令，**不是已经接通的 HTTP API**。函数拒绝 `mode !== "demo"` 的快照；审批状态机还要求目标任务为显式演示任务。
+
+```js
+import { applyDemoAction } from './apps/console/public/data.js';
+import { getApprovalFlow } from './apps/console/public/approvals.js';
+
+const flow = getApprovalFlow(taskEntry);
+const updated = applyDemoAction(snapshot, {
+  type: 'approve-gate',
+  id: taskEntry.task.id,
+  payload: {
+    nodeId: flow.currentNodeId,
+    round: flow.round,
+    comment: '已查看候选变更和验证证据',
+  },
+});
+```
+
+| 命令 | 必要上下文 | 状态变化 |
+| --- | --- | --- |
+| `approve-gate` | 当前 `nodeId`；表单同时发送 `round`；意见可选且最多 500 字 | 第一关通过只解锁执行授权；第二关通过才将 `reviewState` 改为 `approved` |
+| `reject-gate` | 当前 `nodeId`、表单轮次、1–500 字非空原因 | 当前关卡拒绝，后续关卡阻塞；审批状态为 `rejected`，任务为 `cancelled` |
+| `resubmit-approval` | 已拒绝且已取消的任务、表单轮次、1–500 字非空说明 | `round` 递增并重开两个人工关卡，保留全部历史、原候选变更及原检查证据 |
+| `cancel` | 可取消的 `pending` / `running` 任务 | 任务和审批流停止；保留已完成检查、已决定关卡与取消记录，执行节点显示取消 |
+
+旧 `approve` / `reject` 别名也必须传入当前 `nodeId`，不能绕过两级审批。模型拒绝不匹配、已处理、尚未解锁或不存在的节点；传入 `round` 时会校验整数值和当前轮次。当前 UI 始终发送节点与轮次，防止旧表单继续决定新的关卡。将来实现真实写接口时，还需要在服务端持久化并校验版本、身份、权限及并发条件，不能把当前浏览器检查视为服务端授权。
+
+两关通过后，任务仍为 `pending`，执行节点为 `queued`，界面显示等待执行器；候选 diff 不会被应用，也不会生成新提交。重新发起审批只重开决定流程，不修改候选方案或重新运行检查。拒绝、取消和重新提交均保留历史，取消后的记录仍可在审批中心查看。每次操作使用新快照并追加演示活动记录，不写入配置文件、Git、数据库或真实审计存储。
 
 ## 验证
 
 ```bash
-node --test tests/console-server.test.mjs
+npm test
+npm run typecheck
 ```
 
 HTTP 集成测试覆盖示例与实际配置的选择、逐层敏感字段过滤、读取刷新、坏配置及缺失配置的明确错误、失效符号链接、写操作拒绝、静态媒体类型、路径与符号链接隔离、URL 解码错误，以及入口的 localhost 默认监听和与工作目录无关的配置定位。
+
+截至 v3 更新，完整测试集为 53 项通过，TypeScript 契约检查通过。审批回归覆盖顺序推进、重复与过期决定、拒绝必填、后续阻塞、重新发起与历史保留、取消保留证据、缺失自动检查证据及真实模式拒写。浏览器也已验证两级审批、拒绝必填与阻断、重新提交及历史查看；完整交付验收见 [验收记录](design/validation.md)。

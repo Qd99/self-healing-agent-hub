@@ -17,6 +17,56 @@ export type SerializedTaskStatusInfo = Serialized<TaskStatusInfo>;
 export type SerializedResult = Serialized<Result>;
 export type ConsoleReviewState = "pending" | "approved" | "rejected";
 
+export type ConsoleApprovalNodeStatus =
+  | "completed"
+  | "pending"
+  | "blocked"
+  | "rejected"
+  | "queued"
+  | "cancelled"
+  | "unknown";
+
+export interface ConsoleApprovalGate {
+  id: "code-review" | "execution-auth";
+  title: string;
+  role: string;
+  detail: string;
+  actor: string;
+  status: "pending" | "blocked" | "approved" | "rejected";
+  decidedAt?: string;
+  comment?: string;
+}
+
+export interface ConsoleApprovalDecision {
+  id: string;
+  round: number;
+  nodeId: string;
+  decision: "submitted" | "approved" | "rejected" | "resubmitted" | "cancelled";
+  actor: string;
+  at: string;
+  comment: string;
+}
+
+/** Explicit evidence, never a conclusion inferred from an enabled configuration. */
+export interface ConsoleApprovalFlow {
+  schemaVersion: 1;
+  source: "demo-fixture" | "server";
+  round: number;
+  status: ConsoleReviewState | "cancelled";
+  checks: Partial<
+    Record<
+      "plan" | "quality" | "safety",
+      {
+        status: ConsoleApprovalNodeStatus;
+        detail: string;
+        at?: string;
+      }
+    >
+  >;
+  gates: ConsoleApprovalGate[];
+  history: ConsoleApprovalDecision[];
+}
+
 export interface ConsoleTraceStep {
   id: string;
   parentId?: string;
@@ -41,6 +91,7 @@ export interface ConsoleTask {
   title: string;
   engineId: string;
   reviewState?: ConsoleReviewState;
+  approvalFlow?: ConsoleApprovalFlow;
   trace: ConsoleTraceStep[];
   diff: ConsoleFileDiff[];
   result?: SerializedResult;

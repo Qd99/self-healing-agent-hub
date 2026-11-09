@@ -353,17 +353,34 @@ test("approving or rejecting a review changes only valid original TaskStatus val
   const target = original.tasks.find((item) => item.reviewState === "pending");
   const approved = applyDemoAction(
     original,
-    { type: "approve", id: target.task.id },
+    { type: "approve", id: target.task.id, payload: { nodeId: "code-review" } },
     NOW + 1000,
   );
-  const approvedTask = approved.tasks.find(
+  assert.equal(
+    approved.tasks.find((item) => item.task.id === target.task.id).reviewState,
+    "pending",
+  );
+  const authorized = applyDemoAction(
+    approved,
+    {
+      type: "approve",
+      id: target.task.id,
+      payload: { nodeId: "execution-auth" },
+    },
+    NOW + 2000,
+  );
+  const approvedTask = authorized.tasks.find(
     (item) => item.task.id === target.task.id,
   );
   assert.equal(approvedTask.reviewState, "approved");
   assert.equal(approvedTask.status.status, "pending");
   const rejected = applyDemoAction(
     original,
-    { type: "reject", id: target.task.id },
+    {
+      type: "reject",
+      id: target.task.id,
+      payload: { nodeId: "code-review", comment: "需要补充验证证据" },
+    },
     NOW + 1000,
   );
   const rejectedTask = rejected.tasks.find(

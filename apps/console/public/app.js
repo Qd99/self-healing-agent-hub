@@ -1,5 +1,6 @@
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { filterTasks } from "./model.js";
+import { getApprovalFlow } from "./approvals.js";
 import {
   pages,
   renderShell,
@@ -39,16 +40,43 @@ const state = {
   selectedTask: "",
   detailTab: "trace",
   mobileNav: false,
+  approvalTaskId: "",
+  approvalNodeId: "",
+  approvalTab: "flow",
+  approvalFilter: "pending",
+  approvalError: "",
+  approvalComment: "",
+  flowZoom: 1,
 };
 let demoSnapshot = null;
 let abortController = null;
 let loadSequence = 0;
 let toastTimer;
 let lastFocus = null;
+const flowResizeObserver = new ResizeObserver((entries) => {
+  for (const { target } of entries) fitFlowCanvas(target);
+});
+
+function fitFlowCanvas(canvas) {
+  const space = canvas.querySelector(".af-canvas-space");
+  if (!space) return;
+  // Fit desktop workflows to the available pane; retain readable nodes on phones.
+  const fit = Math.min(1, Math.max(0.75, (canvas.clientWidth - 16) / 930));
+  space.style.setProperty("--af-fit", String(fit));
+}
 
 function render() {
+  const flowScroll =
+    document.querySelector(".af-canvas-scroll")?.scrollLeft || 0;
   document.documentElement.dataset.theme = state.theme;
   app.innerHTML = renderShell(state);
+  const canvas = document.querySelector(".af-canvas-scroll");
+  flowResizeObserver.disconnect();
+  if (canvas) {
+    fitFlowCanvas(canvas);
+    canvas.scrollLeft = flowScroll;
+    flowResizeObserver.observe(canvas);
+  }
 }
 function toast(message) {
   clearTimeout(toastTimer);
@@ -115,6 +143,24 @@ function go(view) {
   state.view = view;
   render();
   window.scrollTo({ top: 0 });
+}
+function selectApproval(id, nodeId) {
+  const item = state.snapshot?.tasks.find((t) => t.task.id === id);
+  if (!item) {
+    toast("这项审批请求已不存在。");
+    return;
+  }
+  const flow = getApprovalFlow(item);
+  if (state.approvalTaskId !== id) state.approvalComment = "";
+  state.approvalTaskId = id;
+  state.approvalNodeId = nodeId || flow.currentNodeId || "";
+  state.approvalTab = "flow";
+  state.approvalError = "";
+  if (flow.status !== "pending") state.approvalFilter = "all";
+  go("approvals");
+  document
+    .querySelector(".af-node.is-selected")
+    ?.focus({ preventScroll: true });
 }
 window.addEventListener("hashchange", () => {
   state.view = pages[location.hash.slice(1)]
@@ -278,7 +324,65 @@ document.addEventListener("click", (event) => {
     render();
     document.querySelector(".mobile-menu")?.focus();
   } else if (action === "navigate") go(view);
-  else if (action === "overview-tab") {
+  else if (action === "select-approval") selectApproval(id);
+  else if (action === "flow-node") {
+    const nodeId = button.dataset.nodeId;
+    if (state.view !== "approvals" || state.approvalTaskId !== id)
+      selectApproval(id, nodeId);
+    else {
+      state.approvalNodeId = nodeId;
+      state.approvalError = "";
+      render();
+      document
+        .querySelector(".af-node.is-selected")
+        ?.focus({ preventScroll: true });
+    }
+  } else if (action === "approval-tab") {
+    state.approvalTab = ["flow", "diff", "history"].includes(tab)
+      ? tab
+      : "flow";
+    render();
+    document
+      .querySelector(
+        `[data-action="approval-tab"][data-tab="${state.approvalTab}"]`,
+      )
+      ?.focus({ preventScroll: true });
+  } else if (action === "approval-filter") {
+    state.approvalFilter = button.dataset.filter === "all" ? "all" : "pending";
+    if (state.approvalFilter === "pending") {
+      const first = state.snapshot?.tasks.find(
+        (t) => getApprovalFlow(t).status === "pending",
+      );
+      state.approvalTaskId = first?.task.id || "";
+      state.approvalNodeId = "";
+      state.approvalComment = "";
+    }
+    state.approvalError = "";
+    render();
+    document
+      .querySelector(
+        `[data-action="approval-filter"][data-filter="${state.approvalFilter}"]`,
+      )
+      ?.focus({ preventScroll: true });
+  } else if (action === "flow-zoom") {
+    const direction = button.dataset.direction;
+    state.flowZoom =
+      direction === "reset"
+        ? 1
+        : Math.max(
+            0.75,
+            Math.min(
+              1.25,
+              Math.round(
+                (state.flowZoom + (direction === "in" ? 0.1 : -0.1)) * 100,
+              ) / 100,
+            ),
+          );
+    render();
+    document
+      .querySelector(`[data-action="flow-zoom"][data-direction="${direction}"]`)
+      ?.focus({ preventScroll: true });
+  } else if (action === "overview-tab") {
     state.overviewTab = tab;
     render();
     document
@@ -346,6 +450,10 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (["approval-comment", "resubmit-comment"].includes(event.target.id)) {
+    state.approvalComment = event.target.value;
+    return;
+  }
   if (event.target.id !== "task-search") return;
   state.query = event.target.value;
   const results = document.querySelector("#task-results");
@@ -375,6 +483,59 @@ document.addEventListener("change", (event) => {
   }
 });
 document.addEventListener("submit", (event) => {
+  if (
+    ["approval-decision-form", "approval-resubmit-form"].includes(
+      event.target.id,
+    )
+  ) {
+    event.preventDefault();
+    const form = event.target;
+    const values = Object.fromEntries(new FormData(form));
+    const command =
+      form.id === "approval-resubmit-form"
+        ? "resubmit-approval"
+        : event.submitter?.value;
+    if (!["approve-gate", "reject-gate", "resubmit-approval"].includes(command))
+      return;
+    state.approvalComment = String(values.comment || "");
+    try {
+      if (state.mode !== "demo" || !state.snapshot?.capabilities.approve)
+        throw new Error("真实审批写接口尚未接入。");
+      const next = applyDemoAction(state.snapshot, {
+        type: command,
+        id: form.dataset.taskId,
+        payload: {
+          nodeId: form.dataset.nodeId,
+          round: Number(values.round || form.dataset.round),
+          comment: state.approvalComment,
+        },
+      });
+      state.snapshot = next;
+      demoSnapshot = next;
+      state.approvalTaskId = form.dataset.taskId;
+      const flow = getApprovalFlow(
+        next.tasks.find((t) => t.task.id === state.approvalTaskId),
+      );
+      state.approvalNodeId =
+        flow.currentNodeId ||
+        (command === "reject-gate" ? form.dataset.nodeId : "execute");
+      if (flow.status !== "pending") state.approvalFilter = "all";
+      state.approvalError = "";
+      state.approvalComment = "";
+      render();
+      document
+        .querySelector(".af-node.is-selected")
+        ?.focus({ preventScroll: true });
+      toast(next.activity[0].message);
+    } catch (error) {
+      state.approvalError = error.message;
+      render();
+      document
+        .querySelector("#approval-comment, #resubmit-comment")
+        ?.focus({ preventScroll: true });
+    }
+    return;
+  }
   if (event.target.id !== "create-form") return;
   event.preventDefault();
   const payload = Object.fromEntries(new FormData(event.target));

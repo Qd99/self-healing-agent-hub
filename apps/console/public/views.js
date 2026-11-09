@@ -1,19 +1,16 @@
 import { icon } from "./icons.js";
-import {
-  escapeHtml as e,
-  filterTasks,
-  getMetrics,
-  getTrend,
-  formatDuration,
-} from "./model.js";
+import { renderStudioDashboard } from "./dashboard.js";
+import { renderApprovalPage } from "./approval-views.js";
+import { escapeHtml as e, filterTasks, formatDuration } from "./model.js";
 
 export const pages = {
-  overview: { title: "工作台", icon: "House" },
-  tasks: { title: "全部任务", icon: "ListTodo" },
-  engines: { title: "Agent 引擎", icon: "Layers" },
+  overview: { title: "工作台", icon: "LayoutDashboard" },
+  tasks: { title: "全部任务", icon: "ListChecks" },
+  approvals: { title: "审批中心", icon: "GitPullRequestArrow" },
+  engines: { title: "Agent 引擎", icon: "Bot" },
   rules: { title: "路由规则", icon: "Workflow" },
   safety: { title: "安全策略", icon: "ShieldCheck" },
-  activity: { title: "活动记录", icon: "History" },
+  activity: { title: "活动记录", icon: "Activity" },
   settings: { title: "连接设置", icon: "Settings2" },
 };
 export const taskTypes = {
@@ -110,25 +107,25 @@ export function renderShell(s) {
     snap?.project?.repo?.split("/").at(-1) || "self-healing-agent-hub";
   const review =
     snap?.tasks.filter((t) => t.reviewState === "pending").length || 0;
+  const navigation = Object.entries(pages)
+    .filter(([id]) => id !== "settings")
+    .map(
+      ([id, p]) =>
+        `<a href="#${id}" class="nav-item ${s.view === id ? "active" : ""}" ${s.view === id ? 'aria-current="page"' : ""}>${icon(p.icon)}<span>${p.title}</span>${id === "approvals" && review ? `<span class="nav-count">${review}</span>` : ""}</a>`,
+    )
+    .join("");
   return `<aside class="sidebar ${s.mobileNav ? "mobile-open" : ""}" aria-label="主导航">
-    <div class="brand"><a class="row" href="#overview" aria-label="heal 工作台"><span class="brand-mark"></span>heal</a><button class="icon-button sidebar-close" ${action("close-nav")} aria-label="关闭导航">${icon("X")}</button></div>
-    <div class="workspace" title="${e(snap?.project?.repo || project)}">${icon("GitBranch", 15)}<span class="workspace-title">${snap?.mode === "demo" ? "演示工作区" : e(snap?.project?.id || "工作空间")}</span></div>
-    <nav class="nav-list">${Object.entries(pages)
-      .filter(([id]) => id !== "settings")
-      .map(
-        ([id, p]) =>
-          `<a href="#${id}" class="nav-item ${s.view === id ? "active" : ""}" ${s.view === id ? 'aria-current="page"' : ""}>${icon(p.icon)}<span>${p.title}</span>${id === "overview" && review ? `<span class="nav-count">${review}</span>` : ""}</a>`,
-      )
-      .join("")}</nav>
-    <div class="sidebar-bottom"><nav class="nav-list"><a href="#settings" class="nav-item ${s.view === "settings" ? "active" : ""}" ${s.view === "settings" ? 'aria-current="page"' : ""}>${icon("Settings2")}连接设置</a><div class="nav-item"><span>外观</span><div class="theme-switch" role="group" aria-label="外观主题"><button class="theme-option" ${action("theme", 'data-theme="light"')} aria-label="浅色主题" aria-pressed="${s.theme === "light"}">${icon("Sun", 13)}</button><button class="theme-option" ${action("theme", 'data-theme="dark"')} aria-label="深色主题" aria-pressed="${s.theme === "dark"}">${icon("Moon", 13)}</button></div></div></nav><div class="account"><span class="avatar">Q</span><div>Qd99<small>个人工作空间</small></div></div></div>
-  </aside><div class="sidebar-backdrop ${s.mobileNav ? "open" : ""}" ${action("close-nav")}></div>
-  <div class="shell"><header class="topbar"><div class="row grow"><button class="icon-button mobile-menu" ${action("open-nav")} aria-label="打开导航">${icon("Menu")}</button><div class="breadcrumb"><span class="project-name truncate muted">${e(project)}</span><span class="separator">/</span><span>${pages[s.view].title}</span></div></div><div class="topbar-actions"><button class="search-trigger" ${action("search")} aria-label="搜索任务">${icon("Search", 16)}<span class="keycap">⌘ K</span></button><button class="mode-badge" ${action("navigate", 'data-view="settings"')}>${s.mode === "demo" ? "演示" : s.snapshot ? "只读连接" : "未连接"}</button><span class="avatar" aria-label="当前工作空间所有者 Qd99">Q</span></div></header>
-  <main id="main-content" class="content" tabindex="-1">${renderPage(s)}</main></div>`;
+    <div class="brand"><a href="#overview" aria-label="heal 工作台"><span class="brand-mark">${icon("Layers", 20)}</span><span class="brand-copy">heal<small>AGENT WORKSPACE</small></span></a><button class="icon-button sidebar-close" data-action="close-nav" aria-label="关闭导航">${icon("X")}</button></div>
+    <button class="workspace row" data-action="navigate" data-view="settings" aria-label="工作区连接设置"><span class="workspace-icon">${icon("FolderGit2", 17)}</span><span class="grow"><span class="workspace-title">Self-healing hub</span><small>${s.mode === "demo" ? "演示工作空间" : "项目配置工作空间"}</small></span>${icon("ChevronDown", 12)}</button>
+    <div class="nav-label">WORKSPACE</div><nav class="nav-list">${navigation}</nav>
+    <div class="sidebar-bottom"><div class="sidebar-note">${icon("ShieldCheck", 24)}<div><strong>每次变更，清晰可见</strong><small>流程 · 审批 · 验证记录</small></div></div><nav class="nav-list"><a href="#settings" class="nav-item ${s.view === "settings" ? "active" : ""}" ${s.view === "settings" ? 'aria-current="page"' : ""}>${icon("Settings2")}连接设置</a><div class="nav-item"><span>外观</span><div class="theme-switch" role="group" aria-label="外观主题"><button class="theme-option" data-action="theme" data-theme="light" aria-label="浅色主题" aria-pressed="${s.theme === "light"}">${icon("Sun", 14)}</button><button class="theme-option" data-action="theme" data-theme="dark" aria-label="深色主题" aria-pressed="${s.theme === "dark"}">${icon("Moon", 14)}</button></div></div></nav><div class="account"><span class="avatar">Q</span><div class="grow">Qd99<small>个人工作空间</small></div>${icon("ChevronDown", 12)}</div></div>
+  </aside><div class="sidebar-backdrop ${s.mobileNav ? "open" : ""}" data-action="close-nav"></div><div class="shell"><header class="topbar"><div class="row grow"><button class="icon-button mobile-menu" data-action="open-nav" aria-label="打开导航">${icon("Menu")}</button><div class="breadcrumb">${icon("PanelTop", 15)}<span class="project-name truncate muted">${e(project)}</span><span class="separator">/</span><span>${pages[s.view].title}</span></div></div><div class="topbar-actions"><button class="search-trigger" data-action="search" aria-label="搜索任务">${icon("Search", 14)}<span class="search-label">搜索工作空间</span><span class="keycap">⌘ K</span></button><button class="mode-badge" data-action="navigate" data-view="settings">${s.mode === "demo" ? "演示模式" : snap ? "只读连接" : "未连接"}</button><button class="topbar-notice" data-action="navigate" data-view="approvals" aria-label="待办审批">${icon("Bell", 16)}${review ? "<i></i>" : ""}</button><span class="avatar" aria-label="当前工作空间所有者 Qd99">Q</span></div></header><main id="main-content" class="content" tabindex="-1">${renderPage(s)}</main></div>`;
 }
 
 function renderPage(s) {
   const titles = {
-    overview: "",
+    overview: "查看 Agent 运行、审批与修复记录。",
+    approvals: "从候选方案到执行授权，让每次决定都有迹可循。",
     tasks: "查看每一次诊断、修复与验证。",
     engines: "一个任务入口，按问题复杂度分配执行引擎。",
     rules: "事件如何匹配，以及交给哪个引擎。",
@@ -136,7 +133,7 @@ function renderPage(s) {
     activity: "保留每一次状态变化与人工决策。",
     settings: "选择数据来源，检查管理台的连接状态。",
   };
-  const header = `<div class="page-heading"><div><p class="eyebrow">${s.view === "overview" ? nowDate() : "SELF-HEALING AGENT HUB"}</p><h1>${pages[s.view].title}</h1>${titles[s.view] ? `<p class="heading-description">${titles[s.view]}</p>` : ""}</div><div class="row">${["overview", "tasks"].includes(s.view) ? `<button class="btn primary" ${action("new-task")} ${!s.snapshot?.capabilities.trigger ? 'disabled title="执行引擎尚未接入"' : ""}>${icon("Plus", 14)}发起巡检</button>` : s.view === "activity" ? `<button class="btn" ${action("export")} ${!s.snapshot ? "disabled" : ""}>${icon("Download", 14)}导出记录</button>` : ""}</div></div>`;
+  const header = `<div class="page-heading"><div class="heading-with-icon"><span class="heading-icon">${icon(pages[s.view].icon, 22)}</span><div><h1>${s.view === "overview" ? "自愈工作台" : pages[s.view].title}</h1><p class="heading-description">${titles[s.view] || ""}</p></div></div><div class="row">${["overview", "tasks"].includes(s.view) ? `<button class="btn" data-action="refresh" aria-label="刷新工作台">${icon("RefreshCw", 13)}刷新</button><button class="btn primary" data-action="new-task" ${!s.snapshot?.capabilities.trigger ? 'disabled title="执行引擎尚未接入"' : ""}>${icon("Plus", 14)}发起巡检</button>` : s.view === "activity" ? `<button class="btn" data-action="export" ${!s.snapshot ? "disabled" : ""}>${icon("Download", 14)}导出记录</button>` : s.view === "approvals" ? `<span class="studio-state review">${icon("LockKeyhole", 13)}${s.mode === "demo" ? "演示审批 · 不执行修复" : "只读审批"}</span>` : ""}</div></div>`;
   if (s.loading)
     return (
       header +
@@ -145,7 +142,8 @@ function renderPage(s) {
   if (!s.snapshot && s.view !== "settings")
     return header + connectionError(s) + footer(s);
   const views = {
-    overview,
+    overview: renderStudioDashboard,
+    approvals: renderApprovalPage,
     tasks: taskList,
     engines,
     rules,
@@ -160,78 +158,6 @@ function footer(s) {
 }
 function connectionError(s) {
   return `<div class="inline-notice error"><strong>无法连接管理服务</strong><p>${e(s.error || "请确认管理服务已经启动。")}</p><div class="row"><button class="btn compact" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button><button class="btn compact" ${action("mode", 'data-mode="demo"')}>查看演示</button></div></div>`;
-}
-
-function overview(s) {
-  const all = filterTasks(s.snapshot.tasks, { days: s.days });
-  const metrics = getMetrics(all);
-  const section = (title, items, compact = false) =>
-    `<section class="section"><h2 class="section-title">${title}<span class="count">${String(items.length).padStart(2, "0")}</span></h2>${items.length ? items.map((t) => renderTask(t, s, compact)).join("") : empty("这里暂时没有任务")}</section>`;
-  const reviews = all.filter((t) => t.reviewState === "pending");
-  const running = all.filter(
-    (t) =>
-      t.status.status === "running" ||
-      (t.status.status === "pending" && t.reviewState !== "pending"),
-  );
-  const failures = all.filter((t) => t.status.status === "failed");
-  let main = "";
-  if (s.overviewTab === "review") main = section("需要你审阅", reviews);
-  else if (s.overviewTab === "running")
-    main = section("正在运行与排队", running);
-  else if (!all.length)
-    main = empty("工作台已就绪", "连接执行引擎后，任务会出现在这里。");
-  else
-    main =
-      section("需要你处理", reviews) +
-      (running.length ? section("正在运行与排队", running) : "") +
-      (failures.length
-        ? `<section class="section"><h2 class="section-title">需要关注<span class="count">${failures.length}</span></h2>${renderTask(failures[0], s, true)}</section>`
-        : "") +
-      section(
-        "最近完成",
-        all.filter((t) => t.status.status === "completed").slice(0, 3),
-        true,
-      );
-  return `<div class="tabs" role="tablist" aria-label="工作台视图">${[
-    ["focus", "概览", null],
-    ["review", "待审阅", metrics.review],
-    ["running", "运行与排队", running.length],
-  ]
-    .map(
-      ([id, label, count]) =>
-        `<button role="tab" aria-selected="${s.overviewTab === id}" class="tab ${s.overviewTab === id ? "active" : ""}" ${action("overview-tab", `data-tab="${id}"`)}>${label}${count !== null ? `<span class="tab-count">${count}</span>` : ""}</button>`,
-    )
-    .join(
-      "",
-    )}${periodSelect(s.days)}</div><div class="workbench"><div class="workbench-main">${main}</div>${summaryRail(s, all, metrics)}</div>`;
-}
-function renderTask(item, s, compact = false) {
-  const id = item.task.id;
-  const running = item.status.status === "running";
-  const review = item.reviewState === "pending";
-  const expanded = s.expandedTask === id;
-  const progress = Math.max(
-    0,
-    Math.min(4, Math.round((item.status.progress || 0) / 25)),
-  );
-  return `<div class="task-entry"><button class="task-row ${compact ? "task-compact" : ""}" ${action(review ? "expand-task" : "open-task", `data-id="${e(id)}"`)} ${review ? `aria-expanded="${expanded}"` : ""} aria-label="${e(item.title)}，${statusNames[safeStatus(stateOf(item))]}">${mark(item)}<div class="grow"><div class="task-title">${e(item.title)}</div><div class="task-meta"><span class="mono">${e(id)}</span><span class="sep">·</span><span>${e(engineName(item.engineId))}</span>${item.diff?.length ? `<span class="sep">·</span><span>${item.diff.length} 个文件</span>` : ""}</div></div>${compact ? `<span class="task-engine">${e(engineName(item.engineId))}</span><span class="time">${timeOf(item.status.completedAt || item.task.metadata.createdAt)}</span>` : `<div class="task-aside">${running ? `<span class="progress-segments" aria-label="进度 ${e(item.status.progress || 0)}%">${[1, 2, 3, 4].map((x) => `<i class="${x <= progress ? "filled" : ""}"></i>`).join("")}</span><span>${e(item.trace?.find((x) => x.status === "running")?.title || "处理中")}</span>` : review ? `<span class="link">审阅 ${icon(expanded ? "ChevronDown" : "ArrowRight", 13)}</span>` : statusLabel(item)}</div>`}</button>${
-    review && expanded
-      ? `<div class="mini-diff"><div class="mini-diff-lines">${
-          (item.diff?.[0]?.lines || [])
-            .slice(0, 3)
-            .map(
-              (line) =>
-                `<div class="mini-diff-line ${["add", "remove"].includes(line.type) ? line.type : "context"}"><span>${line.type === "add" ? "+" : line.type === "remove" ? "−" : " "}</span><span class="truncate">${e(line.content)}</span></div>`,
-            )
-            .join("") || '<span class="muted">变更等待生成</span>'
-        }</div>${taskButton(id, "查看变更 " + icon("ArrowUpRight", 12), "diff")}</div>`
-      : ""
-  }</div>`;
-}
-function summaryRail(s, all, m) {
-  const trend = getTrend(all, { days: s.days });
-  const max = Math.max(1, ...trend.map((d) => d.completed + d.failed));
-  return `<aside class="summary-rail" aria-label="运行摘要"><section class="rail-section"><h2 class="rail-heading">${s.days === 1 ? "今日概况" : `近 ${s.days} 天概况`}</h2><p class="summary-value">${m.successRate === null ? "—" : m.successRate.toFixed(1) + "%"}</p><p class="summary-caption">修复成功率 <span class="faint">/ 已结束任务</span></p><div class="micro-chart" role="img" aria-label="${e(trend.map((d) => `${d.label}：完成${d.completed}、失败${d.failed}`).join("；"))}">${trend.map((d) => `<div class="micro-column" title="${e(d.label)}：完成 ${d.completed} · 失败 ${d.failed}"><i class="micro-bar" style="height:${Math.round((d.completed / max) * 100)}%"></i>${d.failed ? `<i class="micro-bar failure" style="height:${Math.round((d.failed / max) * 100)}%"></i>` : ""}</div>`).join("")}</div><div class="metric-row"><span>任务总数</span><span>${m.total}</span></div><div class="metric-row"><span>平均耗时</span><span>${formatDuration(m.averageDurationMs)}</span></div><div class="metric-row"><span>失败</span><span>${m.failed}</span></div></section><section class="rail-section"><h2 class="rail-heading">执行引擎</h2>${s.snapshot.engines.map((x) => `<div class="engine-row"><span class="row"><i class="status-dot"></i>${e(engineName(x.id))}</span><span class="small">${s.mode === "demo" ? "演示配置" : "未接入"}</span></div>`).join("")}<button class="text-button margin-top" ${action("navigate", 'data-view="engines"')}>查看引擎 ${icon("ArrowRight", 12)}</button></section><section class="rail-section"><h2 class="rail-heading">安全策略</h2><p class="policy-line">${icon("FileCode2")}<span>${s.snapshot.safety.maxFilesPerFix ? `每次最多修改 ${s.snapshot.safety.maxFilesPerFix} 个文件` : "修改范围尚未配置"}</span></p><p class="policy-line">${icon("ShieldCheck")}<span>${s.snapshot.safety.protectedPaths?.length || 0} 项受保护路径配置</span></p><p class="policy-line">${icon("Undo2")}<span>自动回滚${s.snapshot.safety.autoRollback?.enabled ? "已配置" : "未配置"}</span></p></section></aside>`;
 }
 
 function taskList(s) {
@@ -334,7 +260,7 @@ export function renderTaskDetail(item, s) {
   const can = (key) => s.mode === "demo" && s.snapshot.capabilities[key];
   const buttons =
     status === "review"
-      ? `<button class="btn" ${action("task-action", `data-command="reject" data-id="${e(item.task.id)}"`)} ${can("approve") ? "" : "disabled"}>拒绝方案</button><button class="btn primary" ${action("task-action", `data-command="approve" data-id="${e(item.task.id)}"`)} ${can("approve") ? "" : "disabled"}>${icon("Check", 14)}批准方案</button>`
+      ? `<button class="btn" data-action="close-detail">稍后处理</button><button class="btn primary" data-action="select-approval" data-id="${e(item.task.id)}">${icon("GitPullRequestArrow", 15)}打开审批流</button>`
       : ["pending", "running"].includes(status)
         ? `<button class="btn" ${action("task-action", `data-command="cancel" data-id="${e(item.task.id)}"`)} ${can("cancel") ? "" : "disabled"}>${icon("Square", 12)}取消任务</button>`
         : ["failed", "cancelled"].includes(status)
@@ -348,7 +274,7 @@ export function renderTaskDetail(item, s) {
   ]
     .map(
       ([id, title]) =>
-        `<button class="tab ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" ${action("detail-tab", `data-tab="${id}"`)}>${title}${id === "diff" ? `<span class="tab-count">${item.diff?.length || 0}</span>` : ""}</button>`,
+        `<button class="tab ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" ${action("detail-tab", `data-tab="${id}"`)}>${icon({ trace: "Workflow", diff: "FileDiff", evidence: "FlaskConical", logs: "Terminal" }[id], 14)}${title}${id === "diff" ? `<span class="tab-count">${item.diff?.length || 0}</span>` : ""}</button>`,
     )
     .join(
       "",

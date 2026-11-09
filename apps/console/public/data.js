@@ -4,6 +4,12 @@
  * The nested Task, TaskStatusInfo, and Result records follow packages/framework.
  */
 
+import {
+  createDemoApprovalFlow,
+  applyApprovalAction,
+  cancelApprovalFlow,
+} from "./approvals.js";
+
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 const DEMO_SOURCE = "console-demo · 全部数据为虚构演示";
@@ -826,6 +832,8 @@ function makeTask({
         : {}),
     };
   }
+  if (reviewing)
+    entry.approvalFlow = createDemoApprovalFlow(entry, iso(completedAt));
   return entry;
 }
 
@@ -1025,6 +1033,9 @@ export function applyDemoAction(
       "retry",
       "approve",
       "reject",
+      "approve-gate",
+      "reject-gate",
+      "resubmit-approval",
       "toggle-rule",
     ].includes(type)
   )
@@ -1130,44 +1141,39 @@ export function applyDemoAction(
       ),
     );
     message = `已为 ${id} 创建第 ${retryCount} 次模拟重试，原记录保留`;
+  } else if (
+    [
+      "approve",
+      "approve-gate",
+      "reject",
+      "reject-gate",
+      "resubmit-approval",
+    ].includes(type)
+  ) {
+    const index = next.tasks.findIndex((item) => item.task.id === id);
+    const result = applyApprovalAction(
+      next.tasks[index],
+      { type, payload },
+      at,
+    );
+    next.tasks[index] = result.entry;
+    message = result.message;
   } else {
     const entry = next.tasks.find((item) => item.task.id === id);
-    if (type === "approve") {
-      entry.reviewState = "approved";
-      entry.status.message = "方案已批准，等待模拟执行；未提交真实变更";
-      const reviewStep = entry.trace.find((step) => step.id === `${id}-finish`);
-      if (reviewStep) {
-        reviewStep.title = "人工审阅通过";
-        reviewStep.status = "completed";
-        reviewStep.detail = "已批准候选变更，仍待执行";
-      }
-      entry.trace.push({
-        id: `${id}-approved-queue`,
-        title: "等待执行",
-        kind: "agent",
-        status: "pending",
-        detail: "未连接真实执行器，任务保留在模拟队列",
-      });
-      message = `已批准「${entry.title}」，等待模拟执行`;
-    } else {
-      entry.status = {
-        ...entry.status,
-        status: "cancelled",
-        completedAt: at,
-        message:
-          type === "reject"
-            ? "人工拒绝候选方案，未应用变更（演示）"
-            : "任务已手动取消（演示）",
-      };
-      if (type === "reject") entry.reviewState = "rejected";
-      else if (entry.reviewState === "pending") delete entry.reviewState;
-      entry.trace = entry.trace.map((step) =>
-        step.status === "running"
-          ? { ...step, status: "pending", detail: "任务已取消，该步骤未完成" }
-          : step,
-      );
-      message = `${type === "reject" ? "已拒绝方案" : "已取消任务"}「${entry.title}」（仅演示）`;
-    }
+    if (entry.approvalFlow) entry.approvalFlow = cancelApprovalFlow(entry, at);
+    entry.status = {
+      ...entry.status,
+      status: "cancelled",
+      completedAt: at,
+      message: "任务已手动取消（演示）",
+    };
+    if (entry.reviewState === "pending") delete entry.reviewState;
+    entry.trace = entry.trace.map((step) =>
+      step.status === "running"
+        ? { ...step, status: "pending", detail: "任务已取消，该步骤未完成" }
+        : step,
+    );
+    message = `已取消任务「${entry.title}」（仅演示）`;
     if (entry.result) entry.result.logs.push(`[${at}] [DEMO] ${message}`);
   }
 
@@ -1179,7 +1185,9 @@ export function applyDemoAction(
     message,
     ...(taskId ? { taskId } : {}),
     actor: "你（演示）",
-    level: type === "reject" || type === "cancel" ? "warning" : "info",
+    level: ["reject", "reject-gate", "cancel"].includes(type)
+      ? "warning"
+      : "info",
   });
   return next;
 }
