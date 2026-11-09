@@ -16,7 +16,7 @@ The gateway, transport types, interactive frontend, demo model, package commands
 
 The user's visual correction supersedes the initial KPI-card direction: v2 uses a task inbox, inline diff previews, restrained graphite/gray styling, and a narrow summary rail. The primary workflow is reviewing work that needs attention. It avoids large gradient charts and rows of dashboard cards. See `docs/console-guide.md` for the current design and runtime boundaries.
 
-Browser QA, captured UI images, independent final review and private preview publication are complete. Branch push and Draft PR delivery are recorded at handoff. No execution engine, queue, GitHub writes, real approval, or rollback has been connected.
+Browser QA, captured UI images, independent final review and private preview publication are complete. The verified source tree is saved on `feat/agent-console-ui` through the connected GitHub API. Draft PR: https://github.com/Qd99/self-healing-agent-hub/pull/1 . No execution engine, queue, GitHub writes, real approval, or rollback has been connected.
 
 ## Global constraints
 
@@ -63,5 +63,5 @@ Files: `scripts/build-console.mjs`, `docs/console-guide.md`, package scripts, sc
 - [x] Run final `npm run typecheck` and `npm run build` and record results.
 - [x] Review independently; resolve material findings and run relevant tests.
 - [x] Capture actual UI images at desktop, detail and dark mode; inspect visually.
-- [ ] Publish private static preview, push feature branch and create Draft PR.
-- [ ] Report verified behavior, baseline SHA, limitations and next integration steps.
+- [x] Publish private static preview, save feature branch and create Draft PR.
+- [x] Record verified behavior, baseline SHA, limitations and next integration steps in the delivery guide and validation record.

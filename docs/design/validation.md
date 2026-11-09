@@ -49,3 +49,7 @@ TypeScript 检查范围是框架类型；浏览器 JavaScript 的验证由语法
 真实同源网关读取配置并过滤敏感字段。执行器、持久队列、Webhook、GitHub 写入、真实审批及回滚仍未接入。没有更改现有 CI，没有执行真实修复或合并主分支。
 
 参考： [AffectUI](https://www.affectui.com/) 的任务与审阅组织、[BoardUI](https://www.boardui.com/) 的克制工作台布局、[Looseleaf](https://kevintngo.github.io/looseleaf/) 的纸面色感。实现独立编写；未复制收费组件代码。图标采用 Lucide，许可证随前端保留。
+
+## 代码交付
+
+已保存为 [Draft PR #1](https://github.com/Qd99/self-healing-agent-hub/pull/1)，分支 `feat/agent-console-ui`。本地 Git 缺少 HTTPS 写入凭据，因此使用用户已连接的 GitHub API 保存；上传后的 Git tree SHA 与已验收的本地源码逐一相符。主分支未合并。
