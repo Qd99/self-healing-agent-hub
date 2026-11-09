@@ -1,7 +1,9 @@
 import { icon } from "./icons.js";
 import { renderStudioDashboard } from "./dashboard.js";
 import { renderApprovalPage } from "./approval-views.js";
-import { escapeHtml as e, filterTasks, formatDuration } from "./model.js";
+import { escapeHtml as e, formatDuration } from "./model.js";
+import { renderTaskPage } from "./task-views.js";
+import { renderSidebar, renderTopbar } from "./navigation.js";
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
@@ -102,92 +104,31 @@ const periodSelect = (days) =>
     .join("")}</select>`;
 
 export function renderShell(s) {
-  const snap = s.snapshot;
-  const project =
-    snap?.project?.repo?.split("/").at(-1) || "self-healing-agent-hub";
-  const review =
-    snap?.tasks.filter((t) => t.reviewState === "pending").length || 0;
-  const navigation = Object.entries(pages)
-    .filter(([id]) => id !== "settings")
-    .map(
-      ([id, p]) =>
-        `<a href="#${id}" class="nav-item ${s.view === id ? "active" : ""}" ${s.view === id ? 'aria-current="page"' : ""}>${icon(p.icon)}<span>${p.title}</span>${id === "approvals" && review ? `<span class="nav-count">${review}</span>` : ""}</a>`,
-    )
-    .join("");
-  return `<aside class="sidebar ${s.mobileNav ? "mobile-open" : ""}" aria-label="主导航">
-    <div class="brand"><a href="#overview" aria-label="heal 工作台"><span class="brand-mark">${icon("Layers", 20)}</span><span class="brand-copy">heal<small>AGENT WORKSPACE</small></span></a><button class="icon-button sidebar-close" data-action="close-nav" aria-label="关闭导航">${icon("X")}</button></div>
-    <button class="workspace row" data-action="navigate" data-view="settings" aria-label="工作区连接设置"><span class="workspace-icon">${icon("FolderGit2", 17)}</span><span class="grow"><span class="workspace-title">Self-healing hub</span><small>${s.mode === "demo" ? "演示工作空间" : "项目配置工作空间"}</small></span>${icon("ChevronDown", 12)}</button>
-    <div class="nav-label">WORKSPACE</div><nav class="nav-list">${navigation}</nav>
-    <div class="sidebar-bottom"><div class="sidebar-note">${icon("ShieldCheck", 24)}<div><strong>每次变更，清晰可见</strong><small>流程 · 审批 · 验证记录</small></div></div><nav class="nav-list"><a href="#settings" class="nav-item ${s.view === "settings" ? "active" : ""}" ${s.view === "settings" ? 'aria-current="page"' : ""}>${icon("Settings2")}连接设置</a><div class="nav-item"><span>外观</span><div class="theme-switch" role="group" aria-label="外观主题"><button class="theme-option" data-action="theme" data-theme="light" aria-label="浅色主题" aria-pressed="${s.theme === "light"}">${icon("Sun", 14)}</button><button class="theme-option" data-action="theme" data-theme="dark" aria-label="深色主题" aria-pressed="${s.theme === "dark"}">${icon("Moon", 14)}</button></div></div></nav><div class="account"><span class="avatar">Q</span><div class="grow">Qd99<small>个人工作空间</small></div>${icon("ChevronDown", 12)}</div></div>
-  </aside><div class="sidebar-backdrop ${s.mobileNav ? "open" : ""}" data-action="close-nav"></div><div class="shell"><header class="topbar"><div class="row grow"><button class="icon-button mobile-menu" data-action="open-nav" aria-label="打开导航">${icon("Menu")}</button><div class="breadcrumb">${icon("PanelTop", 15)}<span class="project-name truncate muted">${e(project)}</span><span class="separator">/</span><span>${pages[s.view].title}</span></div></div><div class="topbar-actions"><button class="search-trigger" data-action="search" aria-label="搜索任务">${icon("Search", 14)}<span class="search-label">搜索工作空间</span><span class="keycap">⌘ K</span></button><button class="mode-badge" data-action="navigate" data-view="settings">${s.mode === "demo" ? "演示模式" : snap ? "只读连接" : "未连接"}</button><button class="topbar-notice" data-action="navigate" data-view="approvals" aria-label="待办审批">${icon("Bell", 16)}${review ? "<i></i>" : ""}</button><span class="avatar" aria-label="当前工作空间所有者 Qd99">Q</span></div></header><main id="main-content" class="content" tabindex="-1">${renderPage(s)}</main></div>`;
+  return `${renderSidebar(s, pages)}<div class="shell">${renderTopbar(s, pages)}<main id="main-content" class="content" tabindex="-1">${renderPage(s)}</main></div>`;
 }
 
 function renderPage(s) {
-  const titles = {
-    overview: "查看 Agent 运行、审批与修复记录。",
-    approvals: "从候选方案到执行授权，让每次决定都有迹可循。",
-    tasks: "查看每一次诊断、修复与验证。",
-    engines: "一个任务入口，按问题复杂度分配执行引擎。",
-    rules: "事件如何匹配，以及交给哪个引擎。",
-    safety: "控制每次修复的范围、验证与失败处理。",
-    activity: "保留每一次状态变化与人工决策。",
-    settings: "选择数据来源，检查管理台的连接状态。",
-  };
-  const header = `<div class="page-heading"><div class="heading-with-icon"><span class="heading-icon">${icon(pages[s.view].icon, 22)}</span><div><h1>${s.view === "overview" ? "自愈工作台" : pages[s.view].title}</h1><p class="heading-description">${titles[s.view] || ""}</p></div></div><div class="row">${["overview", "tasks"].includes(s.view) ? `<button class="btn" data-action="refresh" aria-label="刷新工作台">${icon("RefreshCw", 13)}刷新</button><button class="btn primary" data-action="new-task" ${!s.snapshot?.capabilities.trigger ? 'disabled title="执行引擎尚未接入"' : ""}>${icon("Plus", 14)}发起巡检</button>` : s.view === "activity" ? `<button class="btn" data-action="export" ${!s.snapshot ? "disabled" : ""}>${icon("Download", 14)}导出记录</button>` : s.view === "approvals" ? `<span class="studio-state review">${icon("LockKeyhole", 13)}${s.mode === "demo" ? "演示审批 · 不执行修复" : "只读审批"}</span>` : ""}</div></div>`;
+  const header = `<div class="page-heading"><h1>${s.view === "overview" ? "自愈工作台" : pages[s.view].title}</h1><div class="row">${["overview", "tasks"].includes(s.view) ? `<button class="btn" data-action="refresh" aria-label="刷新工作台" title="刷新">${icon("RefreshCw", 15)}</button><button class="btn primary" data-action="new-task" ${!s.snapshot?.capabilities.trigger ? 'disabled title="执行引擎尚未接入"' : ""}>${icon("Plus", 14)}发起巡检</button>` : s.view === "activity" ? `<button class="btn" data-action="export" ${!s.snapshot ? "disabled" : ""}>${icon("Download", 14)}导出记录</button>` : s.view === "approvals" ? `<span class="studio-state review">${icon("LockKeyhole", 13)}${s.mode === "demo" ? "演示审批" : "只读审批"}</span>` : ""}</div></div>`;
   if (s.loading)
     return (
       header +
       `<div role="status" aria-label="正在读取配置" class="skeleton-block">${Array.from({ length: 4 }, () => `<div class="loading-row"><div class="loading-line"></div><div class="loading-line"></div></div>`).join("")}</div>`
     );
-  if (!s.snapshot && s.view !== "settings")
-    return header + connectionError(s) + footer(s);
+  if (!s.snapshot && s.view !== "settings") return header + connectionError(s);
   const views = {
     overview: renderStudioDashboard,
     approvals: renderApprovalPage,
-    tasks: taskList,
+    tasks: renderTaskPage,
     engines,
     rules,
     safety,
     activity,
     settings,
   };
-  return header + views[s.view](s) + footer(s);
-}
-function footer(s) {
-  return `<footer class="page-footer">${icon("Info", 13)}<span>${s.mode === "demo" ? "演示数据 · 操作仅保存在本次浏览器会话，不会执行真实修复。" : s.snapshot ? "配置视图 · 执行引擎尚未接入，管理接口当前只读。" : "真实服务尚未连接。"}</span></footer>`;
+  return header + views[s.view](s);
 }
 function connectionError(s) {
   return `<div class="inline-notice error"><strong>无法连接管理服务</strong><p>${e(s.error || "请确认管理服务已经启动。")}</p><div class="row"><button class="btn compact" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button><button class="btn compact" ${action("mode", 'data-mode="demo"')}>查看演示</button></div></div>`;
-}
-
-function taskList(s) {
-  const items = filterTasks(s.snapshot.tasks, {
-    query: s.query,
-    status: s.status,
-    days: s.days,
-  });
-  return `<div class="filterbar"><label class="search-field">${icon("Search", 14)}<input id="task-search" type="search" placeholder="搜索任务名称、ID 或文件…" aria-label="搜索任务" value="${e(s.query)}" /></label><label class="sr-only" for="status-filter">任务状态</label><select class="filter-select" id="status-filter">${[
-    ["all", "全部状态"],
-    ["review", "待审阅"],
-    ["running", "运行中"],
-    ["pending", "队列中"],
-    ["completed", "已完成"],
-    ["failed", "失败"],
-    ["cancelled", "已取消"],
-    ["skipped", "已跳过"],
-  ]
-    .map(
-      ([v, t]) =>
-        `<option value="${v}" ${s.status === v ? "selected" : ""}>${t}</option>`,
-    )
-    .join(
-      "",
-    )}</select>${periodSelect(s.days)}</div><div id="task-results">${taskTable(items)}<p class="table-total">${items.length} 项任务 · 按创建时间筛选 · Asia/Shanghai</p></div>`;
-}
-export function taskTable(items) {
-  return items.length
-    ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>任务</th><th>状态</th><th>执行引擎</th><th>耗时</th><th>创建时间</th><th><span class="sr-only">详情</span></th></tr></thead><tbody>${items.map((t) => `<tr><td><button class="table-name-button" ${action("open-task", `data-id="${e(t.task.id)}"`)}><span class="task-title">${e(t.title)}</span><div class="table-meta"><span class="mono">${e(t.task.id)}</span> · ${e(taskTypes[t.task.type] || t.task.type)}</div></button></td><td>${statusLabel(t)}</td><td class="nowrap muted">${e(engineName(t.engineId))}</td><td class="nowrap muted">${formatDuration(t.result?.timings?.durationMs)}</td><td class="nowrap muted">${dateTime(t.task.metadata.createdAt)}</td><td>${taskButton(t.task.id, icon("ArrowUpRight", 14) + '<span class="sr-only">详情</span>')}</td></tr>`).join("")}</tbody></table></div>`
-    : empty("没有匹配的任务", "试试其他关键词、状态或时间范围。");
 }
 
 function engines(s) {
@@ -217,9 +158,56 @@ function activity(s) {
 
 function settings(s) {
   const snap = s.snapshot;
-  return `<div class="settings-layout"><div><section class="settings-section"><h2>数据来源</h2><p>演示操作与真实服务隔离。切换来源会关闭当前任务详情。</p><div class="connection-options" role="group" aria-label="数据来源"><button class="connection-option ${s.mode === "demo" ? "active" : ""}" ${action("mode", 'data-mode="demo"')} aria-pressed="${s.mode === "demo"}"><span class="radio"></span><div><h3>交互演示</h3><p>体验审阅、取消与重试，数据仅存于内存。</p></div></button><button class="connection-option ${s.mode === "live" ? "active" : ""}" ${action("mode", 'data-mode="live"')} aria-pressed="${s.mode === "live"}"><span class="radio"></span><div><h3>真实管理服务</h3><p>连接同源 API，读取项目实际配置。</p></div></button></div>${s.error ? connectionError(s) : ""}</section><section class="settings-section"><div class="spread"><h2>连接详情</h2><button class="text-button" ${action("refresh")}>${icon("RefreshCw", 12)}刷新</button></div><div class="config-row"><span>数据状态</span><span>${s.mode === "demo" ? "演示快照" : snap ? "只读配置已连接" : "未连接"}</span></div><div class="config-row"><span>配置来源</span><span>${!snap ? "—" : s.mode === "demo" ? "演示模板" : snap.configSource === "example" ? "healing-config.example.json" : "healing-config.json"}</span></div><div class="config-row"><span>规则来源</span><span>${!snap ? "—" : s.mode === "demo" ? "演示模板" : snap.rulesSource === "configured" ? "healing-rules.json" : "healing-rules.example.json"}</span></div><div class="config-row"><span>仓库</span><code>${e(snap?.project?.repo || "—")}</code></div><div class="config-row"><span>分支</span><code>${e(snap?.project?.defaultBranch || "—")}</code></div><div class="config-row"><span>最近读取</span><span>${snap ? dateTime(snap.generatedAt) : "—"}</span></div></section><section class="settings-section"><h2>本地接入</h2><p>在项目根目录启动同源管理台。在线设计预览不包含执行服务。</p><pre class="code-block">npm run dev
-# http://127.0.0.1:8787
-# GET /api/healing/snapshot</pre><p class="margin-top">网关读取现有配置并过滤敏感字段。当前没有具体执行器，任务写操作返回 501。</p></section><section class="settings-section"><h2>可用能力</h2><div class="config-row"><span>配置读取</span><span>${snap ? "可用" : "未连接"}</span></div><div class="config-row"><span>真实任务执行、取消与重试</span><span class="muted">尚未接入</span></div><div class="config-row"><span>真实审批与回滚</span><span class="muted">尚未接入</span></div></section></div><aside class="help-note"><h3>如实显示连接状态</h3><p>服务连接失败时显示错误。不会自动切换到演示数据，也不会把配置存在显示为 Agent 在线。</p><p class="margin-top">API Key、GitHub 私钥与 Webhook Secret 留在服务端，不进入管理台响应。</p></aside></div>`;
+  const demo = s.mode === "demo";
+  const unavailable = Boolean(s.error) || !snap;
+  const tone = unavailable ? "error" : demo ? "demo" : "connected";
+  const status = unavailable ? "未连接" : demo ? "演示可用" : "已连接 · 只读";
+  const sourceFile = (kind) => {
+    if (!snap) return "未读取";
+    if (demo) return "演示模板";
+    const source = kind === "config" ? snap.configSource : snap.rulesSource;
+    if (source === "configured") return `healing-${kind}.json`;
+    if (source === "example") return `healing-${kind}.example.json`;
+    return "未提供";
+  };
+  const demoActions =
+    !unavailable &&
+    ["trigger", "cancel", "retry", "approve"].some(
+      (key) => snap?.capabilities?.[key] === true,
+    );
+  const readAt = snap?.generatedAt;
+  return `<section class="connection-settings" aria-label="工作空间连接">
+    <div class="cs-card">
+      <header class="cs-header"><h2>数据来源</h2>${!unavailable ? `<button type="button" class="cs-refresh" ${action("refresh")} aria-label="刷新连接状态">${icon("RefreshCw", 14)}刷新</button>` : ""}</header>
+      <div class="cs-sources" role="group" aria-label="选择数据来源">
+        <button type="button" class="cs-source ${demo ? "is-active" : ""}" ${action("mode", 'data-mode="demo"')} aria-pressed="${demo}">${icon("FlaskConical", 19)}<span><strong>交互演示</strong><small>会话内模拟</small></span></button>
+        <button type="button" class="cs-source ${!demo ? "is-active" : ""}" ${action("mode", 'data-mode="live"')} aria-pressed="${!demo}">${icon("Plug", 19)}<span><strong>管理服务</strong><small>同源只读配置</small></span></button>
+      </div>
+      ${unavailable ? `<div class="cs-error" role="alert">${icon("WifiOff", 18)}<div><strong>${demo ? "演示数据暂不可用" : "无法连接管理服务"}</strong><p>${e(s.error || "请启动管理服务后重新连接。")}</p></div><button type="button" class="cs-reconnect" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button></div>` : ""}
+      <dl class="cs-properties">
+        <div><dt>项目</dt><dd class="cs-project">${e(snap?.project?.repo || "—")}</dd></div>
+        <div><dt>分支</dt><dd><code>${e(snap?.project?.defaultBranch || "—")}</code></dd></div>
+        <div><dt>连接状态</dt><dd><span class="cs-status ${tone}"><i aria-hidden="true"></i>${status}</span></dd></div>
+        <div><dt>最近读取</dt><dd>${readAt ? `<time datetime="${e(readAt)}">${dateTime(readAt)}<span class="cs-timezone">UTC+8</span></time>` : "—"}</dd></div>
+      </dl>
+      <dl class="cs-capabilities" aria-label="可用能力">
+        <div><dt>${demo ? "演示操作" : "配置读取"}</dt><dd class="${(!demo && !unavailable) || demoActions ? "is-available" : ""}">${unavailable ? "未连接" : demo && !demoActions ? "未开放" : "可用"}</dd></div>
+        <div><dt>真实执行</dt><dd>未接入</dd></div>
+      </dl>
+      <details class="cs-details">
+        <summary><span>${icon("Terminal", 15)}接入与接口信息</span>${icon("ChevronDown", 14)}</summary>
+        <div class="cs-details-content">
+          <div class="cs-setup"><h3>本地启动</h3><p>在仓库根目录运行：</p><pre><code>npm run dev</code></pre><p>默认地址 <code>http://127.0.0.1:8787</code></p></div>
+          <dl class="cs-technical">
+            <div><dt>管理接口</dt><dd><code>GET /api/healing/snapshot</code></dd></div>
+            <div><dt>项目配置</dt><dd><code>${e(sourceFile("config"))}</code></dd></div>
+            <div><dt>路由规则</dt><dd><code>${e(sourceFile("rules"))}</code></dd></div>
+          </dl>
+          <p class="cs-contract-note">真实执行、审批与回滚尚未接入，任务写入接口返回 501。</p>
+        </div>
+      </details>
+    </div>
+  </section>`;
 }
 
 export function renderTaskDetail(item, s) {

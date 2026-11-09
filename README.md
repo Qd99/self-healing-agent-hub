@@ -4,7 +4,7 @@
 
 ## Web 工作台
 
-当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v3 使用蓝灰背景、实感玻璃面板与语义图标，工作台展示自愈流程、任务动态与 Agent 状态；独立审批中心支持查看分支节点、候选 diff、检查证据和决定历史，并演示「代码审阅 → 执行授权」两级审批。
+当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v4 简化了任务、侧栏与连接设置：任务支持组合筛选、分页、跨页选择、批量取消/重试和 CSV 导出，辅助信息按需展开。工作台展示自愈流程、任务动态与 Agent 状态；独立审批中心支持查看分支节点、候选 diff、检查证据和决定历史，并演示「代码审阅 → 执行授权」两级审批。
 
 在仓库根目录运行，要求 Node.js 18 或更新版本：
 
@@ -15,7 +15,7 @@ npm run dev
 - [打开本地工作台](http://127.0.0.1:8787/)：读取配置，当前管理接口只读。
 - [打开交互演示](http://127.0.0.1:8787/?demo=1)：体验 48 条虚构任务，以及模拟创建、取消、重试和审批。
 - [工作台使用与设计说明](docs/console-guide.md) · [API 与框架对接](docs/console-api.md)
-- [v3 实际截图与验收](docs/design/validation.md) · [交互预览](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
+- [v4 任务工作区与验收](docs/design/task-workspace-v4.md) · [v3 审批验收](docs/design/validation.md) · [交互预览](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
 
 工作台本身不需要 Redis、MySQL 或 GitHub App 凭据。未创建实际配置时，服务读取仓库中的示例配置，并明确显示来源。演示操作只保存在当前页面内存，重新加载页面会重置。
 
@@ -101,6 +101,7 @@ cp .env.example .env
 详细步骤见 [docs/guides/github-app-setup.md](docs/guides/github-app-setup.md)
 
 简要步骤：
+
 1. 在 GitHub 创建新的 GitHub App
 2. 设置权限：Contents (write), Issues (write), Pull requests (write), Checks (read)
 3. 配置 Webhook URL: `https://your-domain.com/webhook/github`
@@ -194,6 +195,7 @@ abstract class WorkflowEngine {
 ```
 
 支持的引擎：
+
 - **Direct AI**: 快速通道，单次 AI 调用
 - **ZCode Workflow**: 复杂的 Multi-Agent 协作
 - **Codex**: 接入 Codex 编排系统（可扩展）
@@ -208,14 +210,14 @@ abstract class WorkflowEngine {
   "rules": [
     {
       "match": { "taskType": "lint-error" },
-      "processor": { 
-        "engine": "fast", 
-        "action": "auto-commit" 
+      "processor": {
+        "engine": "fast",
+        "action": "auto-commit"
       }
     },
     {
       "match": { "taskType": "test-failure" },
-      "processor": { 
+      "processor": {
         "engine": "complex",
         "action": "auto-commit",
         "workflow": "diagnose-and-fix"
@@ -286,7 +288,7 @@ import { WorkflowEngine } from '@smallphone/healing-agent-framework';
 
 class MyCustomEngine extends WorkflowEngine {
   name = 'my-engine';
-  
+
   async execute(task: Task, context: Context): Promise<Result> {
     // 你的编排逻辑
     // 可以调用 Codex、LangGraph 等任何工具
@@ -332,25 +334,30 @@ registerEngine('my-engine', MyCustomEngine);
 ## 开发路线图
 
 ### Phase 1: 基础框架 ✅ (进行中)
+
 - [x] EventHub 核心
 - [x] 快速通道处理器
 - [ ] GitHub App 集成
 - [ ] L1 安全检查
 
 ### Phase 2: 安全防护
+
 - [ ] L2: CI 验证
 - [ ] L3: 自动回滚
 - [ ] L4: 熔断器
 
 ### Phase 3: 复杂工作流
+
 - [ ] ZCode Engine
 - [ ] Multi-Agent 协作
 
 ### Phase 4: 定期巡检
+
 - [ ] Cron 调度器
 - [ ] 健康检查任务
 
 ### Phase 5: 通用化
+
 - [ ] 提取 npm 包
 - [ ] 多项目支持
 
@@ -359,6 +366,7 @@ registerEngine('my-engine', MyCustomEngine);
 ## 贡献
 
 欢迎贡献！特别是：
+
 - 新的处理器（processor）
 - 新的引擎实现（engine）
 - 文档改进
@@ -375,6 +383,7 @@ MIT
 ## 参考
 
 本项目设计参考了：
+
 - [文章：一年实践的 Agent 自动化系统](https://x.com/khazix0918/status/2117054043868860521)
 - DS 的 Super Agent 架构
 - ZCode Dynamic Workflow

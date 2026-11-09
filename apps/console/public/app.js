@@ -1,5 +1,5 @@
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
-import { filterTasks } from "./model.js";
+import { createTaskController } from "./task-controller.js";
 import { getApprovalFlow } from "./approvals.js";
 import {
   pages,
@@ -7,12 +7,13 @@ import {
   renderTaskDetail,
   renderCreate,
   renderRuleDetail,
-  taskTable,
 } from "./views.js";
 
 const app = document.querySelector("#app");
 const detailDialog = document.querySelector("#detail-dialog");
 const createDialog = document.querySelector("#create-dialog");
+const bulkDialog = document.querySelector("#bulk-dialog");
+const mobileViewport = window.matchMedia("(max-width: 650px)");
 const toastElement = document.querySelector("#toast");
 const requestedMode =
   new URLSearchParams(location.search).get("demo") === "1"
@@ -25,6 +26,13 @@ const readTheme = () => {
     return "light";
   }
 };
+const readSidebar = () => {
+  try {
+    return localStorage.getItem("heal-sidebar-collapsed") === "1";
+  } catch {
+    return false;
+  }
+};
 const state = {
   view: pages[location.hash.slice(1)] ? location.hash.slice(1) : "overview",
   mode: requestedMode === "demo" ? "demo" : "live",
@@ -34,12 +42,11 @@ const state = {
   loading: true,
   overviewTab: "focus",
   days: 7,
-  query: "",
-  status: "all",
   expandedTask: "",
   selectedTask: "",
   detailTab: "trace",
   mobileNav: false,
+  sidebarCollapsed: readSidebar(),
   approvalTaskId: "",
   approvalNodeId: "",
   approvalTab: "flow",
@@ -53,6 +60,16 @@ let abortController = null;
 let loadSequence = 0;
 let toastTimer;
 let lastFocus = null;
+const taskController = createTaskController({
+  state,
+  render,
+  toast,
+  bulkDialog,
+  setSnapshot(next) {
+    state.snapshot = next;
+    demoSnapshot = next;
+  },
+});
 const flowResizeObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) fitFlowCanvas(target);
 });
@@ -68,8 +85,26 @@ function fitFlowCanvas(canvas) {
 function render() {
   const flowScroll =
     document.querySelector(".af-canvas-scroll")?.scrollLeft || 0;
+  taskController.reconcile();
   document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.view = state.view;
+  document.documentElement.dataset.sidebar =
+    state.sidebarCollapsed && !mobileViewport.matches
+      ? "collapsed"
+      : "expanded";
   app.innerHTML = renderShell(state);
+  taskController.afterRender();
+  const mobileOpen = mobileViewport.matches && state.mobileNav;
+  document.body.classList.toggle("nav-overlay-open", mobileOpen);
+  const sidebar = document.querySelector(".sidebar"),
+    shell = document.querySelector(".shell");
+  sidebar.inert = mobileViewport.matches && !mobileOpen;
+  shell.inert = mobileOpen;
+  if (mobileOpen) {
+    sidebar.setAttribute("role", "dialog");
+    sidebar.setAttribute("aria-modal", "true");
+  }
+
   const canvas = document.querySelector(".af-canvas-scroll");
   flowResizeObserver.disconnect();
   if (canvas) {
@@ -139,6 +174,7 @@ function go(view) {
   closeDetail();
   closeCreate();
   state.mobileNav = false;
+  taskController.onNavigate();
   if (location.hash !== `#${view}`) history.pushState(null, "", `#${view}`);
   state.view = view;
   render();
@@ -167,6 +203,7 @@ window.addEventListener("hashchange", () => {
     ? location.hash.slice(1)
     : "overview";
   state.mobileNav = false;
+  taskController.onNavigate();
   closeDetail();
   closeCreate();
   render();
@@ -223,6 +260,7 @@ async function loadData(mode = state.mode) {
   abortController = new AbortController();
   closeDetail();
   closeCreate();
+  taskController.reset(mode !== state.mode);
   state.mode = mode;
   state.error = "";
   state.loading = true;
@@ -304,16 +342,37 @@ document.addEventListener("click", (event) => {
     document.querySelector("#main-content")?.focus();
     return;
   }
+  const navLink = event.target.closest('.sidebar a[href^="#"]');
+  if (navLink) {
+    event.preventDefault();
+    go(navLink.getAttribute("href").slice(1));
+    document.querySelector("#main-content")?.focus({ preventScroll: true });
+    return;
+  }
   const button = event.target.closest("[data-action]");
+  if (taskController.handleClick(event, button)) return;
   if (!button || button.disabled) return;
   const { action, id, tab, view, mode, command, theme } = button.dataset;
-  if (action === "theme") {
+  if (action === "sidebar-toggle") {
+    state.sidebarCollapsed = !state.sidebarCollapsed;
+    try {
+      localStorage.setItem(
+        "heal-sidebar-collapsed",
+        state.sidebarCollapsed ? "1" : "0",
+      );
+    } catch {}
+    render();
+    document
+      .querySelector('[data-action="sidebar-toggle"]')
+      ?.focus({ preventScroll: true });
+  } else if (action === "theme") {
     state.theme = theme === "dark" ? "dark" : "light";
     try {
       localStorage.setItem("heal-theme", state.theme);
     } catch {}
     render();
     refreshDetail();
+    document.querySelector(".sidebar-theme")?.focus({ preventScroll: true });
   } else if (action === "open-nav") {
     state.mobileNav = true;
     render();
@@ -454,34 +513,22 @@ document.addEventListener("input", (event) => {
     state.approvalComment = event.target.value;
     return;
   }
-  if (event.target.id !== "task-search") return;
-  state.query = event.target.value;
-  const results = document.querySelector("#task-results");
-  if (results && state.snapshot) {
-    const tasks = filterTasks(state.snapshot.tasks, {
-      query: state.query,
-      status: state.status,
-      days: state.days,
-    });
-    results.innerHTML =
-      taskTable(tasks) +
-      `<p class="table-total" role="status">${tasks.length} 项任务 · 按创建时间筛选 · Asia/Shanghai</p>`;
-  }
+  taskController.handleInput(event);
+});
+document.addEventListener("compositionend", (event) => {
+  if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if (taskController.handleChange(event)) return;
   if (event.target.id === "period") {
     state.days = [1, 7, 30].includes(Number(event.target.value))
       ? Number(event.target.value)
       : 7;
     render();
-    document.querySelector("#period")?.focus();
-  }
-  if (event.target.id === "status-filter") {
-    state.status = event.target.value;
-    render();
-    document.querySelector("#status-filter")?.focus();
+    document.querySelector("#period")?.focus({ preventScroll: true });
   }
 });
+
 document.addEventListener("submit", (event) => {
   if (
     ["approval-decision-form", "approval-resubmit-form"].includes(
@@ -551,8 +598,43 @@ document.addEventListener("submit", (event) => {
   }
 });
 document.addEventListener("keydown", (event) => {
+  if (state.mobileNav && mobileViewport.matches) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      state.mobileNav = false;
+      render();
+      document.querySelector(".mobile-menu")?.focus();
+      return;
+    }
+    if (event.key === "Tab") {
+      const focusables = [
+        ...document.querySelectorAll(
+          ".sidebar a, .sidebar button:not([disabled])",
+        ),
+      ].filter((el) => el.getClientRects().length);
+      const first = focusables[0],
+        last = focusables.at(-1);
+      if (
+        event.shiftKey &&
+        (document.activeElement === first ||
+          !document.activeElement.closest(".sidebar"))
+      ) {
+        event.preventDefault();
+        last?.focus();
+      } else if (
+        !event.shiftKey &&
+        (document.activeElement === last ||
+          !document.activeElement.closest(".sidebar"))
+      ) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
+    if (event.ctrlKey || event.metaKey) return;
+  }
+  if (taskController.handleKeydown(event)) return;
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-    if (detailDialog.open || createDialog.open) return;
+    if (detailDialog.open || createDialog.open || bulkDialog.open) return;
     event.preventDefault();
     go("tasks");
     requestAnimationFrame(() =>
@@ -584,7 +666,7 @@ document.addEventListener("keydown", (event) => {
     tabs[next].click();
   }
 });
-for (const dialog of [detailDialog, createDialog])
+for (const dialog of [detailDialog, createDialog, bulkDialog])
   dialog.addEventListener("click", (event) => {
     if (event.target !== dialog) return;
     const rect = dialog.getBoundingClientRect();
@@ -596,5 +678,9 @@ for (const dialog of [detailDialog, createDialog])
     )
       dialog.close();
   });
+mobileViewport.addEventListener("change", () => {
+  if (!mobileViewport.matches) state.mobileNav = false;
+  render();
+});
 render();
 loadData();

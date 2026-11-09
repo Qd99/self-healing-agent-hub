@@ -1,0 +1,458 @@
+/* Connection settings use one quiet panel and progressive detail. */
+.connection-settings {
+  width: 100%;
+  max-width: 800px;
+  color: var(--ink);
+}
+
+.cs-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.cs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 65px;
+  padding: 19px 25px 14px;
+}
+
+.cs-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cs-refresh,
+.cs-reconnect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.cs-refresh {
+  margin-right: -9px;
+  color: var(--muted);
+}
+
+.cs-refresh:hover {
+  color: var(--ink);
+  background: var(--subtle);
+}
+
+.cs-sources {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 25px 19px;
+}
+
+.cs-source {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 73px;
+  padding: 14px 17px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+
+.cs-source > svg {
+  color: var(--muted);
+}
+
+.cs-source strong,
+.cs-source small {
+  display: block;
+}
+
+.cs-source strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.cs-source small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.cs-source:hover {
+  border-color: color-mix(in srgb, var(--blue) 35%, var(--line));
+  background: var(--subtle);
+}
+
+.cs-source.is-active {
+  border-color: color-mix(in srgb, var(--blue) 60%, var(--line));
+  background: color-mix(in srgb, var(--blue-soft) 65%, var(--surface));
+}
+
+.cs-source.is-active > svg,
+.cs-source.is-active strong {
+  color: var(--blue);
+}
+
+.cs-properties {
+  margin: 0;
+  padding: 0 25px 9px;
+}
+
+.cs-properties > div,
+.cs-technical > div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 20px;
+  min-width: 0;
+  padding: 12px 0;
+}
+
+.cs-properties > div + div {
+  border-top: 1px solid var(--line);
+}
+
+.cs-properties dt,
+.cs-technical dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.cs-properties dd,
+.cs-technical dd {
+  min-width: 0;
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.cs-properties .cs-project {
+  font-weight: 500;
+}
+
+.cs-properties code {
+  font-size: 12px;
+}
+
+.cs-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.cs-status i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.cs-status.demo {
+  color: var(--blue);
+}
+
+.cs-status.connected,
+.cs-capabilities dd.is-available {
+  color: var(--green);
+}
+
+.cs-status.error {
+  color: var(--red);
+}
+
+.cs-timezone {
+  margin-left: 8px;
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.cs-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 30px;
+  margin: 0;
+  padding: 15px 25px;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--subtle) 45%, var(--surface));
+}
+
+.cs-capabilities > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.cs-capabilities dt {
+  color: var(--muted);
+}
+
+.cs-capabilities dd {
+  margin: 0;
+  color: var(--muted);
+}
+
+.cs-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0 25px 10px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--red) 25%, var(--line));
+  border-radius: 7px;
+  background: var(--red-bg);
+}
+
+.cs-error > svg {
+  margin-top: 2px;
+  color: var(--red);
+}
+
+.cs-error > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.cs-error strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.cs-error p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+.cs-reconnect {
+  flex: none;
+  min-height: 30px;
+  border-color: color-mix(in srgb, var(--red) 28%, var(--line));
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 11px;
+}
+
+.cs-reconnect:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.cs-details {
+  border-top: 1px solid var(--line);
+}
+
+.cs-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 53px;
+  padding: 15px 25px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  list-style: none;
+}
+
+.cs-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.cs-details summary > span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.cs-details summary:hover {
+  color: var(--ink);
+  background: var(--subtle);
+}
+
+.cs-details summary > svg {
+  transition: transform 0.15s ease;
+}
+
+.cs-details[open] summary > svg {
+  transform: rotate(180deg);
+}
+
+.cs-details-content {
+  padding: 5px 25px 23px;
+  border-top: 1px solid var(--line);
+}
+
+.cs-setup {
+  padding: 16px 0 18px;
+}
+
+.cs-setup h3 {
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.cs-setup p,
+.cs-contract-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.75;
+}
+
+.cs-setup pre {
+  margin: 10px 0;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--code);
+  overflow-x: auto;
+}
+
+.cs-setup pre code {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.cs-technical {
+  margin: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.cs-technical > div {
+  padding: 6px 0;
+}
+
+.cs-technical dt,
+.cs-technical dd,
+.cs-technical code {
+  font-size: 11px;
+}
+
+.cs-contract-note {
+  margin-top: 14px;
+}
+
+.connection-settings button:focus-visible,
+.connection-settings summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: -3px;
+}
+
+[data-theme="dark"] .cs-source.is-active {
+  background: color-mix(in srgb, var(--blue-soft) 65%, var(--surface));
+  border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
+}
+
+[data-theme="dark"] .cs-error {
+  border-color: color-mix(in srgb, var(--red) 28%, var(--line));
+}
+
+@media (max-width: 650px) {
+  .cs-card {
+    border-radius: 10px;
+  }
+
+  .cs-header {
+    min-height: 60px;
+    padding: 16px 18px 12px;
+  }
+
+  .cs-sources {
+    gap: 10px;
+    padding: 0 18px 16px;
+  }
+
+  .cs-source {
+    gap: 9px;
+    min-height: 72px;
+    padding: 12px;
+  }
+
+  .cs-source strong {
+    font-size: 12px;
+  }
+
+  .cs-properties {
+    padding: 0 18px 8px;
+  }
+
+  .cs-properties > div,
+  .cs-technical > div {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .cs-capabilities {
+    gap: 10px 22px;
+    padding: 14px 18px;
+  }
+
+  .cs-error {
+    flex-wrap: wrap;
+    margin: 0 18px 10px;
+    padding: 13px;
+  }
+
+  .cs-error > div {
+    flex-basis: calc(100% - 29px);
+  }
+
+  .cs-reconnect {
+    margin-left: 29px;
+  }
+
+  .cs-details summary {
+    padding: 15px 18px;
+  }
+
+  .cs-details-content {
+    padding: 5px 18px 19px;
+  }
+}
+
+@media (max-width: 360px) {
+  .cs-source {
+    gap: 7px;
+    padding: 11px 9px;
+  }
+
+  .cs-source > svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .cs-source small {
+    font-size: 10px;
+  }
+
+  .cs-capabilities {
+    gap: 9px 17px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-details summary > svg {
+    transition: none;
+  }
+}
