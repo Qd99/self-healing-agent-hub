@@ -1,3 +1,8 @@
+import {
+  normalizeMonitoringConfig,
+  DEMO_MONITORING_CONFIG,
+} from "./monitoring-model.js";
+
 /**
  * Fictional fixtures for the in-memory console demo.
  * No network, executor, shell, repository, or persistent configuration is used.
@@ -926,6 +931,7 @@ export function createDemoSnapshot(now = Date.now()) {
     rulesSource: "example",
     rulesVersion: "1.0.0",
     notice: "演示快照 · 全部任务与执行结果均为虚构数据",
+    monitoring: normalizeMonitoringConfig(DEMO_MONITORING_CONFIG),
     project: clone(PROJECT),
     capabilities: {
       trigger: true,

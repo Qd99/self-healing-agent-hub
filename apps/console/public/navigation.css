@@ -1,35 +1,4 @@
 /* Quiet navigation and shared page chrome. */
-:root {
-  --sidebar: 176px;
-  --paper: #fafbfc;
-  --side: #f6f7f9;
-  --subtle: #f7f8fa;
-  --hover: #eef0f4;
-  --ink: #29313f;
-  --muted: #697383;
-  --faint: #7d8796;
-  --line: #e8ebf0;
-  --blue: #5b6dd6;
-  --blue-soft: #eef0ff;
-  --accent: #5b6dd6;
-  --panel-shadow: 0 1px 2px #202e4205;
-}
-:root[data-theme="dark"] {
-  --paper: #151a23;
-  --side: #191f2a;
-  --subtle: #1e2531;
-  --hover: #2a3241;
-  --surface: #202735;
-  --surface-raised: #202735;
-  --line: #303846;
-  --ink: #e4e8f1;
-  --muted: #a3adbd;
-  --faint: #8995a9;
-  --blue: #a0adfa;
-  --blue-soft: #2b3454;
-  --accent: #6579e2;
-  --panel-shadow: none;
-}
 :root[data-sidebar="collapsed"] {
   --sidebar: 64px;
 }

@@ -1,44 +1,4 @@
 /* Approval workspace: solid panes, visible state, and motion with a purpose. */
-:root {
-  --af-surface: rgba(255, 255, 255, 0.93);
-  --af-subtle: #f7f9fd;
-  --af-rim: rgba(255, 255, 255, 0.9);
-  --af-line: #e4e9f2;
-  --af-shadow: 0 2px 4px #25365d04, 0 12px 35px #25365d05;
-  --af-blue: #5576ef;
-  --af-blue-soft: #eef2ff;
-  --af-teal: #2b9e8e;
-  --af-teal-soft: #eaf8f4;
-  --af-violet: #8b6bdd;
-  --af-violet-soft: #f2edff;
-  --af-amber: #bc8739;
-  --af-amber-soft: #fff5e4;
-  --af-red: #c27079;
-  --af-red-soft: #fff0f1;
-  --af-slate: #7f8ca7;
-  --af-slate-soft: #edf1f7;
-  --af-dot: #c9d3e85c;
-}
-[data-theme="dark"] {
-  --af-surface: rgba(29, 36, 53, 0.96);
-  --af-subtle: #171f30;
-  --af-rim: #ffffff0b;
-  --af-line: #354058;
-  --af-shadow: 0 1px 2px #0002, 0 14px 35px #0002;
-  --af-blue: #9caeff;
-  --af-blue-soft: #283655;
-  --af-teal: #7dcebd;
-  --af-teal-soft: #1f3b3b;
-  --af-violet: #b5a0f4;
-  --af-violet-soft: #352e4e;
-  --af-amber: #e0b16e;
-  --af-amber-soft: #41372d;
-  --af-red: #e69ca5;
-  --af-red-soft: #452f3c;
-  --af-slate: #a2b0cd;
-  --af-slate-soft: #2b374d;
-  --af-dot: #90a4d329;
-}
 .af-overview {
   display: flex;
   gap: 12px;

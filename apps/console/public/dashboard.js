@@ -8,6 +8,7 @@ import {
 } from "./model.js";
 import { renderFlowCanvas, renderApprovalTeaser } from "./approval-views.js";
 import { getApprovalFlow } from "./approvals.js";
+import { uiEmpty, uiStatus } from "./ui.js";
 
 const names = {
   running: "运行中",
@@ -34,7 +35,12 @@ const date = (at) =>
     hour12: false,
   }).format(new Date(at));
 const empty = (title, text) =>
-  `<div class="studio-empty"><span class="illustrated-icon">${icon("Orbit", 27)}</span><h3>${e(title)}</h3><p>${e(text)}</p></div>`;
+  uiEmpty({
+    icon: "Inbox",
+    title,
+    description: text,
+    className: "studio-empty",
+  });
 
 function miniTrend(tasks, days) {
   const trend = getTrend(tasks, { days });
@@ -51,11 +57,35 @@ function taskRow(item) {
   const status = review ? "review" : item.status.status;
   const glyph = typeIcons[item.task.type] || "ListChecks";
   const canReview = !!item.approvalFlow;
-  return `<button class="studio-task" data-action="${review && canReview ? "select-approval" : "open-task"}" data-id="${e(item.task.id)}"><span class="task-type-icon ${status === "running" ? "blue" : status === "review" ? "violet" : status === "failed" ? "rose" : "neutral"}">${icon(glyph, 19)}</span><span class="studio-task-main"><strong>${e(item.title)}</strong><span><code>${e(item.task.id)}</code><i></i>${e(engineName(item.engineId))}${item.diff.length ? `<i></i>${item.diff.length} 个文件` : ""}</span></span><span class="studio-state ${e(status)}">${icon(status === "completed" ? "CircleCheck" : status === "review" ? "UserRoundCheck" : status === "running" ? "Activity" : status === "failed" ? "CircleAlert" : "Clock3", 12)}${review ? "待审批" : names[status] || "未知"}</span><time>${date(item.task.metadata.createdAt)}</time><span class="task-open-arrow">${icon("ArrowUpRight", 15)}</span></button>`;
+  const badge = uiStatus({
+    label: review ? "待审批" : names[status] || "未知",
+    tone:
+      status === "completed"
+        ? "success"
+        : status === "failed"
+          ? "error"
+          : status === "review"
+            ? "warning"
+            : status === "running"
+              ? "info"
+              : "neutral",
+    icon:
+      status === "completed"
+        ? "CircleCheck"
+        : status === "review"
+          ? "UserRoundCheck"
+          : status === "running"
+            ? "Activity"
+            : status === "failed"
+              ? "CircleAlert"
+              : "Clock3",
+    className: `studio-state ${status}`,
+  });
+  return `<button class="studio-task" data-action="${review && canReview ? "select-approval" : "open-task"}" data-id="${e(item.task.id)}"><span class="task-type-icon ${status === "running" ? "blue" : status === "review" ? "violet" : status === "failed" ? "rose" : "neutral"}">${icon(glyph, 19)}</span><span class="studio-task-main"><strong>${e(item.title)}</strong><span><code>${e(item.task.id)}</code><i></i>${e(engineName(item.engineId))}${item.diff.length ? `<i></i>${item.diff.length} 个文件` : ""}</span></span>${badge}<time>${date(item.task.metadata.createdAt)}</time><span class="task-open-arrow">${icon("ArrowUpRight", 15)}</span></button>`;
 }
 
 function enginePanel(s) {
-  return `<section class="glass-panel studio-engines"><div class="panel-heading"><span class="row"><span class="section-icon blue">${icon("Bot", 17)}</span><h2>Agent 引擎</h2></span><button class="text-button" data-action="navigate" data-view="engines">管理 ${icon("ArrowUpRight", 13)}</button></div><div class="studio-engine-list">${s.snapshot.engines
+  return `<section class="ui-card glass-panel studio-engines"><div class="panel-heading"><span class="row"><span class="section-icon blue">${icon("Bot", 17)}</span><h2>Agent 引擎</h2></span><button class="ui-button ui-button-ghost text-button" data-action="navigate" data-view="engines">管理 ${icon("ArrowUpRight", 13)}</button></div><div class="studio-engine-list">${s.snapshot.engines
     .map((en, i) => {
       const running = s.snapshot.tasks.filter(
         (t) => t.engineId === en.id && t.status.status === "running",
@@ -68,7 +98,7 @@ function enginePanel(s) {
 }
 
 function recentActivity(s) {
-  return `<section class="glass-panel studio-recent"><div class="panel-heading"><span class="row"><span class="section-icon cyan">${icon("Activity", 17)}</span><h2>最近活动</h2></span><button class="text-button" data-action="navigate" data-view="activity">全部 ${icon("ArrowRight", 13)}</button></div><div class="studio-activity-list">${
+  return `<section class="ui-card glass-panel studio-recent"><div class="panel-heading"><span class="row"><span class="section-icon cyan">${icon("Activity", 17)}</span><h2>最近活动</h2></span><button class="ui-button ui-button-ghost text-button" data-action="navigate" data-view="activity">全部 ${icon("ArrowRight", 13)}</button></div><div class="studio-activity-list">${
     s.snapshot.activity.length
       ? s.snapshot.activity
           .slice(0, 3)
@@ -100,7 +130,7 @@ export function renderStudioDashboard(s) {
         ? running
         : all;
   list = list.slice(0, 5);
-  return `<div class="studio-overview-tools"><div class="studio-section-label">${icon("Activity", 14)}运行概览<span>${all.length} 项任务</span></div><label class="row muted">${icon("CalendarDays", 13)}<select id="period" aria-label="时间范围">${[
+  return `<div class="studio-overview-tools"><div class="studio-section-label">${icon("Activity", 14)}运行概览<span>${all.length} 项任务</span></div><label class="row muted">${icon("CalendarDays", 13)}<select class="ui-select-input" id="period" aria-label="时间范围">${[
     [1, "今天"],
     [7, "近 7 天"],
     [30, "近 30 天"],
@@ -110,18 +140,18 @@ export function renderStudioDashboard(s) {
         `<option value="${n}" ${s.days === n ? "selected" : ""}>${label}</option>`,
     )
     .join("")}</select></label></div>
-    <section class="glass-panel studio-metrics" aria-label="运行统计">${metric("Activity", "blue", "运行与排队", running.length, "项任务")}${metric("UserRoundCheck", "violet", "等待审批", reviews.length, "项请求")}${metric("CircleCheck", "mint", "修复成功率", m.successRate === null ? "—" : `${m.successRate.toFixed(1)}<small>%</small>`, "", miniTrend(all, s.days))}${metric("Clock3", "peach", "平均修复耗时", formatDuration(m.averageDurationMs), "")}</section>
-    <section class="glass-panel studio-flow-section"><div class="panel-heading"><span class="row"><span class="section-icon violet">${icon("Workflow", 18)}</span><span><h2>自愈流程</h2><span class="panel-subtitle">${current ? e(current.title) : "从诊断到审批，追踪每一步修复"}</span></span></span><div class="row"><span class="studio-state ${flow?.status === "pending" ? "review" : "pending"}">${icon(flow?.status === "pending" ? "UserRoundCheck" : "Clock3", 12)}${flow?.status === "pending" ? "等待人工审批" : flow?.status === "approved" ? "已授权，等待执行" : "流程概览"}</span>${current ? `<button class="btn compact glass-action" data-action="select-approval" data-id="${e(current.task.id)}">查看审批流 ${icon("ArrowUpRight", 14)}</button>` : ""}</div></div>${current ? renderFlowCanvas(current, { compact: true, mode: s.mode, selectedNodeId: flow.currentNodeId, zoom: 1 }) : empty("暂无待处理流程", "接入执行器后，任务与审批节点将在这里呈现。")}<div class="studio-flow-footer"><div class="row"><span class="flow-legend completed"></span>已完成<span class="flow-legend current"></span>当前节点<span class="flow-legend blocked"></span>等待前序</div><span>${icon("MousePointer2", 12)}点击节点查看审批详情</span></div></section>
-    <div class="studio-lower-grid"><div class="studio-left-stack"><section class="glass-panel studio-tasks"><div class="panel-heading"><span class="row"><span class="section-icon blue">${icon("ListChecks", 17)}</span><h2>任务动态</h2></span><button class="text-button" data-action="navigate" data-view="tasks">查看全部 ${icon("ArrowUpRight", 13)}</button></div><div class="studio-task-tabs" role="tablist" aria-label="工作台视图">${[
+    <section class="ui-card glass-panel studio-metrics" aria-label="运行统计">${metric("Activity", "blue", "运行与排队", running.length, "项任务")}${metric("UserRoundCheck", "violet", "等待审批", reviews.length, "项请求")}${metric("CircleCheck", "mint", "修复成功率", m.successRate === null ? "—" : `${m.successRate.toFixed(1)}<small>%</small>`, "", miniTrend(all, s.days))}${metric("Clock3", "peach", "平均修复耗时", formatDuration(m.averageDurationMs), "")}</section>
+    <section class="ui-card glass-panel studio-flow-section"><div class="panel-heading"><span class="row"><span class="section-icon violet">${icon("Workflow", 18)}</span><span><h2>自愈流程</h2><span class="panel-subtitle">${current ? e(current.title) : "从诊断到审批，追踪每一步修复"}</span></span></span><div class="row">${uiStatus({ label: flow?.status === "pending" ? "等待人工审批" : flow?.status === "approved" ? "已授权，等待执行" : "流程概览", tone: flow?.status === "pending" ? "warning" : flow?.status === "approved" ? "success" : "neutral", icon: flow?.status === "pending" ? "UserRoundCheck" : "Clock3", className: "studio-state" })}${current ? `<button class="ui-button btn compact glass-action" data-action="select-approval" data-id="${e(current.task.id)}">查看审批流 ${icon("ArrowUpRight", 14)}</button>` : ""}</div></div>${current ? renderFlowCanvas(current, { compact: true, mode: s.mode, selectedNodeId: flow.currentNodeId, zoom: 1 }) : empty("暂无待处理流程", "接入执行器后，任务与审批节点将在这里呈现。")}<div class="studio-flow-footer"><div class="row"><span class="flow-legend completed"></span>已完成<span class="flow-legend current"></span>当前节点<span class="flow-legend blocked"></span>等待前序</div><span>${icon("MousePointer2", 12)}点击节点查看审批详情</span></div></section>
+    <div class="studio-lower-grid"><div class="studio-left-stack"><section class="ui-card glass-panel studio-tasks"><div class="panel-heading"><span class="row"><span class="section-icon blue">${icon("ListChecks", 17)}</span><h2>任务动态</h2></span><button class="ui-button ui-button-ghost text-button" data-action="navigate" data-view="tasks">查看全部 ${icon("ArrowUpRight", 13)}</button></div><div class="ui-tabs studio-task-tabs" role="tablist" aria-label="工作台视图">${[
       ["focus", "全部任务", all.length],
       ["review", "待审批", reviews.length],
       ["running", "运行与排队", running.length],
     ]
       .map(
         ([id, label, count]) =>
-          `<button role="tab" aria-selected="${s.overviewTab === id}" tabindex="${s.overviewTab === id ? 0 : -1}" data-action="overview-tab" data-tab="${id}">${label}<span>${count}</span></button>`,
+          `<button class="ui-tab" role="tab" aria-selected="${s.overviewTab === id}" tabindex="${s.overviewTab === id ? 0 : -1}" data-action="overview-tab" data-tab="${id}">${label}<span>${count}</span></button>`,
       )
       .join(
         "",
-      )}</div><div class="studio-task-list">${list.length ? list.map(taskRow).join("") : empty("当前没有任务", "其他状态的任务可以在全部任务中查看。")}</div></section>${enginePanel(s)}</div><aside class="studio-right-stack">${current ? renderApprovalTeaser(current, s) : `<section class="glass-panel">${empty("没有待审批请求", "需要人工确认的方案会显示在这里。")}</section>`}${recentActivity(s)}</aside></div>`;
+      )}</div><div class="studio-task-list">${list.length ? list.map(taskRow).join("") : empty("当前没有任务", "其他状态的任务可以在全部任务中查看。")}</div></section>${enginePanel(s)}</div><aside class="studio-right-stack">${current ? renderApprovalTeaser(current, s) : `<section class="ui-card glass-panel">${empty("没有待审批请求", "需要人工确认的方案会显示在这里。")}</section>`}${recentActivity(s)}</aside></div>`;
 }

@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeMonitoringConfig } from "../../console/public/monitoring-model.js";
 
 const defaultRoot = fileURLToPath(new URL("../../../", import.meta.url));
 const capabilities = Object.freeze({
@@ -164,7 +165,13 @@ function projectConfig(input) {
       ),
     manual: (value) => pick(value, { enabled: boolean, requireAuth: boolean }),
   });
-  return { project, engines, safety, triggers };
+  return {
+    project,
+    engines,
+    safety,
+    triggers,
+    monitoring: normalizeMonitoringConfig(config.monitoring),
+  };
 }
 
 function projectRules(input) {

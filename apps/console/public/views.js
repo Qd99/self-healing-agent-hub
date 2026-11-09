@@ -4,15 +4,24 @@ import { renderApprovalPage } from "./approval-views.js";
 import { escapeHtml as e, formatDuration } from "./model.js";
 import { renderTaskPage } from "./task-views.js";
 import { renderSidebar, renderTopbar } from "./navigation.js";
+import { renderMonitoringPage } from "./monitoring-views.js";
+import {
+  renderActivityPage,
+  renderRulesPage,
+  renderRoutingDetail,
+} from "./administration-views.js";
+import { filterActivities } from "./administration-model.js";
+import { uiButton, uiStatus, uiEmpty } from "./ui.js";
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
   tasks: { title: "全部任务", icon: "ListChecks" },
   approvals: { title: "审批中心", icon: "GitPullRequestArrow" },
-  engines: { title: "Agent 引擎", icon: "Bot" },
+  engines: { title: "执行引擎", icon: "Bot" },
   rules: { title: "路由规则", icon: "Workflow" },
   safety: { title: "安全策略", icon: "ShieldCheck" },
-  activity: { title: "活动记录", icon: "Activity" },
+  activity: { title: "操作记录", icon: "History" },
+  monitoring: { title: "监控面板", icon: "ChartNoAxesCombined" },
   settings: { title: "连接设置", icon: "Settings2" },
 };
 export const taskTypes = {
@@ -80,7 +89,20 @@ const safeStatus = (status) =>
   Object.hasOwn(statusNames, status) ? status : "pending";
 export function statusLabel(item) {
   const value = safeStatus(stateOf(item));
-  return `<span class="status-label ${value}"><i class="status-dot"></i>${statusNames[value]}</span>`;
+  return uiStatus({
+    label: statusNames[value],
+    tone:
+      value === "completed"
+        ? "success"
+        : value === "failed"
+          ? "error"
+          : value === "running"
+            ? "info"
+            : value === "review"
+              ? "warning"
+              : "neutral",
+    className: `status-label ${value}`,
+  });
 }
 function mark(item) {
   const value = safeStatus(stateOf(item));
@@ -90,9 +112,9 @@ const action = (name, extra = "") => `data-action="${name}" ${extra}`;
 const taskButton = (id, label, tab = "trace", className = "text-button") =>
   `<button class="${className}" ${action("open-task", `data-id="${e(id)}" data-tab="${e(tab)}"`)}>${label}</button>`;
 const empty = (title, description = "") =>
-  `<div class="empty">${icon("ListTodo")}<div>${e(title)}</div>${description ? `<p>${e(description)}</p>` : ""}</div>`;
+  uiEmpty({ icon: "ListTodo", title, description });
 const periodSelect = (days) =>
-  `<label class="sr-only" for="period">时间范围</label><select id="period" class="period-select" aria-label="时间范围">${[
+  `<label class="sr-only" for="period">时间范围</label><select id="period" class="period-select ui-select-input" aria-label="时间范围">${[
     [1, "今天"],
     [7, "近 7 天"],
     [30, "近 30 天"],
@@ -108,52 +130,47 @@ export function renderShell(s) {
 }
 
 function renderPage(s) {
-  const header = `<div class="page-heading"><h1>${s.view === "overview" ? "自愈工作台" : pages[s.view].title}</h1><div class="row">${["overview", "tasks"].includes(s.view) ? `<button class="btn" data-action="refresh" aria-label="刷新工作台" title="刷新">${icon("RefreshCw", 15)}</button><button class="btn primary" data-action="new-task" ${!s.snapshot?.capabilities.trigger ? 'disabled title="执行引擎尚未接入"' : ""}>${icon("Plus", 14)}发起巡检</button>` : s.view === "activity" ? `<button class="btn" data-action="export" ${!s.snapshot ? "disabled" : ""}>${icon("Download", 14)}导出记录</button>` : s.view === "approvals" ? `<span class="studio-state review">${icon("LockKeyhole", 13)}${s.mode === "demo" ? "演示审批" : "只读审批"}</span>` : ""}</div></div>`;
+  const activityCount = s.snapshot
+    ? filterActivities(s.snapshot.activity, s.activityFilters).length
+    : 0;
+  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row">${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger, title: !s.snapshot?.capabilities.trigger ? "执行引擎尚未接入" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" ? uiStatus({ label: s.mode === "demo" ? "演示审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
   if (s.loading)
     return (
       header +
       `<div role="status" aria-label="正在读取配置" class="skeleton-block">${Array.from({ length: 4 }, () => `<div class="loading-row"><div class="loading-line"></div><div class="loading-line"></div></div>`).join("")}</div>`
     );
-  if (!s.snapshot && s.view !== "settings") return header + connectionError(s);
+  if (!s.snapshot && !["settings", "monitoring"].includes(s.view))
+    return header + connectionError(s);
   const views = {
     overview: renderStudioDashboard,
     approvals: renderApprovalPage,
     tasks: renderTaskPage,
     engines,
-    rules,
+    rules: renderRulesPage,
     safety,
-    activity,
+    activity: renderActivityPage,
+    monitoring: renderMonitoringPage,
     settings,
   };
   return header + views[s.view](s);
 }
 function connectionError(s) {
-  return `<div class="inline-notice error"><strong>无法连接管理服务</strong><p>${e(s.error || "请确认管理服务已经启动。")}</p><div class="row"><button class="btn compact" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button><button class="btn compact" ${action("mode", 'data-mode="demo"')}>查看演示</button></div></div>`;
+  return `<div class="inline-notice error"><strong>无法连接管理服务</strong><p>${e(s.error || "请确认管理服务已经启动。")}</p><div class="row"><button class="ui-button btn compact" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button><button class="ui-button btn compact" ${action("mode", 'data-mode="demo"')}>查看演示</button></div></div>`;
 }
 
 function engines(s) {
-  return `<div class="settings-layout"><div><div class="inline-notice">${s.mode === "demo" ? "当前展示两条演示路由。具体引擎尚未实现，模型与健康状态不代表真实连接。" : "读取到引擎配置。当前仓库仅有 WorkflowEngine 抽象接口，具体执行器尚未接入。"}</div>${s.snapshot.engines.map((x) => `<article class="engine-detail"><div class="engine-heading"><div class="engine-icon">${icon(x.id === "fast" ? "Zap" : "Workflow", 18)}</div><div class="grow"><h2>${e(engineName(x.id))}</h2><p class="table-meta">${x.id === "fast" ? "快速通道 · 格式、Lint 与轻量修复" : "复杂工作流 · 诊断、多步骤修复与验证"}</p></div><span class="mode-badge">未接入</span></div><dl class="engine-details-grid"><div><dt>引擎类型</dt><dd><code>${e(x.type)}</code></dd></div><div><dt>配置模型</dt><dd>${e(x.model || "未配置")}</dd></div><div><dt>路由标识</dt><dd><code>${e(x.id)}</code></dd></div><div><dt>匹配规则</dt><dd>${s.snapshot.rules.filter((r) => r.processor.engine === x.id).length} 条</dd></div></dl><p class="engine-note">${icon("Info", 13)}${e(x.message || "无执行器健康检查结果。")}</p></article>`).join("")}</div><aside class="help-note"><h3>如何接入</h3><p>实现已有 WorkflowEngine 的 execute、healthCheck、cancel 与 getStatus 方法，再将运行数据提供给管理接口。</p><p class="margin-top">健康状态来自执行器；配置文件存在不会被视为引擎在线。</p><a class="inline-link" href="https://github.com/Qd99/self-healing-agent-hub" target="_blank" rel="noopener noreferrer">查看框架仓库 ${icon("ArrowUpRight", 11)}</a></aside></div>`;
-}
-
-function rules(s) {
-  return `<div class="inline-notice">${s.mode === "demo" ? "开关仅修改本次演示的路由状态。" : "配置文件只读；修改规则需通过服务端配置管理。"}<span class="faint"> ${s.snapshot.rules.length} 条规则 · ${s.mode === "demo" ? "演示模板" : s.snapshot.rulesSource === "configured" ? "实际配置" : "示例配置"}</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>规则名称</th><th>任务类型</th><th>执行引擎</th><th>动作</th><th>状态</th><th></th></tr></thead><tbody>${s.snapshot.rules.map((r) => `<tr><td><button class="table-name-button" ${action("rule-detail", `data-id="${e(r.id)}"`)}><span class="task-title">${e(r.name)}</span><div class="table-meta mono">${e(r.id)}</div></button></td><td>${e(taskTypes[r.match.taskType] || r.match.taskType || "全部")}</td><td class="nowrap">${e(engineName(r.processor.engine))}</td><td><code>${e(r.processor.action)}</code></td><td><button class="switch" role="switch" aria-checked="${r.enabled}" aria-label="${e(r.name)}" ${action("toggle-rule", `data-id="${e(r.id)}"`)} ${s.mode !== "demo" ? 'disabled title="真实规则当前只读"' : ""}><i></i></button></td><td><button class="icon-button" ${action("rule-detail", `data-id="${e(r.id)}"`)} aria-label="查看${e(r.name)}">${icon("ChevronRight", 14)}</button></td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="ui-setting-stack">${s.snapshot.engines.map((x) => `<section class="ui-card"><header class="ui-section-header"><h2>${icon(x.id === "fast" ? "Zap" : "Workflow", 17)}${e(engineName(x.id))}</h2>${uiStatus({ label: "执行器未接入", icon: "Plug", tone: "neutral" })}</header><dl class="ui-config-grid"><div><dt>适用任务</dt><dd>${x.id === "fast" ? "格式、Lint 与轻量修复" : "诊断、多步骤修复与验证"}</dd></div><div><dt>配置模型</dt><dd>${e(x.model || "未配置")}</dd></div><div><dt>引擎类型</dt><dd><code>${e(x.type)}</code></dd></div><div><dt>关联规则</dt><dd>${uiButton({ label: `${s.snapshot.rules.filter((r) => r.processor.engine === x.id).length} 条路由规则`, action: "navigate", variant: "ghost", attrs: 'data-view="rules"' })}</dd></div></dl></section>`).join("")}<details class="ui-card ui-fold"><summary>执行引擎接入说明</summary><div class="ui-fold-content">当前展示${s.mode === "demo" ? "示例" : "已读取的"}配置，尚未提供执行器健康检查。实现 WorkflowEngine 的 execute、healthCheck、cancel 与 getStatus 后，管理台才能显示真实运行状态。</div></details></div>`;
 }
 
 function safety(s) {
   const a = s.snapshot.safety;
-  const layers = [
-    ["L1", "修复前检查", "限制变更范围，保护敏感文件。"],
-    ["L2", "修复后验证", "验证任务结果与检查证据。"],
-    ["L3", "自动回滚", "失败处理与回滚策略。"],
-    ["L4", "熔断保护", "限制重复失败带来的影响。"],
-  ];
-  return `<div class="settings-layout"><div><div class="inline-notice">以下为${s.mode === "demo" ? "演示" : s.snapshot.configSource === "example" ? "示例" : "实际"}策略配置。执行层尚未接入，配置状态不代表防护已在运行。</div>${layers.map(([n, title, desc], i) => `<section class="settings-section"><h2><span class="mono muted">${n}</span>　${title}</h2><p>${desc}</p>${i === 0 ? `<div class="config-row"><span>单次修改文件上限</span><span>${e(a.maxFilesPerFix ?? "未配置")} 个</span></div><div class="config-row"><span>受保护路径</span><span class="muted">${a.protectedPaths?.length || 0} 项</span></div><div class="token-list">${(a.protectedPaths || []).map((p) => `<span class="token">${e(p)}</span>`).join("")}</div>` : i === 1 ? `<ul class="checked-list">${(a.requiredChecks || []).map((c) => `<li>${icon("Terminal")}<code>${e(c)}</code></li>`).join("") || '<li class="muted">未配置检查命令</li>'}</ul>` : i === 2 ? `<div class="config-row"><span>自动回滚</span><span>${a.autoRollback?.enabled ? "配置为启用" : "未启用"}</span></div><div class="config-row"><span>等待 CI 结果</span><span>${formatDuration(a.autoRollback?.ciTimeout)}</span></div><div class="config-row"><span>通知目标</span><span>${e(a.autoRollback?.notifyOn?.join("、") || "未配置")}</span></div>` : `<div class="config-row"><span>失败熔断</span><span>${a.circuitBreaker?.enabled ? "配置为启用" : "未启用"}</span></div><div class="config-row"><span>失败阈值<small>在统计窗口内达到阈值时暂停</small></span><span>${e(a.circuitBreaker?.windowMinutes ?? "—")} 分钟 / ${e(a.circuitBreaker?.failureThreshold ?? "—")} 次</span></div><div class="config-row"><span>冷却时间</span><span>${e(a.circuitBreaker?.cooldownMinutes ?? "—")} 分钟</span></div>`}</section>`).join("")}</div><aside class="help-note"><h3>配置与运行分开</h3><p>这里展示策略内容。任务执行时的实际通过、失败、回滚结果应由服务端提供，并出现在该任务的验证证据中。</p><p class="margin-top">变更审阅是管理台的独立状态，没有修改框架的任务状态枚举。</p></aside></div>`;
-}
-
-function activity(s) {
-  return s.snapshot.activity.length
-    ? `<div class="spread section-title"><span>最近活动</span><span class="faint">${s.snapshot.activity.length} 条 · 北京时间</span></div>${s.snapshot.activity.map((a) => `<article class="audit-row"><span class="audit-dot ${a.level === "error" ? "error" : a.level === "warning" ? "warning" : ""}"></span><div class="grow"><p class="audit-message">${e(a.message)}</p><div class="audit-meta">${e(a.actor || "系统")}${a.taskId ? ` · ${taskButton(a.taskId, e(a.taskId))}` : ""}</div></div><time datetime="${e(a.at)}">${dateTime(a.at)}</time></article>`).join("")}`
-    : empty("还没有活动记录", "运行数据与审计存储接入后，会在这里持续记录。");
+  const property = (label, value) =>
+    `<div><dt>${e(label)}</dt><dd>${value}</dd></div>`;
+  return `<div class="ui-setting-stack"><section class="ui-card"><header class="ui-section-header"><h2>${icon("ShieldCheck", 17)}变更范围</h2>${uiStatus({ label: "配置只读", icon: "LockKeyhole" })}</header><dl class="ui-config-grid">${property("单次修改上限", `${e(a.maxFilesPerFix ?? "未配置")} 个文件`)}${property("受保护路径", `${a.protectedPaths?.length || 0} 项`)}</dl><div class="ui-section-note"><div class="token-list">${(a.protectedPaths || []).map((path) => `<code class="token">${e(path)}</code>`).join("") || "未配置受保护路径"}</div></div></section>
+    <section class="ui-card"><header class="ui-section-header"><h2>${icon("FlaskConical", 17)}修复后验证</h2><span class="muted">${a.requiredChecks?.length || 0} 项检查</span></header><div class="ui-section-note">${(a.requiredChecks || []).map((check) => `<p class="ui-info-line">${icon("Terminal", 14)}<code>${e(check)}</code></p>`).join("") || "未配置检查命令"}</div></section>
+    <section class="ui-card"><header class="ui-section-header"><h2>${icon("RotateCcw", 17)}失败回滚</h2>${uiStatus({ label: a.autoRollback?.enabled ? "配置已启用" : "未启用", tone: a.autoRollback?.enabled ? "success" : "neutral" })}</header><dl class="ui-config-grid">${property("等待 CI 结果", formatDuration(a.autoRollback?.ciTimeout))}${property("通知目标", e(a.autoRollback?.notifyOn?.join("、") || "未配置"))}</dl></section>
+    <section class="ui-card"><header class="ui-section-header"><h2>${icon("ShieldAlert", 17)}连续失败保护</h2>${uiStatus({ label: a.circuitBreaker?.enabled ? "配置已启用" : "未启用", tone: a.circuitBreaker?.enabled ? "success" : "neutral" })}</header><dl class="ui-config-grid">${property("失败阈值", `${e(a.circuitBreaker?.windowMinutes ?? "—")} 分钟内 ${e(a.circuitBreaker?.failureThreshold ?? "—")} 次`)}${property("冷却时间", `${e(a.circuitBreaker?.cooldownMinutes ?? "—")} 分钟`)}</dl></section>
+    <details class="ui-card ui-fold"><summary>配置如何生效</summary><div class="ui-fold-content">${s.mode === "demo" ? "此处为演示策略。" : s.snapshot.configSource === "example" ? "此处为示例文件中的策略。" : "此处为已读取的项目策略。"}执行层尚未接入，配置启用不代表防护正在运行。每次任务的检查结果、回滚情况应以任务详情中的实际证据为准。</div></details></div>`;
 }
 
 function settings(s) {
@@ -177,17 +194,17 @@ function settings(s) {
     );
   const readAt = snap?.generatedAt;
   return `<section class="connection-settings" aria-label="工作空间连接">
-    <div class="cs-card">
-      <header class="cs-header"><h2>数据来源</h2>${!unavailable ? `<button type="button" class="cs-refresh" ${action("refresh")} aria-label="刷新连接状态">${icon("RefreshCw", 14)}刷新</button>` : ""}</header>
+    <div class="cs-card ui-card">
+      <header class="cs-header"><h2>数据来源</h2>${!unavailable ? `<button type="button" class="cs-refresh ui-button ui-button-ghost" ${action("refresh")} aria-label="刷新连接状态">${icon("RefreshCw", 14)}刷新</button>` : ""}</header>
       <div class="cs-sources" role="group" aria-label="选择数据来源">
         <button type="button" class="cs-source ${demo ? "is-active" : ""}" ${action("mode", 'data-mode="demo"')} aria-pressed="${demo}">${icon("FlaskConical", 19)}<span><strong>交互演示</strong><small>会话内模拟</small></span></button>
         <button type="button" class="cs-source ${!demo ? "is-active" : ""}" ${action("mode", 'data-mode="live"')} aria-pressed="${!demo}">${icon("Plug", 19)}<span><strong>管理服务</strong><small>同源只读配置</small></span></button>
       </div>
-      ${unavailable ? `<div class="cs-error" role="alert">${icon("WifiOff", 18)}<div><strong>${demo ? "演示数据暂不可用" : "无法连接管理服务"}</strong><p>${e(s.error || "请启动管理服务后重新连接。")}</p></div><button type="button" class="cs-reconnect" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button></div>` : ""}
+      ${unavailable ? `<div class="cs-error" role="alert">${icon("WifiOff", 18)}<div><strong>${demo ? "演示数据暂不可用" : "无法连接管理服务"}</strong><p>${e(s.error || "请启动管理服务后重新连接。")}</p></div><button type="button" class="cs-reconnect ui-button" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button></div>` : ""}
       <dl class="cs-properties">
         <div><dt>项目</dt><dd class="cs-project">${e(snap?.project?.repo || "—")}</dd></div>
         <div><dt>分支</dt><dd><code>${e(snap?.project?.defaultBranch || "—")}</code></dd></div>
-        <div><dt>连接状态</dt><dd><span class="cs-status ${tone}"><i aria-hidden="true"></i>${status}</span></dd></div>
+        <div><dt>连接状态</dt><dd>${uiStatus({ label: status, tone: unavailable ? "error" : demo ? "info" : "success", className: "cs-status" })}</dd></div>
         <div><dt>最近读取</dt><dd>${readAt ? `<time datetime="${e(readAt)}">${dateTime(readAt)}<span class="cs-timezone">UTC+8</span></time>` : "—"}</dd></div>
       </dl>
       <dl class="cs-capabilities" aria-label="可用能力">
@@ -207,6 +224,7 @@ function settings(s) {
         </div>
       </details>
     </div>
+    <div class="ui-card ui-settings-link-card"><button type="button" class="ui-settings-link" data-action="monitoring-configure">${icon("ChartNoAxesCombined", 19)}<span class="grow"><strong>监控面板</strong><small>Grafana · Prometheus 数据源 · 命名空间</small></span>${icon("ChevronRight", 15)}</button></div>
   </section>`;
 }
 
@@ -248,21 +266,21 @@ export function renderTaskDetail(item, s) {
   const can = (key) => s.mode === "demo" && s.snapshot.capabilities[key];
   const buttons =
     status === "review"
-      ? `<button class="btn" data-action="close-detail">稍后处理</button><button class="btn primary" data-action="select-approval" data-id="${e(item.task.id)}">${icon("GitPullRequestArrow", 15)}打开审批流</button>`
+      ? `<button class="ui-button btn" data-action="close-detail">稍后处理</button><button class="ui-button btn primary" data-action="select-approval" data-id="${e(item.task.id)}">${icon("GitPullRequestArrow", 15)}打开审批流</button>`
       : ["pending", "running"].includes(status)
-        ? `<button class="btn" ${action("task-action", `data-command="cancel" data-id="${e(item.task.id)}"`)} ${can("cancel") ? "" : "disabled"}>${icon("Square", 12)}取消任务</button>`
+        ? `<button class="ui-button btn" ${action("task-action", `data-command="cancel" data-id="${e(item.task.id)}"`)} ${can("cancel") ? "" : "disabled"}>${icon("Square", 12)}取消任务</button>`
         : ["failed", "cancelled"].includes(status)
-          ? `<button class="btn primary" ${action("task-action", `data-command="retry" data-id="${e(item.task.id)}"`)} ${can("retry") ? "" : "disabled"}>${icon("RefreshCw", 13)}重新尝试</button>`
-          : `<button class="btn" ${action("close-detail")}>关闭详情</button>`;
-  return `<div class="detail-top"><span class="row">${icon("ListTodo", 14)}<span class="mono">${e(item.task.id)}</span><span>/</span><span>任务详情</span></span><button class="icon-button" ${action("close-detail")} aria-label="关闭任务详情">${icon("X", 17)}</button></div><div class="detail-heading">${statusLabel(item)}<h2 id="detail-title">${e(item.title)}</h2><div class="detail-metadata"><span>${e(engineName(item.engineId))}</span><span>·</span><span class="row">${icon("GitBranch", 12)}${e(item.task.payload.branch)}</span><span>·</span><span>${dateTime(item.task.metadata.createdAt)}</span></div></div><div class="tabs detail-tabs" role="tablist" aria-label="任务详情">${[
+          ? `<button class="ui-button btn primary" ${action("task-action", `data-command="retry" data-id="${e(item.task.id)}"`)} ${can("retry") ? "" : "disabled"}>${icon("RefreshCw", 13)}重新尝试</button>`
+          : `<button class="ui-button btn" ${action("close-detail")}>关闭详情</button>`;
+  return `<div class="detail-top"><span class="row">${icon("ListTodo", 14)}<span class="mono">${e(item.task.id)}</span><span>/</span><span>任务详情</span></span><button class="ui-icon-button icon-button" ${action("close-detail")} aria-label="关闭任务详情">${icon("X", 17)}</button></div><div class="detail-heading">${statusLabel(item)}<h2 id="detail-title">${e(item.title)}</h2><div class="detail-metadata"><span>${e(engineName(item.engineId))}</span><span>·</span><span class="row">${icon("GitBranch", 12)}${e(item.task.payload.branch)}</span><span>·</span><span>${dateTime(item.task.metadata.createdAt)}</span></div></div><div class="tabs detail-tabs ui-tabs" role="tablist" aria-label="任务详情">${[
     ["trace", "执行过程"],
     ["diff", "代码变更"],
     ["evidence", "验证证据"],
-    ["logs", "日志"],
+    ["logs", "执行日志"],
   ]
     .map(
       ([id, title]) =>
-        `<button class="tab ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" ${action("detail-tab", `data-tab="${id}"`)}>${icon({ trace: "Workflow", diff: "FileDiff", evidence: "FlaskConical", logs: "Terminal" }[id], 14)}${title}${id === "diff" ? `<span class="tab-count">${item.diff?.length || 0}</span>` : ""}</button>`,
+        `<button class="tab ui-tab ${tab === id ? "active" : ""}" role="tab" aria-selected="${tab === id}" ${action("detail-tab", `data-tab="${id}"`)}>${icon({ trace: "Workflow", diff: "FileDiff", evidence: "FlaskConical", logs: "Terminal" }[id], 14)}${title}${id === "diff" ? `<span class="tab-count">${item.diff?.length || 0}</span>` : ""}</button>`,
     )
     .join(
       "",
@@ -270,7 +288,7 @@ export function renderTaskDetail(item, s) {
 }
 
 export function renderCreate(s) {
-  return `<div class="spread"><h2 id="create-title">发起巡检</h2><button class="icon-button" ${action("close-create")} aria-label="关闭巡检表单">${icon("X", 17)}</button></div><p class="intro">创建一个模拟任务，查看队列与任务详情。当前没有连接真实执行引擎。</p><form id="create-form"><div class="form-field"><label for="task-title">任务描述</label><input id="task-title" name="title" required maxlength="160" placeholder="例如：检查聊天模块的类型错误" autocomplete="off" /></div><div class="form-grid"><div class="form-field"><label for="task-type">任务类型</label><select id="task-type" name="type">${Object.entries(
+  return `<div class="spread"><h2 id="create-title">发起巡检</h2><button class="ui-icon-button icon-button" ${action("close-create")} aria-label="关闭巡检表单">${icon("X", 17)}</button></div><p class="intro">创建一个模拟任务，查看队列与任务详情。当前没有连接真实执行引擎。</p><form id="create-form"><div class="form-field"><label for="task-title">任务描述</label><input class="ui-input" id="task-title" name="title" required maxlength="160" placeholder="例如：检查聊天模块的类型错误" autocomplete="off" /></div><div class="form-grid"><div class="form-field"><label for="task-type">任务类型</label><select class="ui-select-input" id="task-type" name="type">${Object.entries(
     taskTypes,
   )
     .map(
@@ -279,9 +297,9 @@ export function renderCreate(s) {
     )
     .join(
       "",
-    )}</select></div><div class="form-field"><label for="task-priority">优先级</label><select id="task-priority" name="priority"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option><option value="urgent">紧急</option></select></div></div><div class="form-field"><label for="task-branch">目标分支</label><input id="task-branch" name="branch" required maxlength="200" value="${e(s.snapshot.project.defaultBranch)}" /></div><p class="form-error" id="form-error" role="alert"></p><div class="form-actions"><button class="btn" type="button" ${action("close-create")}>取消</button><button class="btn primary" type="submit">创建模拟任务 ${icon("ArrowRight", 13)}</button></div></form>`;
+    )}</select></div><div class="form-field"><label for="task-priority">优先级</label><select class="ui-select-input" id="task-priority" name="priority"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option><option value="urgent">紧急</option></select></div></div><div class="form-field"><label for="task-branch">目标分支</label><input class="ui-input" id="task-branch" name="branch" required maxlength="200" value="${e(s.snapshot.project.defaultBranch)}" /></div><p class="form-error" id="form-error" role="alert"></p><div class="form-actions"><button class="ui-button btn" type="button" ${action("close-create")}>取消</button><button class="ui-button btn primary" type="submit">创建模拟任务 ${icon("ArrowRight", 13)}</button></div></form>`;
 }
 
-export function renderRuleDetail(rule) {
-  return `<div class="detail-top"><span>路由规则 / <span class="mono">${e(rule.id)}</span></span><button class="icon-button" ${action("close-detail")} aria-label="关闭规则详情">${icon("X", 17)}</button></div><div class="detail-heading"><p class="eyebrow">${rule.enabled ? "已启用配置" : "已停用配置"}</p><h2 id="detail-title">${e(rule.name)}</h2></div><div class="detail-content"><div class="detail-callout">任务匹配规则后会交给 ${e(engineName(rule.processor.engine))}，动作类型为 ${e(rule.processor.action)}。当前仅展示配置，不执行修复。</div><pre class="code-block">${e(JSON.stringify(rule, null, 2))}</pre></div><div class="detail-bottom"><small>来源：healing-rules 配置契约</small><button class="btn" ${action("close-detail")}>关闭</button></div>`;
+export function renderRuleDetail(rule, state = {}) {
+  return renderRoutingDetail(rule, state);
 }

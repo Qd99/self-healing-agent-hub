@@ -169,6 +169,92 @@ export interface ConsoleTriggers {
   manual?: { enabled?: boolean; requireAuth?: boolean };
 }
 
+/** Public monitoring input/export; credentials and remote health are excluded. */
+export interface MonitoringConfig {
+  grafana: {
+    baseUrl: string;
+    dashboardUid: string;
+    /** Defaults to "healing-overview" after validation. */
+    dashboardSlug?: string;
+    orgId?: number;
+    /** Defaults to "namespace"; omit the URL's var- prefix. */
+    namespaceVariable?: string;
+    /** Defaults to "datasource"; must differ from namespaceVariable. */
+    datasourceVariable?: string;
+  };
+  datasource: {
+    /** Defaults to "prometheus". */
+    type?: "prometheus";
+    uid: string;
+    /** Display only; defaults to an empty string and never replaces uid. */
+    name?: string;
+  };
+  /** Explicit watched namespaces; wildcard/all-cluster values are unsupported. */
+  namespaces: string[];
+}
+
+/** Validated monitoring configuration with model defaults applied. */
+export interface MonitoringResolvedConfig {
+  grafana: {
+    baseUrl: string;
+    dashboardUid: string;
+    dashboardSlug: string;
+    orgId?: number;
+    namespaceVariable: string;
+    datasourceVariable: string;
+  };
+  datasource: {
+    type: "prometheus";
+    uid: string;
+    name: string;
+  };
+  namespaces: string[];
+}
+
+export interface MonitoringValidationError {
+  field: string;
+  /** A fixed explanation; rejected input values are never echoed. */
+  message: string;
+}
+
+interface MonitoringSnapshotEvidence {
+  /** Structural validation never establishes remote connectivity. */
+  connectivity: "unverified";
+  message: string;
+}
+
+/** Invalid known values are redacted to null; optional orgId remains optional. */
+type MonitoringRedactedFields<T> = { [Field in keyof T]: T[Field] | null };
+
+export type MonitoringSnapshot =
+  | (MonitoringSnapshotEvidence & {
+      status: "unconfigured";
+      configured: false;
+      errors: [];
+      grafana: null;
+      datasource: null;
+      namespaces: [];
+    })
+  | (MonitoringSnapshotEvidence & {
+      status: "invalid";
+      configured: false;
+      errors: MonitoringValidationError[];
+      grafana: MonitoringRedactedFields<
+        MonitoringResolvedConfig["grafana"]
+      > | null;
+      datasource: MonitoringRedactedFields<
+        MonitoringResolvedConfig["datasource"]
+      > | null;
+      namespaces: string[];
+    })
+  | (MonitoringSnapshotEvidence &
+      MonitoringResolvedConfig & {
+        /** Ready to construct a link; no connection or metric was verified. */
+        status: "ready";
+        configured: true;
+        errors: [];
+      });
+
 export interface ConsoleSnapshot {
   apiVersion: 1;
   mode: "live" | "demo";
@@ -182,6 +268,8 @@ export interface ConsoleSnapshot {
   rules: ConsoleRule[];
   safety: ConsoleSafety;
   triggers: ConsoleTriggers;
+  /** Optional for compatibility with existing API v1 snapshots. */
+  monitoring?: MonitoringSnapshot;
   tasks: ConsoleTask[];
   activity: ConsoleActivity[];
 }

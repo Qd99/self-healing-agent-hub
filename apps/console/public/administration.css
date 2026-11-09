@@ -1,0 +1,432 @@
+.adm-workspace {
+  min-width: 0;
+}
+.adm-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.adm-caption-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ui-toolbar.adm-toolbar {
+  justify-content: flex-start;
+  padding: 0;
+  margin-top: 22px;
+  gap: 8px;
+}
+.adm-toolbar .adm-search {
+  flex: 1 1 270px;
+  max-width: 420px;
+}
+.adm-list-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 15px 0 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.adm-operation-groups {
+  border-top: 1px solid var(--line);
+}
+.adm-operation-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  padding: 20px 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.adm-date-label,
+.adm-date-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+}
+.adm-date-count {
+  margin-left: auto;
+}
+.adm-operation-group ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-operation {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 12px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--line);
+}
+.adm-operation-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  color: var(--muted);
+}
+.adm-operation-body {
+  min-width: 0;
+}
+.adm-operation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+.adm-operation-heading p {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.adm-operation-heading strong {
+  font-weight: 500;
+}
+.adm-operation-separator {
+  padding: 0 8px;
+  color: var(--faint);
+}
+.adm-operation-heading time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.adm-operation-message {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.adm-operation-target {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 5px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.adm-operation-target .ui-button.adm-task-link {
+  padding: 2px 0;
+  min-height: 24px;
+  font-size: 11px;
+}
+.adm-operation-target .adm-task-link:last-child {
+  margin-left: 4px;
+}
+.adm-rules-table {
+  overflow-x: auto;
+}
+.adm-rules-table .ui-table {
+  min-width: 760px;
+}
+.adm-rules-table th,
+.adm-rules-table td {
+  padding: 17px 16px;
+}
+.adm-rule-name {
+  width: 26%;
+}
+.adm-rule-name .ui-button.adm-rule-name-button {
+  justify-content: flex-start;
+  min-height: 24px;
+  padding: 0;
+  font-weight: 500;
+  text-align: left;
+  white-space: normal;
+}
+.adm-rule-id {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.adm-rule-conditions {
+  width: 32%;
+}
+.adm-rule-conditions ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  line-height: 1.65;
+}
+.adm-rule-conditions li {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.adm-rule-conditions li + li {
+  margin-top: 3px;
+  color: var(--muted);
+}
+.adm-conjunction {
+  margin-right: 6px;
+}
+.adm-rule-processor > span,
+.adm-rule-processor > small {
+  display: block;
+}
+.adm-rule-processor > span {
+  font-size: 12px;
+}
+.adm-rule-processor > small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.adm-rule-state,
+.adm-rule-open {
+  white-space: nowrap;
+}
+.adm-rule-state .ui-button.adm-rule-toggle {
+  padding-inline: 0;
+  font-size: 11px;
+}
+.adm-rules-table .adm-rule-open {
+  width: 38px;
+  padding-left: 0;
+}
+.adm-rule-detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.adm-rule-detail-heading h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.adm-routing-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1.2fr);
+  gap: 18px;
+  padding: 8px 0 24px;
+}
+.adm-routing-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.adm-routing-section h3 > span {
+  color: var(--muted);
+  font-weight: 400;
+}
+.adm-routing-arrow {
+  align-self: center;
+  color: var(--faint);
+}
+.adm-condition-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.adm-condition-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.adm-condition-list li svg {
+  margin-top: 2px;
+  color: var(--muted);
+}
+.adm-processor-properties {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+}
+.adm-processor-properties > div {
+  display: grid;
+  grid-template-columns: 75px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 12px;
+}
+.adm-processor-properties dt {
+  color: var(--muted);
+}
+.adm-processor-properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.adm-processor-properties code {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+}
+.adm-rule-boundary {
+  margin: 0;
+  padding: 14px 0 18px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.adm-rule-raw {
+  border-top: 1px solid var(--line);
+}
+.adm-rule-raw summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 0;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  list-style: none;
+}
+.adm-rule-raw summary::-webkit-details-marker {
+  display: none;
+}
+.adm-rule-raw summary svg:last-child {
+  margin-left: auto;
+}
+.adm-rule-raw[open] summary svg:last-child {
+  transform: rotate(180deg);
+}
+.adm-rule-raw pre {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 16px;
+  background: var(--subtle);
+  font-size: 11px;
+  line-height: 1.75;
+}
+.adm-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 800px) {
+  .ui-toolbar.adm-toolbar {
+    flex-wrap: wrap;
+  }
+  .adm-toolbar .adm-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .adm-caption-row {
+    align-items: flex-start;
+  }
+}
+@media (max-width: 650px) {
+  .adm-rules-table {
+    overflow: hidden;
+  }
+  .adm-rules-table .ui-table {
+    min-width: 0;
+    display: block;
+  }
+  .adm-rules-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .adm-rules-table tbody {
+    display: block;
+  }
+  .adm-rules-table .adm-rule-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 80px;
+    gap: 13px 10px;
+    padding: 18px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .adm-rules-table .adm-rule-row:last-child {
+    border-bottom: 0;
+  }
+  .adm-rules-table .adm-rule-row > td {
+    width: auto;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .adm-rules-table .adm-rule-name {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .adm-rules-table .adm-rule-open {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: right;
+  }
+  .adm-rules-table .adm-rule-conditions {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .adm-rules-table .adm-rule-conditions li {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .adm-rules-table .adm-rule-processor {
+    grid-column: 1;
+    grid-row: 3;
+  }
+  .adm-rules-table .adm-rule-state {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: center;
+    text-align: right;
+  }
+  .adm-caption-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .adm-list-summary {
+    align-items: flex-start;
+    font-size: 10px;
+  }
+  .adm-list-summary > span:last-child {
+    text-align: right;
+  }
+  .adm-operation {
+    gap: 9px;
+  }
+  .adm-operation-heading {
+    gap: 8px;
+  }
+  .adm-operation-heading p {
+    font-size: 11px;
+  }
+  .adm-operation-separator {
+    padding: 0 5px;
+  }
+  .adm-operation-group h2 {
+    gap: 8px;
+  }
+  .adm-routing-flow {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+  .adm-routing-arrow {
+    display: none;
+  }
+  .adm-rule-detail-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .adm-rule-detail-heading h2 {
+    flex-basis: 100%;
+  }
+  .adm-rule-detail .adm-routing-section h3 {
+    margin-bottom: 15px;
+  }
+}

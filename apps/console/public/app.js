@@ -1,5 +1,7 @@
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { createTaskController } from "./task-controller.js";
+import { createAdministrationController } from "./administration-controller.js";
+import { createMonitoringController } from "./monitoring-controller.js";
 import { getApprovalFlow } from "./approvals.js";
 import {
   pages,
@@ -70,6 +72,21 @@ const taskController = createTaskController({
     demoSnapshot = next;
   },
 });
+const administrationController = createAdministrationController({
+  state,
+  render,
+  toast,
+  openRule,
+  setSnapshot(next) {
+    state.snapshot = next;
+    demoSnapshot = next;
+  },
+});
+const monitoringController = createMonitoringController({
+  state,
+  render,
+  toast,
+});
 const flowResizeObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) fitFlowCanvas(target);
 });
@@ -86,6 +103,8 @@ function render() {
   const flowScroll =
     document.querySelector(".af-canvas-scroll")?.scrollLeft || 0;
   taskController.reconcile();
+  administrationController.reconcile();
+  monitoringController.reconcile();
   document.documentElement.dataset.theme = state.theme;
   document.documentElement.dataset.view = state.view;
   document.documentElement.dataset.sidebar =
@@ -159,6 +178,15 @@ function openTask(id, tab = "trace") {
   if (!detailDialog.open) detailDialog.showModal();
   detailDialog.querySelector('[data-action="close-detail"]')?.focus();
 }
+function openRule(id) {
+  const rule = state.snapshot?.rules.find((item) => item.id === id);
+  if (!rule) return;
+  state.selectedTask = "";
+  if (!detailDialog.open) lastFocus = document.activeElement;
+  detailDialog.innerHTML = renderRuleDetail(rule, state);
+  if (!detailDialog.open) detailDialog.showModal();
+  detailDialog.querySelector('[data-action="close-detail"]')?.focus();
+}
 function openCreate() {
   if (state.mode !== "demo" || !state.snapshot?.capabilities.trigger) {
     toast("真实执行器尚未接入。");
@@ -175,6 +203,7 @@ function go(view) {
   closeCreate();
   state.mobileNav = false;
   taskController.onNavigate();
+  administrationController.onNavigate();
   if (location.hash !== `#${view}`) history.pushState(null, "", `#${view}`);
   state.view = view;
   render();
@@ -204,6 +233,7 @@ window.addEventListener("hashchange", () => {
     : "overview";
   state.mobileNav = false;
   taskController.onNavigate();
+  administrationController.onNavigate();
   closeDetail();
   closeCreate();
   render();
@@ -261,6 +291,7 @@ async function loadData(mode = state.mode) {
   closeDetail();
   closeCreate();
   taskController.reset(mode !== state.mode);
+  if (mode !== state.mode) administrationController.reset();
   state.mode = mode;
   state.error = "";
   state.loading = true;
@@ -351,6 +382,8 @@ document.addEventListener("click", (event) => {
   }
   const button = event.target.closest("[data-action]");
   if (taskController.handleClick(event, button)) return;
+  if (administrationController.handleClick(event, button)) return;
+  if (monitoringController.handleClick(event, button)) return;
   if (!button || button.disabled) return;
   const { action, id, tab, view, mode, command, theme } = button.dataset;
   if (action === "sidebar-toggle") {
@@ -383,6 +416,7 @@ document.addEventListener("click", (event) => {
     render();
     document.querySelector(".mobile-menu")?.focus();
   } else if (action === "navigate") go(view);
+  else if (action === "monitoring-configure") go("monitoring");
   else if (action === "select-approval") selectApproval(id);
   else if (action === "flow-node") {
     const nodeId = button.dataset.nodeId;
@@ -468,47 +502,17 @@ document.addEventListener("click", (event) => {
   else if (action === "task-action") {
     const next = runDemoAction(command, id);
     if (next && command === "retry") openTask(next.tasks[0].task.id);
-  } else if (action === "toggle-rule") runDemoAction("toggle-rule", id);
-  else if (action === "rule-detail") {
-    const rule = state.snapshot?.rules.find((r) => r.id === id);
-    if (!rule) return;
-    state.selectedTask = "";
-    lastFocus = document.activeElement;
-    detailDialog.innerHTML = renderRuleDetail(rule);
-    detailDialog.showModal();
-    detailDialog.querySelector(".icon-button")?.focus();
   } else if (action === "search") {
     go("tasks");
     requestAnimationFrame(() =>
       document.querySelector("#task-search")?.focus(),
     );
-  } else if (action === "export") {
-    if (!state.snapshot) return;
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            mode: state.mode,
-            exportedAt: new Date().toISOString(),
-            activity: state.snapshot.activity,
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: "application/json" },
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `heal-activity-${state.mode}.json`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast("活动记录已导出。");
   }
 });
 
 document.addEventListener("input", (event) => {
+  if (administrationController.handleInput(event)) return;
+  if (monitoringController.handleInput(event)) return;
   if (["approval-comment", "resubmit-comment"].includes(event.target.id)) {
     state.approvalComment = event.target.value;
     return;
@@ -516,9 +520,12 @@ document.addEventListener("input", (event) => {
   taskController.handleInput(event);
 });
 document.addEventListener("compositionend", (event) => {
+  if (administrationController.handleCompositionEnd(event)) return;
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if (administrationController.handleChange(event)) return;
+  if (monitoringController.handleChange(event)) return;
   if (taskController.handleChange(event)) return;
   if (event.target.id === "period") {
     state.days = [1, 7, 30].includes(Number(event.target.value))
@@ -530,6 +537,7 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (monitoringController.handleSubmit(event)) return;
   if (
     ["approval-decision-form", "approval-resubmit-form"].includes(
       event.target.id,
