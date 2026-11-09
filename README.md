@@ -4,7 +4,7 @@
 
 ## Web 工作台
 
-当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v5 统一了所有模块的基础组件与导航名称，新增 Grafana 监控配置、Prometheus 数据源 UID/名称、命名空间范围和仪表盘模板导出；操作记录支持组合筛选与筛选后导出，路由规则直接展示完整条件与执行动作。v4 的任务筛选、分页、跨页选择和批量操作，以及 v3 的「代码审阅 → 执行授权」两级审批继续保留。
+当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v6 优化工作台、全部任务、监控面板与操作记录，统一图标数据卡、轻边框及点击反馈；首页以最近任务为中心，结果趋势来自所选范围的快照数据。任务筛选、分页、跨页选择、批量操作、两级审批，以及监控配置和导出能力继续保留。
 
 在仓库根目录运行，要求 Node.js 18 或更新版本：
 
@@ -15,8 +15,8 @@ npm run dev
 - [打开本地工作台](http://127.0.0.1:8787/)：读取配置，当前管理接口只读。
 - [打开交互演示](http://127.0.0.1:8787/?demo=1)：体验 48 条虚构任务，以及模拟创建、取消、重试和审批。
 - [工作台使用与设计说明](docs/console-guide.md) · [API 与框架对接](docs/console-api.md)
-- [v5 统一界面与验收](docs/design/console-v5.md) · [Grafana 接入说明](docs/monitoring-integration.md)
-- [v4 任务工作区与验收](docs/design/task-workspace-v4.md) · [v3 审批验收](docs/design/validation.md) · [交互预览](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
+- [v6 界面与交互验收](docs/design/console-v6.md) · [v5 功能记录](docs/design/console-v5.md) · [Grafana 接入说明](docs/monitoring-integration.md)
+- [v4 任务工作区与验收](docs/design/task-workspace-v4.md) · [v3 审批验收](docs/design/validation.md) · [交互预览（演示）](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
 
 工作台本身不需要 Redis、MySQL 或 GitHub App 凭据。未创建实际配置时，服务读取仓库中的示例配置，并明确显示来源。任务、审批与规则的演示操作只保存在当前页面内存，重新加载页面会重置。监控接入配置可保存为按模式、项目隔离的本机草稿，导出后由用户合并到服务端配置；本机保存不会修改 Agent 的监听范围。
 

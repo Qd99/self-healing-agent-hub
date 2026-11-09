@@ -6,152 +6,266 @@ import {
   getTrend,
   formatDuration,
 } from "./model.js";
-import { renderFlowCanvas, renderApprovalTeaser } from "./approval-views.js";
 import { getApprovalFlow } from "./approvals.js";
-import { uiEmpty, uiStatus } from "./ui.js";
+import {
+  administrationEngineName,
+  describeActivity,
+} from "./administration-model.js";
+import { uiButton, uiEmpty, uiMetric, uiStatus, uiTabs } from "./ui.js";
 
-const names = {
+const statusNames = {
   running: "运行中",
   pending: "排队中",
   completed: "已完成",
   failed: "需关注",
   cancelled: "已取消",
   skipped: "已跳过",
+  review: "待审批",
 };
 const typeIcons = {
   "type-error": "Code2",
   "lint-error": "Wrench",
+  "format-error": "FileCode2",
   "unit-test-failure": "FlaskConical",
+  "e2e-test-failure": "FlaskConical",
   "dependency-issue": "Box",
   "ci-failure": "GitPullRequest",
   "doc-outdated": "FileCode2",
+  "security-issue": "ShieldCheck",
+  "architecture-violation": "Workflow",
+  "performance-regression": "Activity",
 };
-const engineName = (id) => (id === "fast" ? "Direct AI" : "ZCode Workflow");
-const date = (at) =>
-  new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(new Date(at));
-const empty = (title, text) =>
-  uiEmpty({
-    icon: "Inbox",
-    title,
-    description: text,
-    className: "studio-empty",
-  });
+const dateOptions = {
+  timeZone: "Asia/Shanghai",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+};
+const shortDate = new Intl.DateTimeFormat("zh-CN", dateOptions);
+const fullDate = new Intl.DateTimeFormat("zh-CN", {
+  ...dateOptions,
+  year: "numeric",
+});
+const timestamp = (at) => {
+  const value = Date.parse(at || "");
+  return Number.isFinite(value) ? value : -Infinity;
+};
 
-function miniTrend(tasks, days) {
-  const trend = getTrend(tasks, { days });
-  const max = Math.max(1, ...trend.map((d) => d.completed + d.failed));
-  return `<div class="studio-trend" role="img" aria-label="${e(trend.map((d) => `${d.label}：完成${d.completed}，失败${d.failed}`).join("；"))}">${trend.map((d) => `<div class="studio-trend-day" title="${e(d.label)} · 完成 ${d.completed} / 失败 ${d.failed}"><span style="height:${Math.max(2, Math.round((28 * d.completed) / max))}px"></span>${d.failed ? `<i style="height:${Math.max(2, Math.round((28 * d.failed) / max))}px"></i>` : ""}</div>`).join("")}</div>`;
+function timeLabel(at, className = "") {
+  const value = timestamp(at);
+  if (!Number.isFinite(value))
+    return `<span class="${e(className)}" title="时间未提供">—</span>`;
+  const date = new Date(value);
+  return `<time class="${e(className)}" datetime="${e(date.toISOString())}" title="${e(fullDate.format(date))} · 北京时间">${e(shortDate.format(date))}</time>`;
 }
 
-function metric(glyph, tone, label, value, detail, decoration = "") {
-  return `<div class="studio-metric"><span class="icon-tile ${tone}">${icon(glyph, 20)}</span><div><span class="studio-metric-label">${label}</span><div class="studio-metric-reading"><strong>${value}</strong><span>${detail}</span></div></div>${decoration}</div>`;
+function taskStatus(item) {
+  const status = item.reviewState === "pending" ? "review" : item.status.status;
+  const tones = {
+    completed: "success",
+    failed: "error",
+    review: "warning",
+    running: "info",
+  };
+  const icons = {
+    completed: "CircleCheck",
+    failed: "CircleAlert",
+    review: "UserRoundCheck",
+    running: "Activity",
+    pending: "Clock3",
+    cancelled: "Square",
+    skipped: "ArrowRight",
+  };
+  return uiStatus({
+    label: statusNames[status] || "未知状态",
+    tone: tones[status] || "neutral",
+    icon: icons[status] || "Circle",
+    className: "home-task-status",
+  });
 }
 
 function taskRow(item) {
-  const review = item.reviewState === "pending";
-  const status = review ? "review" : item.status.status;
-  const glyph = typeIcons[item.task.type] || "ListChecks";
-  const canReview = !!item.approvalFlow;
-  const badge = uiStatus({
-    label: review ? "待审批" : names[status] || "未知",
-    tone:
-      status === "completed"
-        ? "success"
-        : status === "failed"
-          ? "error"
-          : status === "review"
-            ? "warning"
-            : status === "running"
-              ? "info"
-              : "neutral",
-    icon:
-      status === "completed"
-        ? "CircleCheck"
-        : status === "review"
-          ? "UserRoundCheck"
-          : status === "running"
-            ? "Activity"
-            : status === "failed"
-              ? "CircleAlert"
-              : "Clock3",
-    className: `studio-state ${status}`,
-  });
-  return `<button class="studio-task" data-action="${review && canReview ? "select-approval" : "open-task"}" data-id="${e(item.task.id)}"><span class="task-type-icon ${status === "running" ? "blue" : status === "review" ? "violet" : status === "failed" ? "rose" : "neutral"}">${icon(glyph, 19)}</span><span class="studio-task-main"><strong>${e(item.title)}</strong><span><code>${e(item.task.id)}</code><i></i>${e(engineName(item.engineId))}${item.diff.length ? `<i></i>${item.diff.length} 个文件` : ""}</span></span>${badge}<time>${date(item.task.metadata.createdAt)}</time><span class="task-open-arrow">${icon("ArrowUpRight", 15)}</span></button>`;
+  const review = item.reviewState === "pending" && item.approvalFlow;
+  const files = item.diff?.length || 0;
+  return `<button type="button" class="home-task-row" data-action="${review ? "select-approval" : "open-task"}" data-id="${e(item.task.id)}">
+    <span class="home-task-glyph" aria-hidden="true">${icon(typeIcons[item.task.type] || "ListChecks", 18)}</span>
+    <span class="home-task-copy"><strong title="${e(item.title)}">${e(item.title)}</strong><span class="home-task-meta"><code>${e(item.task.id)}</code><span>${e(administrationEngineName(item.engineId))}</span>${files ? `<span>${files} 个文件</span>` : ""}</span></span>
+    ${taskStatus(item)}
+    ${timeLabel(item.task.metadata.createdAt, "home-task-time")}
+    <span class="home-task-arrow" aria-hidden="true">${icon("ChevronRight", 14)}</span>
+  </button>`;
 }
 
-function enginePanel(s) {
-  return `<section class="ui-card glass-panel studio-engines"><div class="panel-heading"><span class="row"><span class="section-icon blue">${icon("Bot", 17)}</span><h2>Agent 引擎</h2></span><button class="ui-button ui-button-ghost text-button" data-action="navigate" data-view="engines">管理 ${icon("ArrowUpRight", 13)}</button></div><div class="studio-engine-list">${s.snapshot.engines
-    .map((en, i) => {
-      const running = s.snapshot.tasks.filter(
-        (t) => t.engineId === en.id && t.status.status === "running",
-      ).length;
-      return `<button class="studio-engine" data-action="navigate" data-view="engines"><span class="engine-avatar ${i ? "violet" : "blue"}">${icon(i ? "Workflow" : "Zap", 21)}</span><span class="grow"><strong>${e(engineName(en.id))}</strong><small>${i ? "多步骤诊断与修复" : "轻量代码检查与修复"}</small></span><span class="engine-caption">${s.mode === "demo" ? (running ? `<span class="signal-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${running} 个演示任务` : "演示配置") : "未接入"}</span></button>`;
-    })
-    .join(
-      "",
-    )}</div><div class="engine-footnote">${icon("Fingerprint", 13)}${s.mode === "demo" ? "演示工作区 · 模型请求未实际发送" : "只读配置 · 等待连接执行器"}</div></section>`;
+function approvalRequest(item) {
+  const flow = getApprovalFlow(item);
+  const gates = flow.nodes.filter((node) => node.kind === "human");
+  const stageNames = {
+    completed: "已通过",
+    pending: "待处理",
+    blocked: "等待前序",
+    rejected: "已拒绝",
+    cancelled: "已取消",
+    unknown: "状态未提供",
+  };
+  const stages =
+    flow.status === "unavailable"
+      ? '<span class="home-review-unavailable">审批证据未提供</span>'
+      : `<span class="home-review-stages" aria-label="${e(gates.map((gate) => `${gate.title}：${stageNames[gate.status] || "状态未提供"}`).join("；"))}">${gates
+          .map((gate, index) => {
+            const current = flow.currentGate?.id === gate.id;
+            return `<span class="home-review-stage ${current ? "is-current" : gate.status === "completed" ? "is-complete" : ""}" ${current ? 'aria-current="step"' : ""}><span class="home-stage-number" aria-hidden="true">${gate.status === "completed" ? icon("Check", 10) : index + 1}</span><span>${e(gate.title)}</span></span>`;
+          })
+          .join("")}</span>`;
+  return `<button type="button" class="home-review" data-action="${item.approvalFlow ? "select-approval" : "open-task"}" data-id="${e(item.task.id)}">
+    <span class="home-review-title">${e(item.title)}${icon("ArrowUpRight", 13)}</span>
+    <span class="home-review-meta"><code>${e(item.task.id)}</code>${flow.currentGate ? `<span>等待${e(flow.currentGate.title)}</span>` : ""}</span>
+    ${stages}
+  </button>`;
+}
+
+function approvalsPanel(reviews) {
+  return `<section class="home-rail-section home-approvals" aria-labelledby="home-approvals-title">
+    <div class="home-rail-heading"><h2 id="home-approvals-title">${icon("GitPullRequestArrow", 16)}待审批</h2><span class="home-rail-count">${reviews.length}</span></div>
+    ${reviews.length ? `<div class="home-review-list">${reviews.slice(0, 2).map(approvalRequest).join("")}</div>` : '<p class="home-rail-empty">当前范围没有待审批请求</p>'}
+    ${uiButton({ label: "审批中心", icon: "ArrowUpRight", action: "navigate", attrs: 'data-view="approvals"', variant: "ghost", className: "home-rail-link" })}
+  </section>`;
 }
 
 function recentActivity(s) {
-  return `<section class="ui-card glass-panel studio-recent"><div class="panel-heading"><span class="row"><span class="section-icon cyan">${icon("Activity", 17)}</span><h2>最近活动</h2></span><button class="ui-button ui-button-ghost text-button" data-action="navigate" data-view="activity">全部 ${icon("ArrowRight", 13)}</button></div><div class="studio-activity-list">${
-    s.snapshot.activity.length
-      ? s.snapshot.activity
-          .slice(0, 3)
+  const entries = [...s.snapshot.activity]
+    .sort((a, b) => timestamp(b.at) - timestamp(a.at))
+    .slice(0, 3);
+  return `<section class="home-rail-section home-records" aria-labelledby="home-records-title">
+    <div class="home-rail-heading"><h2 id="home-records-title">${icon("History", 16)}最近记录</h2>${uiButton({ label: "全部", action: "navigate", attrs: 'data-view="activity"', variant: "ghost", className: "home-heading-link" })}</div>
+    ${
+      entries.length
+        ? `<div class="home-record-list">${entries
+            .map((entry) => {
+              const description = describeActivity(entry);
+              const relatedTask = s.snapshot.tasks.find(
+                (item) => item.task.id === entry.taskId,
+              );
+              return `<button type="button" class="home-record" data-action="${relatedTask ? "open-task" : "navigate"}" ${relatedTask ? `data-id="${e(entry.taskId)}"` : 'data-view="activity"'}>
+                <span class="home-record-dot" aria-hidden="true"></span>
+                <span class="home-record-body"><span class="home-record-top"><strong>${e(description.label)}</strong>${timeLabel(entry.at)}</span>${description.message ? `<span class="home-record-message" title="${e(description.message)}">${e(description.message)}</span>` : ""}<span class="home-record-actor">${e(description.actor)}</span></span>
+              </button>`;
+            })
+            .join("")}</div>`
+        : '<p class="home-rail-empty">还没有操作记录</p>'
+    }
+  </section>`;
+}
+
+function enginePanel(s) {
+  return `<section class="home-rail-section home-engines" aria-labelledby="home-engines-title">
+    <div class="home-rail-heading"><h2 id="home-engines-title">${icon("Bot", 16)}执行引擎</h2>${uiButton({ label: "管理", action: "navigate", attrs: 'data-view="engines"', variant: "ghost", className: "home-heading-link" })}</div>
+    ${
+      s.snapshot.engines.length
+        ? `<div class="home-engine-list">${s.snapshot.engines
+            .map(
+              (engine) =>
+                `<button type="button" class="home-engine" data-action="navigate" data-view="engines"><span class="home-engine-name">${icon(engine.id === "fast" ? "Zap" : "Workflow", 15)}<span>${e(administrationEngineName(engine.id))}</span></span><span class="home-engine-state">${s.mode === "demo" ? "演示配置" : "只读配置"}</span></button>`,
+            )
+            .join("")}</div>`
+        : '<p class="home-rail-empty">暂无引擎配置</p>'
+    }
+  </section>`;
+}
+
+function outcomeChart(tasks, days, now) {
+  const trend = getTrend(tasks, { days, now });
+  const completed = trend.reduce((sum, day) => sum + day.completed, 0);
+  const failed = trend.reduce((sum, day) => sum + day.failed, 0);
+  const maximum = Math.max(
+    0,
+    ...trend.map((day) => day.completed + day.failed),
+  );
+  const period = trend.length === 1 ? "今天" : `近 ${trend.length} 天`;
+  const ticks = new Set(
+    trend.length <= 7
+      ? trend.map((_, index) => index)
+      : Array.from({ length: 5 }, (_, index) =>
+          Math.round((index * (trend.length - 1)) / 4),
+        ),
+  );
+  const height = (count) => (maximum ? (count / maximum) * 100 : 0);
+  return `<figure class="home-outcomes" aria-labelledby="home-outcomes-title" aria-describedby="home-outcomes-basis">
+    <div class="home-outcomes-heading"><h2 id="home-outcomes-title">${icon("ChartNoAxesCombined", 16)}任务结果</h2><span class="home-outcomes-period">${period}</span></div>
+    <div class="home-outcomes-legend"><span><i class="is-completed" aria-hidden="true"></i>已完成 <strong>${completed}</strong></span><span><i class="is-failed" aria-hidden="true"></i>失败 <strong>${failed}</strong></span></div>
+    <div class="home-trend" role="group" aria-label="${e(period)}任务结果：已完成 ${completed} 项，失败 ${failed} 项">
+      <div class="home-trend-axis" aria-hidden="true"><span>${maximum || "—"}</span><span>0</span></div>
+      <div class="home-trend-plot ${trend.length > 14 ? "is-dense" : ""}" style="--home-trend-columns:${Math.max(1, trend.length)}">
+        <span class="home-trend-gridline is-top" aria-hidden="true"></span><span class="home-trend-gridline is-middle" aria-hidden="true"></span><span class="home-trend-gridline is-bottom" aria-hidden="true"></span>
+        ${trend
           .map(
-            (a) =>
-              `<div class="studio-activity"><span class="activity-glyph ${a.level === "error" ? "rose" : "blue"}">${icon(a.level === "error" ? "CircleAlert" : a.level === "warning" ? "UserRoundCheck" : "CheckCheck", 13)}</span><div><p>${e(a.message)}</p><span>${e(a.actor || "系统")} · ${date(a.at)}</span></div></div>`,
+            (
+              day,
+              index,
+            ) => `<div class="home-trend-day ${trend.length > 1 && index < trend.length / 3 ? "is-start" : trend.length > 1 && index >= (trend.length * 2) / 3 ? "is-end" : ""}" tabindex="0" role="img" aria-label="${e(day.date)}：已完成 ${day.completed} 项，失败 ${day.failed} 项">
+              <span class="home-trend-stack" aria-hidden="true"><span class="home-trend-completed" style="height:${height(day.completed)}%"></span><span class="home-trend-failed" style="height:${height(day.failed)}%"></span></span>
+              <span class="home-trend-tooltip" aria-hidden="true">${e(day.label)} · 完成 ${day.completed} · 失败 ${day.failed}</span>
+              ${ticks.has(index) ? `<span class="home-trend-date" aria-hidden="true">${e(day.label)}</span>` : ""}
+            </div>`,
           )
-          .join("")
-      : empty("还没有活动", "任务与审批的状态变化会记录在这里。")
-  }</div></section>`;
+          .join("")}
+        ${maximum ? "" : '<span class="home-trend-empty">当前范围内没有已完成或失败的任务</span>'}
+      </div>
+    </div>
+    <figcaption id="home-outcomes-basis">按任务创建日期统计当前结果 · 北京时间</figcaption>
+  </figure>`;
 }
 
 export function renderStudioDashboard(s) {
-  const all = filterTasks(s.snapshot.tasks, { days: s.days });
-  const m = getMetrics(all);
-  const reviews = all.filter((t) => t.reviewState === "pending");
-  const current =
-    reviews.find((t) => t.approvalFlow) || all.find((t) => t.approvalFlow);
-  const flow = current ? getApprovalFlow(current) : null;
-  const running = all.filter(
-    (t) =>
-      t.status.status === "running" ||
-      (t.status.status === "pending" && t.reviewState !== "pending"),
+  const now = Date.now();
+  const all = filterTasks(s.snapshot.tasks, { days: s.days, now }).sort(
+    (a, b) =>
+      timestamp(b.task.metadata.createdAt) -
+      timestamp(a.task.metadata.createdAt),
   );
-  let list =
+  const metrics = getMetrics(all);
+  const reviews = all.filter((item) => item.reviewState === "pending");
+  const running = all.filter(
+    (item) =>
+      item.status.status === "running" ||
+      (item.status.status === "pending" && item.reviewState !== "pending"),
+  );
+  const activeCount = running.filter(
+    (item) => item.status.status === "running",
+  ).length;
+  const list = (
     s.overviewTab === "review"
       ? reviews
       : s.overviewTab === "running"
         ? running
-        : all;
-  list = list.slice(0, 5);
-  return `<div class="studio-overview-tools"><div class="studio-section-label">${icon("Activity", 14)}运行概览<span>${all.length} 项任务</span></div><label class="row muted">${icon("CalendarDays", 13)}<select class="ui-select-input" id="period" aria-label="时间范围">${[
-    [1, "今天"],
-    [7, "近 7 天"],
-    [30, "近 30 天"],
-  ]
-    .map(
-      ([n, label]) =>
-        `<option value="${n}" ${s.days === n ? "selected" : ""}>${label}</option>`,
-    )
-    .join("")}</select></label></div>
-    <section class="ui-card glass-panel studio-metrics" aria-label="运行统计">${metric("Activity", "blue", "运行与排队", running.length, "项任务")}${metric("UserRoundCheck", "violet", "等待审批", reviews.length, "项请求")}${metric("CircleCheck", "mint", "修复成功率", m.successRate === null ? "—" : `${m.successRate.toFixed(1)}<small>%</small>`, "", miniTrend(all, s.days))}${metric("Clock3", "peach", "平均修复耗时", formatDuration(m.averageDurationMs), "")}</section>
-    <section class="ui-card glass-panel studio-flow-section"><div class="panel-heading"><span class="row"><span class="section-icon violet">${icon("Workflow", 18)}</span><span><h2>自愈流程</h2><span class="panel-subtitle">${current ? e(current.title) : "从诊断到审批，追踪每一步修复"}</span></span></span><div class="row">${uiStatus({ label: flow?.status === "pending" ? "等待人工审批" : flow?.status === "approved" ? "已授权，等待执行" : "流程概览", tone: flow?.status === "pending" ? "warning" : flow?.status === "approved" ? "success" : "neutral", icon: flow?.status === "pending" ? "UserRoundCheck" : "Clock3", className: "studio-state" })}${current ? `<button class="ui-button btn compact glass-action" data-action="select-approval" data-id="${e(current.task.id)}">查看审批流 ${icon("ArrowUpRight", 14)}</button>` : ""}</div></div>${current ? renderFlowCanvas(current, { compact: true, mode: s.mode, selectedNodeId: flow.currentNodeId, zoom: 1 }) : empty("暂无待处理流程", "接入执行器后，任务与审批节点将在这里呈现。")}<div class="studio-flow-footer"><div class="row"><span class="flow-legend completed"></span>已完成<span class="flow-legend current"></span>当前节点<span class="flow-legend blocked"></span>等待前序</div><span>${icon("MousePointer2", 12)}点击节点查看审批详情</span></div></section>
-    <div class="studio-lower-grid"><div class="studio-left-stack"><section class="ui-card glass-panel studio-tasks"><div class="panel-heading"><span class="row"><span class="section-icon blue">${icon("ListChecks", 17)}</span><h2>任务动态</h2></span><button class="ui-button ui-button-ghost text-button" data-action="navigate" data-view="tasks">查看全部 ${icon("ArrowUpRight", 13)}</button></div><div class="ui-tabs studio-task-tabs" role="tablist" aria-label="工作台视图">${[
-      ["focus", "全部任务", all.length],
-      ["review", "待审批", reviews.length],
-      ["running", "运行与排队", running.length],
-    ]
-      .map(
-        ([id, label, count]) =>
-          `<button class="ui-tab" role="tab" aria-selected="${s.overviewTab === id}" tabindex="${s.overviewTab === id ? 0 : -1}" data-action="overview-tab" data-tab="${id}">${label}<span>${count}</span></button>`,
-      )
-      .join(
-        "",
-      )}</div><div class="studio-task-list">${list.length ? list.map(taskRow).join("") : empty("当前没有任务", "其他状态的任务可以在全部任务中查看。")}</div></section>${enginePanel(s)}</div><aside class="studio-right-stack">${current ? renderApprovalTeaser(current, s) : `<section class="ui-card glass-panel">${empty("没有待审批请求", "需要人工确认的方案会显示在这里。")}</section>`}${recentActivity(s)}</aside></div>`;
+        : all
+  ).slice(0, 6);
+  return `<div class="home-dashboard">
+    <section class="home-metrics" aria-label="当前时间范围的运行统计">
+      ${uiMetric({ label: "运行与排队", value: running.length, unit: "项", icon: "Activity", tone: "info", detail: `${activeCount} 运行 · ${running.length - activeCount} 排队`, className: "home-metric" })}
+      ${uiMetric({ label: "待审批", value: reviews.length, unit: "项", icon: "UserRoundCheck", tone: "warning", detail: reviews.length ? "候选方案等待人工确认" : "当前范围没有待审批请求", className: "home-metric" })}
+      ${uiMetric({ label: "修复成功率", value: metrics.successRate === null ? "—" : metrics.successRate.toFixed(1), unit: metrics.successRate === null ? "" : "%", icon: "CircleCheck", tone: "success", detail: `${metrics.completed} 完成 · ${metrics.failed} 失败`, className: "home-metric" })}
+      ${uiMetric({ label: "平均修复耗时", value: formatDuration(metrics.averageDurationMs), icon: "Clock3", detail: metrics.averageDurationMs === null ? "暂无已结束任务的耗时" : "已结束任务的可用耗时均值", className: "home-metric" })}
+    </section>
+    <div class="home-layout">
+      <section class="home-tasks" aria-labelledby="home-tasks-title">
+        <div class="home-tasks-heading"><h2 id="home-tasks-title">最近任务</h2>${uiButton({ label: "查看全部", icon: "ArrowUpRight", action: "navigate", attrs: 'data-view="tasks"', variant: "ghost", className: "home-heading-link" })}</div>
+        ${uiTabs({
+          items: [
+            { id: "focus", label: "全部", count: all.length },
+            { id: "running", label: "运行与排队", count: running.length },
+            { id: "review", label: "待审批", count: reviews.length },
+          ],
+          value: s.overviewTab,
+          action: "overview-tab",
+          label: "工作台任务视图",
+          className: "home-task-tabs",
+        })}
+        ${list.length ? `<div class="home-task-columns" aria-hidden="true"><span>任务</span><span>状态</span><span>创建时间</span></div><div class="home-task-list">${list.map(taskRow).join("")}</div>` : uiEmpty({ icon: "Inbox", title: s.overviewTab === "review" ? "没有待审批任务" : s.overviewTab === "running" ? "没有运行或排队任务" : "当前范围没有任务", description: "可切换任务状态或调整时间范围。", className: "home-empty" })}
+        ${outcomeChart(all, s.days, now)}
+      </section>
+      <aside class="home-rail" aria-label="工作台辅助信息">${approvalsPanel(reviews)}${recentActivity(s)}${enginePanel(s)}</aside>
+    </div>
+  </div>`;
 }

@@ -32,6 +32,26 @@ const typeNames = {
   "dependency-issue": "依赖检查",
   "performance-regression": "性能回归",
 };
+const typeIcons = {
+  "lint-error": "Wrench",
+  "format-error": "FileCode2",
+  "type-error": "Code2",
+  "unit-test-failure": "FlaskConical",
+  "e2e-test-failure": "FlaskConical",
+  "architecture-violation": "Workflow",
+  "security-issue": "ShieldCheck",
+  "ci-failure": "GitPullRequest",
+  "doc-outdated": "FileCode2",
+  "dependency-issue": "Box",
+  "performance-regression": "Activity",
+};
+const statusIcons = {
+  all: "ListChecks",
+  running: "Activity",
+  review: "GitPullRequestArrow",
+  failed: "CircleAlert",
+  completed: "CircleCheck",
+};
 const priorityNames = {
   urgent: "紧急",
   critical: "紧急",
@@ -294,8 +314,8 @@ function renderTaskRow(entry, state, index, list, selected, columns) {
   ]
     .filter(Boolean)
     .join(" · ");
-  return `<tr class="tl-task-row ${isSelected ? "is-selected" : ""} ${state.taskRowMenu === id ? "has-open-menu" : ""}" data-task-id="${e(id)}"><td class="tl-col-check"><input class="tl-checkbox" type="checkbox" ${taskAction("task-select", id)} aria-label="选择任务 ${e(id)}：${e(entry.title)}" ${isSelected ? "checked" : ""}></td><td class="tl-col-task"><div class="tl-task-copy"><button type="button" class="tl-task-title" ${taskAction("open-task", id)} title="${e(entry.title)}
-${e(context)}">${e(entry.title)}</button><div class="tl-task-meta" title="${e(context)}"><span class="tl-task-id">${e(id)}</span><span class="tl-meta-dot" aria-hidden="true">·</span><span class="tl-task-type">${e(typeNames[type] || type)}</span>${elevated ? `<span class="tl-priority tl-priority-${priority}" role="img" aria-label="${e(priorityLabel)}" title="${e(priorityLabel)}">${icon("ArrowUp", 10)}</span>` : ""}</div></div></td><td class="tl-col-status">${renderStatus(entry)}</td>${columns.engine ? `<td class="tl-col-engine"><span class="tl-engine">${e(engineName(entry.engineId))}</span></td>` : ""}${columns.duration ? `<td class="tl-col-duration">${renderDuration(entry)}</td>` : ""}${columns.created ? `<td class="tl-col-created">${renderCreated(entry.task.metadata?.createdAt)}</td>` : ""}<td class="tl-col-actions">${renderRowMenu(entry, state, index, selected.size, index >= list.items.length - 2)}</td></tr>`;
+  return `<tr class="tl-task-row ${isSelected ? "is-selected" : ""} ${state.taskRowMenu === id ? "has-open-menu" : ""}" data-task-id="${e(id)}"><td class="tl-col-check"><input class="tl-checkbox" type="checkbox" ${taskAction("task-select", id)} aria-label="选择任务 ${e(id)}：${e(entry.title)}" ${isSelected ? "checked" : ""}></td><td class="tl-col-task"><div class="tl-task-cell"><span class="tl-task-icon" aria-hidden="true">${icon(typeIcons[type] || "ListChecks", 17)}</span><div class="tl-task-copy"><button type="button" class="tl-task-title" ${taskAction("open-task", id)} title="${e(entry.title)}
+${e(context)}"><span class="tl-task-title-text">${e(entry.title)}</span>${icon("ArrowUpRight", 13)}</button><div class="tl-task-meta" title="${e(context)}"><span class="tl-task-id">${e(id)}</span><span class="tl-meta-dot" aria-hidden="true">·</span><span class="tl-task-type">${e(typeNames[type] || type)}</span>${elevated ? `<span class="tl-priority tl-priority-${priority}" role="img" aria-label="${e(priorityLabel)}" title="${e(priorityLabel)}">${icon("ArrowUp", 10)}</span>` : ""}</div></div></div></td><td class="tl-col-status">${renderStatus(entry)}</td>${columns.engine ? `<td class="tl-col-engine"><span class="tl-engine">${e(engineName(entry.engineId))}</span></td>` : ""}${columns.duration ? `<td class="tl-col-duration">${renderDuration(entry)}</td>` : ""}${columns.created ? `<td class="tl-col-created">${renderCreated(entry.task.metadata?.createdAt)}</td>` : ""}<td class="tl-col-actions">${renderRowMenu(entry, state, index, selected.size, index >= list.items.length - 2)}</td></tr>`;
 }
 
 function renderTable(state, list, ids, columns) {
@@ -420,7 +440,7 @@ export function renderTaskPage(state) {
     ["failed", "失败"],
     ["completed", "已完成"],
   ];
-  return `<section class="tl-workspace" aria-label="任务工作区">${renderBulkResult(state.bulkResult)}<div class="ui-card tl-panel ${state.taskDensity === "compact" ? "tl-density-compact" : ""}"><div class="tl-topline"><div class="ui-tabs tl-status-tabs" role="group" aria-label="按任务状态筛选">${tabs.map(([value, label]) => `<button type="button" class="ui-tab tl-status-tab ${filters.status === value ? "is-active" : ""}" ${action("task-status-tab", `data-status="${value}"`)} aria-pressed="${filters.status === value}"><span>${label}</span><span class="tl-tab-count">${list.counts[value] || 0}</span></button>`).join("")}</div></div><div class="tl-toolbar"><label class="tl-search ui-search" for="task-search">${icon("Search", 15)}<input class="ui-input" type="search" id="task-search" name="task-search" placeholder="搜索任务…" aria-label="搜索任务、ID、文件或分支" value="${e(filters.query || "")}" autocomplete="off">${filters.query ? `<button type="button" class="ui-icon-button tl-search-clear" ${action("task-filter-remove", 'data-filter="query"')} aria-label="清空任务搜索">${icon("X", 12)}</button>` : ""}</label><div class="tl-toolbar-actions"><button type="button" class="ui-button tl-button ${state.taskFilterOpen ? "is-active" : ""}" ${action("task-filter-toggle")} aria-expanded="${Boolean(state.taskFilterOpen)}" aria-controls="task-filter-panel" aria-label="筛选任务">${icon("SlidersHorizontal", 14)}<span>筛选</span>${detailFilterCount ? `<span class="tl-button-count">${detailFilterCount}</span>` : ""}</button><div class="tl-display-wrap"><button type="button" class="ui-button tl-button ${state.taskDisplayOpen ? "is-active" : ""}" ${action("task-display-toggle")} aria-expanded="${Boolean(state.taskDisplayOpen)}" aria-controls="task-display-panel" aria-label="显示选项">${icon("PanelTop", 14)}<span>显示</span></button>${state.taskDisplayOpen ? renderDisplayPanel(state, columns) : ""}</div><button type="button" class="ui-button tl-button tl-export-button" aria-label="导出筛选结果" ${action("task-export")} ${list.total ? "" : "disabled"} title="导出全部 ${list.total} 项筛选结果为 CSV">${icon("Download", 14)}<span>导出</span></button></div></div>${state.taskFilterOpen ? renderFilterPanel(filters, options) : ""}${renderFilterChips(filters)}${renderSelectionBar(state, list, ids)}${list.items.length ? renderTable(state, list, ids, columns) : renderEmpty(state, tasks.length > 0)}${renderPagination(list)}</div></section>`;
+  return `<section class="tl-workspace" aria-label="任务工作区">${renderBulkResult(state.bulkResult)}<div class="ui-card tl-panel ${state.taskDensity === "compact" ? "tl-density-compact" : ""}"><div class="tl-topline"><div class="ui-tabs tl-status-tabs" role="group" aria-label="按任务状态筛选">${tabs.map(([value, label]) => `<button type="button" class="ui-tab tl-status-tab ${filters.status === value ? "is-active" : ""}" ${action("task-status-tab", `data-status="${value}"`)} aria-pressed="${filters.status === value}">${icon(statusIcons[value], 14)}<span>${label}</span><span class="tl-tab-count">${list.counts[value] || 0}</span></button>`).join("")}</div></div><div class="tl-toolbar"><label class="tl-search ui-search" for="task-search">${icon("Search", 15)}<input class="ui-input" type="search" id="task-search" name="task-search" placeholder="搜索任务…" aria-label="搜索任务、ID、文件或分支" value="${e(filters.query || "")}" autocomplete="off">${filters.query ? `<button type="button" class="ui-icon-button tl-search-clear" ${action("task-filter-remove", 'data-filter="query"')} aria-label="清空任务搜索">${icon("X", 12)}</button>` : ""}</label><div class="tl-toolbar-actions"><button type="button" class="ui-button tl-button ${state.taskFilterOpen ? "is-active" : ""}" ${action("task-filter-toggle")} aria-expanded="${Boolean(state.taskFilterOpen)}" aria-controls="task-filter-panel" aria-label="筛选任务">${icon("SlidersHorizontal", 14)}<span>筛选</span>${detailFilterCount ? `<span class="tl-button-count">${detailFilterCount}</span>` : ""}</button><div class="tl-display-wrap"><button type="button" class="ui-button tl-button ${state.taskDisplayOpen ? "is-active" : ""}" ${action("task-display-toggle")} aria-expanded="${Boolean(state.taskDisplayOpen)}" aria-controls="task-display-panel" aria-label="显示选项">${icon("PanelTop", 14)}<span>显示</span></button>${state.taskDisplayOpen ? renderDisplayPanel(state, columns) : ""}</div><button type="button" class="ui-button tl-button tl-export-button" aria-label="导出筛选结果" ${action("task-export")} ${list.total ? "" : "disabled"} title="导出全部 ${list.total} 项筛选结果为 CSV">${icon("Download", 14)}<span>导出</span></button></div></div>${state.taskFilterOpen ? renderFilterPanel(filters, options) : ""}${renderFilterChips(filters)}${renderSelectionBar(state, list, ids)}${list.items.length ? renderTable(state, list, ids, columns) : renderEmpty(state, tasks.length > 0)}${renderPagination(list)}</div></section>`;
 }
 
 /** Contents of the native #bulk-dialog. No action runs before confirmation. */

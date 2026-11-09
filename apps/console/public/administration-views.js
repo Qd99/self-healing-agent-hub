@@ -44,6 +44,7 @@ const sourceOf = (s) =>
 const taskButton = (id, label, tab = "trace") =>
   uiButton({
     label,
+    icon: tab === "logs" ? "Terminal" : "ArrowUpRight",
     action: "open-task",
     variant: "ghost",
     className: "adm-task-link",
@@ -56,12 +57,23 @@ function renderOperation(entry, tasks) {
   const description = describeActivity(entry);
   const relatedTask =
     entry.taskId && tasks.find((item) => item.task.id === entry.taskId);
-  return `<li class="adm-operation">
-    <span class="adm-operation-icon" aria-hidden="true">${icon(description.icon, 15)}</span>
+  const tone =
+    entry.level === "error"
+      ? "error"
+      : entry.level === "warning"
+        ? "warning"
+        : "neutral";
+  const category =
+    ACTIVITY_CATEGORIES.find((item) => item.value === description.category)
+      ?.label || "其他操作";
+  return `<li class="adm-operation adm-operation-${tone}">
+    <span class="adm-operation-icon" aria-hidden="true" title="${e(category)}">${icon(description.icon, 17)}</span>
     <div class="adm-operation-body">
-      <div class="adm-operation-heading"><p><span>${e(description.actor)}</span><span class="adm-operation-separator" aria-hidden="true">·</span><strong>${e(description.label)}</strong></p><time datetime="${e(entry.at || "")}" title="${e(entry.at || "时间未提供")}">${e(timeOf(entry.at))}</time></div>
+      <div class="adm-operation-heading"><p><strong>${e(description.label)}</strong><span class="adm-operation-category">${e(category)}</span></p><time datetime="${e(entry.at || "")}" title="${e(entry.at || "时间未提供")}">${e(timeOf(entry.at))}</time></div>
       ${description.message ? `<p class="adm-operation-message">${e(description.message)}</p>` : ""}
-      ${entry.taskId ? `<div class="adm-operation-target">${relatedTask ? `${taskButton(entry.taskId, entry.taskId)}${taskButton(entry.taskId, "执行日志", "logs")}` : `<span class="adm-operation-task-id">${e(entry.taskId)}</span><span>关联任务未提供</span>`}</div>` : ""}
+      <div class="adm-operation-meta"><span class="adm-operation-actor">${icon("Fingerprint", 13)}${e(description.actor)}</span>
+        ${entry.taskId ? `<div class="adm-operation-target">${relatedTask ? `${taskButton(entry.taskId, entry.taskId)}${taskButton(entry.taskId, "执行日志", "logs")}` : `<span class="adm-operation-task-id">${icon("ListChecks", 12)}${e(entry.taskId)}</span><span>关联任务未提供</span>`}</div>` : entry.ruleId ? `<span class="adm-operation-rule-id">${icon("Workflow", 12)}${e(entry.ruleId)}</span>` : ""}
+      </div>
     </div>
   </li>`;
 }
@@ -77,8 +89,7 @@ export function renderActivityPage(s) {
   );
   const today = activityDateKey(new Date().toISOString());
   const groups = groupActivities(filtered);
-  return `<section class="adm-workspace adm-activity" aria-label="操作记录">
-    <p class="adm-caption">记录谁在何时做了什么；执行日志在任务详情中查看。</p>
+  return `<section class="ui-card adm-workspace adm-activity" aria-label="操作记录">
     <div class="ui-toolbar adm-toolbar">
       ${uiSearch({ id: "activity-search", value: filters.query, label: "搜索操作记录", placeholder: "搜索操作、操作者或任务…", className: "adm-search" })}
       ${uiSelect({ id: "activity-category", value: filters.category, options: ACTIVITY_CATEGORIES, label: "操作类型" })}
@@ -96,7 +107,7 @@ export function renderActivityPage(s) {
       })}
       ${active ? resetButton("activity-reset") : ""}
     </div>
-    <div class="adm-list-summary"><span role="status" aria-live="polite">${active ? `筛选出 ${filtered.length} 条，共 ${all.length} 条` : `${all.length} 条操作记录`}</span><span>北京时间</span></div>
+    <div class="adm-list-summary"><span role="status" aria-live="polite">${icon("History", 14)}${active ? `筛选出 ${filtered.length} 条，共 ${all.length} 条` : `${all.length} 条操作记录`}</span><span>${icon("Clock3", 13)}北京时间</span></div>
     ${
       !all.length
         ? uiEmpty({
@@ -119,7 +130,7 @@ export function renderActivityPage(s) {
                     : dateFormatter.format(
                         new Date(`${group.date}T12:00:00+08:00`),
                       );
-                return `<section class="adm-operation-group"><h2>${group.date === today ? `<span>今天</span><span class="adm-date-label">${e(date)}</span>` : e(date)}<span class="adm-date-count">${group.items.length}</span></h2><ol>${group.items.map((entry) => renderOperation(entry, s.snapshot?.tasks || [])).join("")}</ol></section>`;
+                return `<section class="adm-operation-group"><h2>${icon("CalendarDays", 14)}${group.date === today ? `<span>今天</span><span class="adm-date-label">${e(date)}</span>` : e(date)}<span class="adm-date-count">${group.items.length} 条</span></h2><ol>${group.items.map((entry) => renderOperation(entry, s.snapshot?.tasks || [])).join("")}</ol></section>`;
               })
               .join("")}</div>`
     }
@@ -166,7 +177,7 @@ export function renderRulesPage(s) {
     ...new Set(all.map((rule) => rule.processor?.engine).filter(Boolean)),
   ];
   const writable = canUpdateRules(s);
-  return `<section class="adm-workspace adm-rules" aria-label="路由规则">
+  return `<section class="ui-card adm-workspace adm-rules" aria-label="路由规则">
     <div class="adm-caption-row"><p class="adm-caption">定义什么任务交给哪个引擎，以及采用的处理动作。</p>${uiStatus({ label: writable ? "演示配置" : "配置只读", icon: writable ? "FlaskConical" : "LockKeyhole", tone: "neutral" })}</div>
     <div class="ui-toolbar adm-toolbar">
       ${uiSearch({ id: "rules-search", value: filters.query, label: "搜索路由规则", placeholder: "搜索规则名称、条件或动作…", className: "adm-search" })}
@@ -184,7 +195,7 @@ export function renderRulesPage(s) {
       ${active ? resetButton("rules-reset") : ""}
     </div>
     <div class="adm-list-summary"><span role="status" aria-live="polite">${active ? `筛选出 ${filtered.length} 条，共 ${all.length} 条` : `${all.length} 条规则 · ${all.filter((rule) => rule.enabled).length} 条已启用`}</span><span>${writable ? "开关仅影响本次演示" : `来源：${e(sourceOf(s))}`}</span></div>
-    ${!all.length ? uiEmpty({ icon: "Workflow", title: "还没有路由规则", description: "管理服务提供规则配置后，可在这里查看分流条件与处理动作。" }) : !filtered.length ? uiEmpty({ icon: "Search", title: "没有匹配的规则", description: "试试其他关键词或调整规则状态。", action: resetButton("rules-reset") }) : `<div class="ui-card adm-rules-table"><table class="ui-table"><thead><tr><th scope="col">规则</th><th scope="col">当满足以下条件</th><th scope="col">交给引擎处理</th><th scope="col">配置状态</th><th scope="col"><span class="sr-only">详情</span></th></tr></thead><tbody>${filtered.map((rule) => renderRuleRow(rule, s)).join("")}</tbody></table></div>`}
+    ${!all.length ? uiEmpty({ icon: "Workflow", title: "还没有路由规则", description: "管理服务提供规则配置后，可在这里查看分流条件与处理动作。" }) : !filtered.length ? uiEmpty({ icon: "Search", title: "没有匹配的规则", description: "试试其他关键词或调整规则状态。", action: resetButton("rules-reset") }) : `<div class="adm-rules-table"><table class="ui-table"><thead><tr><th scope="col">规则</th><th scope="col">当满足以下条件</th><th scope="col">交给引擎处理</th><th scope="col">配置状态</th><th scope="col"><span class="sr-only">详情</span></th></tr></thead><tbody>${filtered.map((rule) => renderRuleRow(rule, s)).join("")}</tbody></table></div>`}
   </section>`;
 }
 

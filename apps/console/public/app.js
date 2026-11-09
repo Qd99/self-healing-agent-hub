@@ -2,6 +2,8 @@ import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { createTaskController } from "./task-controller.js";
 import { createAdministrationController } from "./administration-controller.js";
 import { createMonitoringController } from "./monitoring-controller.js";
+import { installInteractionFeedback } from "./interaction.js";
+import { uiStatus } from "./ui.js";
 import { getApprovalFlow } from "./approvals.js";
 import {
   pages,
@@ -62,6 +64,7 @@ let abortController = null;
 let loadSequence = 0;
 let toastTimer;
 let lastFocus = null;
+installInteractionFeedback();
 const taskController = createTaskController({
   state,
   render,
@@ -132,9 +135,18 @@ function render() {
     flowResizeObserver.observe(canvas);
   }
 }
-function toast(message) {
+function toast(message, tone = "neutral") {
   clearTimeout(toastTimer);
-  toastElement.textContent = message;
+  toastElement.innerHTML = uiStatus({
+    label: message,
+    tone,
+    icon:
+      tone === "success"
+        ? "CircleCheck"
+        : tone === "error"
+          ? "CircleAlert"
+          : "Info",
+  });
   toastElement.classList.add("show");
   toastTimer = setTimeout(() => toastElement.classList.remove("show"), 3500);
 }
@@ -498,8 +510,23 @@ document.addEventListener("click", (event) => {
   } else if (action === "new-task") openCreate();
   else if (action === "close-create") closeCreate();
   else if (action === "mode") loadData(mode === "demo" ? "demo" : "live");
-  else if (action === "refresh") loadData();
-  else if (action === "task-action") {
+  else if (action === "refresh") {
+    const expectedSequence = loadSequence + 1;
+    loadData().then(() => {
+      if (loadSequence !== expectedSequence) return;
+      toast(
+        state.error
+          ? `刷新失败：${state.error}`
+          : state.mode === "demo"
+            ? "已刷新演示工作空间"
+            : "已刷新管理服务配置",
+        state.error ? "error" : "success",
+      );
+      document
+        .querySelector('[data-action="refresh"]')
+        ?.focus({ preventScroll: true });
+    });
+  } else if (action === "task-action") {
     const next = runDemoAction(command, id);
     if (next && command === "retry") openTask(next.tasks[0].task.id);
   } else if (action === "search") {
@@ -654,14 +681,18 @@ document.addEventListener("keydown", (event) => {
     render();
     document.querySelector(".mobile-menu")?.focus();
   }
-  const focused = event.target.closest('[role="tab"]');
+  const focused = event.target.closest(
+    '[role="tab"], [data-action="overview-tab"]',
+  );
   if (
     focused &&
     ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)
   ) {
     event.preventDefault();
     const tabs = [
-      ...focused.closest('[role="tablist"]').querySelectorAll('[role="tab"]'),
+      ...focused
+        .closest('[role="tablist"], [role="group"]')
+        .querySelectorAll('[role="tab"], [data-action="overview-tab"]'),
     ];
     const index = tabs.indexOf(focused);
     const next =

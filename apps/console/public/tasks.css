@@ -1,4 +1,4 @@
-/* Task workspace: fewer layers, readable rows, controls when needed. */
+/* Task workspace: one surface, visible actions, and quiet state feedback. */
 .tl-workspace {
   min-width: 0;
   width: 100%;
@@ -17,6 +17,8 @@
   min-width: 0;
   padding: 0 20px;
   border-bottom: 1px solid var(--line);
+  border-radius: var(--ui-card-radius) var(--ui-card-radius) 0 0;
+  background: color-mix(in srgb, var(--subtle) 55%, var(--surface));
 }
 .tl-status-tabs {
   display: flex;
@@ -61,14 +63,29 @@
 .tl-status-tab:hover {
   color: var(--ink);
 }
-.tl-tab-count {
+.tl-status-tab > svg {
+  flex: none;
   color: var(--faint);
+  transition: color 0.15s;
+}
+.tl-status-tab.is-active > svg {
+  color: var(--blue);
+}
+.tl-tab-count {
+  min-width: 19px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  color: var(--muted);
+  background: var(--hover);
   font-size: 11px;
   font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 .tl-status-tab.is-active .tl-tab-count {
   color: var(--blue);
+  background: var(--blue-soft);
 }
 .tl-toolbar {
   position: relative;
@@ -137,7 +154,7 @@
 .tl-toolbar-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 7px;
   flex: none;
   margin-left: auto;
 }
@@ -172,13 +189,12 @@
   color: var(--blue);
 }
 .tl-toolbar-actions .tl-button {
-  border-color: transparent;
-  box-shadow: none;
-  background: transparent;
+  border-color: var(--line);
+  background: var(--surface);
   color: var(--muted);
 }
-.tl-toolbar-actions .tl-button:hover {
-  border-color: transparent;
+.tl-toolbar-actions .tl-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--blue) 30%, var(--line));
   background: var(--subtle);
   color: var(--ink);
 }
@@ -519,8 +535,8 @@
   white-space: nowrap;
 }
 .tl-table td {
-  padding: 15px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  padding: 17px 12px;
+  border-bottom: 1px solid var(--line);
   vertical-align: middle;
   font-size: 13px;
 }
@@ -567,42 +583,100 @@
   outline-offset: 3px;
 }
 .tl-task-row {
-  transition: background 0.15s ease;
+  transition: background 0.16s ease;
 }
-.tl-task-row:hover,
-.tl-task-row:focus-within {
-  background: color-mix(in srgb, var(--blue-soft) 25%, var(--surface-raised));
+.tl-table .tl-task-row:hover,
+.tl-table .tl-task-row:focus-within {
+  background: color-mix(in srgb, var(--subtle) 75%, var(--surface));
 }
-.tl-task-row.is-selected {
-  background: color-mix(in srgb, var(--blue-soft) 55%, var(--surface-raised));
+.tl-table .tl-task-row.is-selected {
+  background: color-mix(in srgb, var(--blue-soft) 70%, var(--surface));
 }
-.tl-task-row.is-selected:hover {
-  background: color-mix(in srgb, var(--blue-soft) 80%, var(--surface-raised));
+.tl-table .tl-task-row.is-selected:hover {
+  background: var(--blue-soft);
+}
+.tl-table .tl-task-row.is-selected > td:first-child {
+  box-shadow: inset 2px 0 0 var(--blue);
+}
+.tl-task-cell {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.tl-task-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 34px;
+  color: var(--muted);
+  background: var(--subtle);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition:
+    color 0.16s,
+    background 0.16s,
+    border-color 0.16s;
+}
+.tl-task-row:hover .tl-task-icon,
+.tl-task-row.is-selected .tl-task-icon {
+  color: var(--blue);
+  background: var(--blue-soft);
+  border-color: color-mix(in srgb, var(--blue) 22%, var(--line));
 }
 .tl-task-copy {
+  flex: 1;
   min-width: 0;
 }
 .tl-task-title {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   text-align: left;
-  max-width: 100%;
-  padding: 0;
+  max-width: calc(100% + 10px);
+  min-height: 28px;
+  padding: 3px 5px;
+  margin: -3px -5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 550;
   line-height: 1.5;
   color: var(--ink);
-  white-space: nowrap;
+  transition:
+    color 0.16s,
+    background 0.16s,
+    border-color 0.16s,
+    transform 0.16s;
+}
+.tl-task-title-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-task-title > svg {
+  flex: none;
+  color: var(--faint);
 }
 .tl-task-title:hover {
   color: var(--blue);
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--blue) 25%, var(--line));
+  transform: translateY(-1px);
+}
+.tl-task-title:hover > svg {
+  color: var(--blue);
+}
+.tl-task-title:active {
+  transform: scale(0.98);
 }
 .tl-task-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: var(--faint);
+  gap: 7px;
+  color: var(--muted);
   font-size: 11px;
   line-height: 16px;
   margin-top: 5px;
@@ -610,6 +684,8 @@
   min-width: 0;
 }
 .tl-task-id {
+  flex: none;
+  color: var(--faint);
   font-variant-numeric: tabular-nums;
   font-size: 11px;
   letter-spacing: 0.1px;
@@ -709,9 +785,13 @@
   display: flex;
   justify-content: flex-end;
 }
-.tl-row-menu-trigger {
-  color: var(--faint);
-  width: 26px;
+.tl-workspace .tl-row-menu-trigger.ui-icon-button {
+  color: var(--muted);
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  border-color: var(--line);
+  background: var(--surface);
 }
 .tl-task-row:hover .tl-row-menu-trigger,
 .tl-row-menu-trigger:focus-visible {
@@ -763,9 +843,7 @@
   background: var(--line);
 }
 .tl-pagination {
-  position: sticky;
-  bottom: 0;
-  z-index: 9;
+  position: relative;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -798,6 +876,10 @@
   gap: 7px;
   color: var(--faint);
   font-size: 11px;
+  white-space: nowrap;
+}
+.tl-page-size > span {
+  flex: none;
 }
 .tl-page-size select {
   height: 28px;
@@ -867,6 +949,10 @@
 }
 .tl-density-compact .tl-task-meta {
   margin-top: 3px;
+}
+.tl-density-compact .tl-task-icon {
+  width: 29px;
+  height: 30px;
 }
 .tl-bulk-result {
   background: var(--surface-raised);
@@ -1438,17 +1524,44 @@
   .tl-table td {
     padding-block: 15px;
   }
+  .tl-task-cell {
+    gap: 8px;
+    align-items: flex-start;
+  }
+  .tl-task-icon {
+    width: 26px;
+    height: 28px;
+    border-radius: 6px;
+    margin-top: 1px;
+  }
+  .tl-task-icon svg {
+    width: 15px;
+    height: 15px;
+  }
   .tl-task-title {
-    white-space: normal;
-    overflow-wrap: anywhere;
+    align-items: flex-start;
     font-size: 13px;
     line-height: 1.6;
   }
+  .tl-task-title-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .tl-task-title > svg {
+    margin-top: 4px;
+  }
+  .tl-status-tab > svg {
+    display: none;
+  }
   .tl-task-meta {
-    gap: 5px;
+    flex-wrap: wrap;
+    gap: 3px 5px;
     font-size: 11px;
     line-height: 16px;
     margin-top: 4px;
+  }
+  .tl-task-meta .tl-meta-dot {
+    display: none;
   }
   .tl-task-id {
     font-size: 11px;
@@ -1595,11 +1708,14 @@
     height: 32px;
   }
   .tl-task-meta {
-    gap: 4px;
-    font-size: 10px;
+    gap: 3px 5px;
+    font-size: 11px;
   }
   .tl-task-id {
-    font-size: 10px;
+    font-size: 11px;
+  }
+  .tl-task-title > svg {
+    display: none;
   }
 }
 .tl-workspace .tl-status-tab:focus-visible {

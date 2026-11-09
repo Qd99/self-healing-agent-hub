@@ -7,6 +7,7 @@ import {
   uiEmpty,
   uiTabs,
   uiField,
+  uiMetric,
 } from "./ui.js";
 import {
   normalizeMonitoringConfig,
@@ -83,19 +84,51 @@ function externalButton(s, className = "") {
 
 function renderDashboard(s) {
   const config = currentMonitoring(s);
-  const ready = config.status === "ready";
-  if (!ready)
-    return `<div class="ui-card mon-unconfigured">${uiEmpty({ icon: "ChartNoAxesCombined", title: "接入你的监控面板", description: "绑定 Grafana、Prometheus 数据源和监控命名空间，统一查看运行指标。", action: uiButton({ label: "配置 Grafana", icon: "Plus", action: "monitoring-tab", attrs: 'data-tab="configuration"', variant: "primary" }) })}</div>`;
+  const configured = config.status === "ready";
+  const placeholder =
+    configured && new URL(config.grafana.baseUrl).hostname.endsWith(".invalid");
+  const scope = config.namespaces.includes(s.monitoringScope)
+    ? s.monitoringScope
+    : MONITORING_ALL_SCOPE;
+  const namespaces =
+    scope === MONITORING_ALL_SCOPE ? config.namespaces : [scope];
+  const datasourceName =
+    config.datasource?.name ||
+    (config.datasource?.uid ? "Prometheus" : "未配置数据源");
   return `<div class="mon-dashboard">
-    <div class="ui-toolbar mon-toolbar"><div class="mon-scope-control"><span class="mon-control-label">命名空间</span>${uiSelect({ id: "monitoring-scope", value: s.monitoringScope || MONITORING_ALL_SCOPE, label: "监控命名空间", options: [{ value: MONITORING_ALL_SCOPE, label: `全部已配置 · ${config.namespaces.length}` }, ...config.namespaces.map((value) => ({ value, label: value }))] })}</div><div class="ui-toolbar-actions">${uiSelect({ id: "monitoring-range", value: s.monitoringRange || "6h", label: "监控时间范围", options: MONITORING_TIME_RANGES.map(({ id, label }) => ({ value: id, label })) })}${externalButton(s)}</div></div>
-    <div class="mon-binding-line"><span>${icon("Database", 14)}${e(config.datasource.name || "Prometheus")}<code>${e(config.datasource.uid)}</code></span>${uiStatus({ label: "尚未验证连接", icon: "CircleDashed", tone: "neutral" })}</div>
-    <div class="mon-panel-grid" aria-label="Grafana 面板布局预览，未查询指标">
-      <section class="ui-card mon-stat"><div><h2>可抓取目标</h2>${icon("CircleCheck", 17)}</div><strong>—<span>个</span></strong><p>Prometheus 抓取成功的目标</p></section>
-      <section class="ui-card mon-stat"><div><h2>抓取异常</h2>${icon("CircleAlert", 17)}</div><strong>—<span>个</span></strong><p>Prometheus 抓取失败的目标</p></section>
-      <section class="ui-card mon-binding-card"><div class="mon-mini-heading"><h2>监控范围</h2>${uiButton({ label: "编辑", icon: "Settings2", action: "monitoring-tab", variant: "ghost", attrs: 'data-tab="configuration"' })}</div><div class="mon-namespace-tags">${((s.monitoringScope || MONITORING_ALL_SCOPE) === MONITORING_ALL_SCOPE ? config.namespaces : [s.monitoringScope]).map((namespace) => `<span>${icon("Boxes", 12)}${e(namespace)}</span>`).join("")}</div><p>${e(sourceLabel(s))} · 数据源按 UID 绑定</p></section>
-      <section class="ui-card mon-chart-panel"><header><h2>${icon("ChartNoAxesCombined", 16)}目标抓取状态</h2><span>面板布局预览</span></header><div class="mon-chart-empty"><div class="mon-chart-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div><div class="mon-chart-message"><span class="mon-chart-glyph">${icon("ChartNoAxesCombined", 24)}</span><h3>实时指标将在 Grafana 中展示</h3><p>当前仅预览布局，尚未查询 Prometheus 数据。</p>${uiButton({ label: "导出仪表盘模板", icon: "Download", action: "monitoring-export-dashboard", variant: "ghost", disabled: s.monitoringDirty, title: s.monitoringDirty ? "请先保存接入配置中的修改" : "" })}</div></div></section>
-    </div>
-    <details class="mon-integration-note"><summary>面板接入说明${icon("ChevronDown", 13)}</summary><p>模板使用带 namespace 标签的 Prometheus up 指标，显示目标抓取状态。抓取成功不代表 Agent 已健康运行。当前命名空间筛选仅控制仪表盘视图，不改变 Agent 的实际监听范围。</p><p>后续可在这里接入已授权的 Grafana 嵌入面板；现阶段使用「打开 Grafana」查看真实数据。</p></details>
+    <section class="ui-card mon-overview" aria-label="Grafana 面板布局预览，未查询指标">
+      <div class="mon-toolbar">
+        <div class="mon-control"><span class="mon-control-label">${icon("Boxes", 14)}监控范围</span>${uiSelect({ id: "monitoring-scope", value: scope, label: "监控命名空间", disabled: !configured, options: [{ value: MONITORING_ALL_SCOPE, label: configured ? `全部已配置 · ${config.namespaces.length}` : "尚未配置命名空间" }, ...config.namespaces.map((value) => ({ value, label: value }))] })}</div>
+        <div class="mon-control"><span class="mon-control-label">${icon("Clock3", 14)}时间范围</span>${uiSelect({ id: "monitoring-range", value: s.monitoringRange || "6h", label: "监控时间范围", disabled: !configured, options: MONITORING_TIME_RANGES.map(({ id, label }) => ({ value: id, label })) })}</div>
+        <div class="mon-source"><span class="mon-control-label">${icon("Database", 14)}Prometheus 数据源</span><div class="mon-source-value"><strong title="${e(datasourceName)}">${e(datasourceName)}</strong><code title="${e(config.datasource?.uid || "尚未绑定 UID")}">${e(config.datasource?.uid ? `UID · ${config.datasource.uid}` : "尚未绑定 UID")}</code></div></div>
+        ${externalButton(s, "mon-open-grafana")}
+      </div>
+      <div class="mon-summary" aria-label="抓取指标与已配置范围">
+        ${uiMetric({ label: "可抓取目标", value: "—", unit: "个", icon: "Activity", detail: "尚未查询 Prometheus" })}
+        ${uiMetric({ label: "抓取异常", value: "—", unit: "个", icon: "CircleAlert", detail: "尚未查询 Prometheus" })}
+        ${uiMetric({ label: "已配置命名空间", value: configured ? config.namespaces.length : 0, unit: "个", icon: "Boxes", detail: configured ? `当前视图 · ${namespaces.length} 个命名空间` : "配置后可按范围筛选" })}
+      </div>
+      <section class="mon-chart-panel">
+        <header><h2>${icon("ChartNoAxesCombined", 16)}目标抓取状态<span>布局预览</span></h2>${uiStatus({ label: "尚未验证连接", icon: "CircleDashed", tone: "neutral" })}</header>
+        <div class="mon-chart-empty"><div class="mon-chart-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></div>${uiEmpty(
+          {
+            icon: "Plug",
+            title: placeholder
+              ? "替换示例配置，接入真实监控"
+              : "接入 Grafana，查看实时指标",
+            description: placeholder
+              ? "当前为 Grafana 示例占位，尚未查询 Prometheus。"
+              : configured
+                ? "配置已填写，连接与指标尚未验证；当前仅预览布局。"
+                : "绑定 Grafana、数据源 UID 与监控命名空间。",
+            className: "mon-chart-message",
+            action: `${uiButton({ label: "配置接入", icon: "Settings2", action: "monitoring-tab", attrs: 'data-tab="configuration"', variant: "primary" })}${uiButton({ label: "导出仪表盘模板", icon: "Download", action: "monitoring-export-dashboard", variant: "ghost", disabled: !configured || s.monitoringDirty, title: s.monitoringDirty ? "请先保存接入配置中的修改" : !configured ? "完成接入配置后可导出模板" : "导入 Grafana 后验证数据源与指标" })}`,
+          },
+        )}</div>
+        <footer class="mon-scope-footer"><div class="mon-namespace-tags"><span class="mon-footer-label">当前范围</span>${namespaces.length ? namespaces.map((namespace) => `<span class="mon-namespace">${icon("Box", 12)}${e(namespace)}</span>`).join("") : '<span class="mon-no-scope">尚未配置</span>'}</div><span class="mon-config-source">${icon(s.mode === "demo" && s.monitoringSource === "example" ? "FlaskConical" : s.monitoringSource === "local" || s.monitoringSource === "session" ? "Laptop" : "Database", 13)}${e(sourceLabel(s))}</span></footer>
+      </section>
+    </section>
+    <details class="mon-integration-note"><summary>${icon("CircleHelp", 14)}指标与范围说明${icon("ChevronDown", 13)}</summary><p>抓取指标使用带 namespace 标签的 Prometheus up 数据；抓取成功不代表 Agent 健康。范围筛选仅影响仪表盘，不改变 Agent 的监听范围。</p><p>此处尚未嵌入实时面板，请在 Grafana 中验证数据源与指标。</p></details>
   </div>`;
 }
 
@@ -113,7 +146,7 @@ function renderConfiguration(s) {
     });
   const configured = currentMonitoring(s).status === "ready";
   return `<form id="monitoring-form" class="ui-card mon-config" novalidate>
-    <header class="mon-config-header"><div><h2>Grafana 接入</h2><p>绑定监控范围与数据源，生成可直接使用的仪表盘引用。</p></div>${uiStatus({ label: sourceLabel(s), icon: s.monitoringSource === "local" ? "Laptop" : s.mode === "demo" ? "FlaskConical" : "FileText", tone: "neutral" })}</header>
+    <header class="mon-config-header"><div class="mon-config-title"><span class="mon-config-mark">${icon("Plug", 20)}</span><div><h2>Grafana 接入</h2><p>绑定范围与数据源，保存为本机配置草稿。</p></div></div>${uiStatus({ label: sourceLabel(s), icon: s.monitoringSource === "local" ? "Laptop" : s.mode === "demo" ? "FlaskConical" : "Database", tone: "neutral" })}</header>
     ${s.mode === "demo" && s.monitoringSource === "example" ? '<div class="mon-demo-note">当前字段为示例，请替换成你环境中的实际值。</div>' : ""}
     <section class="mon-config-section"><div class="mon-section-label">${icon("ChartNoAxesCombined", 17)}<h3>Grafana</h3></div><div class="mon-fields">
       ${fields("baseUrl", { label: "服务地址", placeholder: "https://grafana.your-domain.com", required: true, path: "grafana.baseUrl", className: "mon-field-wide" })}

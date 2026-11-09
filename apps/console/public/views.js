@@ -11,7 +11,7 @@ import {
   renderRoutingDetail,
 } from "./administration-views.js";
 import { filterActivities } from "./administration-model.js";
-import { uiButton, uiStatus, uiEmpty } from "./ui.js";
+import { uiButton, uiStatus, uiEmpty, uiSelect } from "./ui.js";
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
@@ -114,16 +114,17 @@ const taskButton = (id, label, tab = "trace", className = "text-button") =>
 const empty = (title, description = "") =>
   uiEmpty({ icon: "ListTodo", title, description });
 const periodSelect = (days) =>
-  `<label class="sr-only" for="period">时间范围</label><select id="period" class="period-select ui-select-input" aria-label="时间范围">${[
-    [1, "今天"],
-    [7, "近 7 天"],
-    [30, "近 30 天"],
-  ]
-    .map(
-      ([n, t]) =>
-        `<option value="${n}" ${days === n ? "selected" : ""}>${t}</option>`,
-    )
-    .join("")}</select>`;
+  uiSelect({
+    id: "period",
+    label: "时间范围",
+    value: days,
+    className: "page-period",
+    options: [
+      { value: 1, label: "今天" },
+      { value: 7, label: "近 7 天" },
+      { value: 30, label: "近 30 天" },
+    ],
+  });
 
 export function renderShell(s) {
   return `${renderSidebar(s, pages)}<div class="shell">${renderTopbar(s, pages)}<main id="main-content" class="content" tabindex="-1">${renderPage(s)}</main></div>`;
@@ -133,7 +134,7 @@ function renderPage(s) {
   const activityCount = s.snapshot
     ? filterActivities(s.snapshot.activity, s.activityFilters).length
     : 0;
-  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row">${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger, title: !s.snapshot?.capabilities.trigger ? "执行引擎尚未接入" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" ? uiStatus({ label: s.mode === "demo" ? "演示审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
+  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger, title: !s.snapshot?.capabilities.trigger ? "执行引擎尚未接入" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" ? uiStatus({ label: s.mode === "demo" ? "演示审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
   if (s.loading)
     return (
       header +

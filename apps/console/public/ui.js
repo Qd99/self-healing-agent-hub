@@ -10,13 +10,14 @@ export function uiButton({
   variant = "default",
   className = "",
   disabled = false,
+  loading = false,
   title = "",
   type = "button",
 } = {}) {
   const style = ["default", "primary", "ghost", "danger"].includes(variant)
     ? variant
     : "default";
-  return `<button type="${e(type)}" class="ui-button ui-button-${style} ${e(className)}" ${action ? `data-action="${e(action)}"` : ""} ${disabled ? "disabled" : ""} ${title ? `title="${e(title)}"` : ""} ${attrs}>${icon ? glyph(icon, 15) : ""}${label ? `<span>${e(label)}</span>` : ""}</button>`;
+  return `<button type="${e(type)}" class="ui-button ui-button-${style} ${e(className)}" ${action ? `data-action="${e(action)}"` : ""} ${disabled || loading ? "disabled" : ""} ${loading ? 'aria-busy="true"' : ""} ${title ? `title="${e(title)}"` : ""} ${attrs}>${loading ? `<span class="ui-spinner">${glyph("LoaderCircle", 15)}</span>` : icon ? glyph(icon, 15) : ""}${label ? `<span>${e(label)}</span>` : ""}</button>`;
 }
 
 export function uiSearch({
@@ -59,6 +60,23 @@ export function uiStatus({
     ? tone
     : "neutral";
   return `<span class="ui-status ui-status-${style} ${e(className)}" ${title ? `title="${e(title)}"` : ""}>${icon ? glyph(icon, 14) : '<i aria-hidden="true"></i>'}<span>${e(label)}</span></span>`;
+}
+
+export function uiMetric({
+  label,
+  value,
+  unit = "",
+  icon,
+  tone = "neutral",
+  detail = "",
+  className = "",
+} = {}) {
+  const style = ["neutral", "info", "success", "warning", "error"].includes(
+    tone,
+  )
+    ? tone
+    : "neutral";
+  return `<div class="ui-metric ${e(className)}"><div class="ui-metric-heading">${icon ? `<span class="ui-metric-icon ui-metric-icon-${style}">${glyph(icon, 16)}</span>` : ""}<span>${e(label)}</span></div><div class="ui-metric-value"><strong>${e(value)}</strong>${unit ? `<span>${e(unit)}</span>` : ""}</div>${detail ? `<p class="ui-metric-detail">${e(detail)}</p>` : ""}</div>`;
 }
 
 export function uiEmpty({
