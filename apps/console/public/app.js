@@ -59,6 +59,9 @@ const state = {
   expandedTask: "",
   selectedTask: "",
   detailTab: "trace",
+  reconciliationDraft: null,
+  reconciliationError: "",
+  reconciliationSuccess: "",
   mobileNav: false,
   sidebarCollapsed: readSidebar(),
   approvalTaskId: "",
@@ -180,6 +183,17 @@ function currentTask() {
 }
 function refreshDetail() {
   if (!detailDialog.open) return;
+  const active = document.activeElement;
+  const focused = detailDialog.contains(active) ? active : null;
+  const scrollSelector = ".detail-content, .diff-lines, .log-lines";
+  const scroll = [...detailDialog.querySelectorAll(scrollSelector)].map(
+    (element) => [element.scrollTop, element.scrollLeft],
+  );
+  const receiptOpen = detailDialog.querySelector(".task-receipts")?.open;
+  const selection =
+    focused && typeof focused.selectionStart === "number"
+      ? [focused.selectionStart, focused.selectionEnd]
+      : null;
   const item = currentTask();
   const rule = state.snapshot?.rules.find(
     (entry) => entry.id === state.selectedRule,
@@ -191,6 +205,36 @@ function refreshDetail() {
   else if (rule) detailDialog.innerHTML = renderRuleDetail(rule, state);
   else if (activity)
     detailDialog.innerHTML = renderActivityDetail(activity, state);
+  if (receiptOpen) {
+    const receipts = detailDialog.querySelector(".task-receipts");
+    if (receipts) receipts.open = true;
+  }
+  if (focused) {
+    const replacement = [
+      ...detailDialog.querySelectorAll(
+        "[data-action],a[href],input,textarea,select,button,summary",
+      ),
+    ].find((element) =>
+      focused.id
+        ? element.id === focused.id
+        : element.tagName === focused.tagName &&
+          ["action", "tab", "command", "id"].every(
+            (key) => element.dataset[key] === focused.dataset[key],
+          ) &&
+          element.getAttribute("href") === focused.getAttribute("href"),
+    );
+    replacement?.focus({ preventScroll: true });
+    if (selection && replacement?.setSelectionRange)
+      try {
+        replacement.setSelectionRange(...selection);
+      } catch {}
+  }
+  [...detailDialog.querySelectorAll(scrollSelector)].forEach(
+    (element, index) => {
+      if (!scroll[index]) return;
+      [element.scrollTop, element.scrollLeft] = scroll[index];
+    },
+  );
 }
 function refreshCreate() {
   if (createDialog.open) createDialog.innerHTML = renderCreate(state);
@@ -205,6 +249,7 @@ function closeDetail() {
   state.selectedTask = "";
   state.selectedRule = "";
   state.selectedActivity = "";
+  state.reconciliationDraft = null;
 }
 function closeCreate() {
   if (createDialog.open) createDialog.close();
@@ -213,7 +258,10 @@ function restoreFocus() {
   if (lastFocus?.isConnected) lastFocus.focus();
   else document.querySelector("#main-content")?.focus({ preventScroll: true });
 }
-detailDialog.addEventListener("close", restoreFocus);
+detailDialog.addEventListener("close", () => {
+  state.reconciliationDraft = null;
+  restoreFocus();
+});
 createDialog.addEventListener("close", restoreFocus);
 detailDialog.addEventListener("cancel", () => {
   state.selectedTask = "";
@@ -226,6 +274,9 @@ function openTask(id, tab = "trace") {
     return;
   }
   state.selectedTask = id;
+  state.reconciliationDraft = null;
+  state.reconciliationError = "";
+  state.reconciliationSuccess = "";
   state.selectedRule = "";
   state.selectedActivity = "";
   state.detailTab = ["trace", "diff", "evidence", "logs"].includes(tab)
@@ -470,8 +521,8 @@ async function runMutation(key, request, { onSuccess, onError } = {}) {
     if (state.mode !== mode || state.snapshot?.project.id !== projectId)
       return null;
     if (result.snapshot) setSnapshot(result.snapshot);
-    onSuccess?.(result);
-    if (result.message) toast(result.message, "success");
+    const showSuccess = onSuccess?.(result) !== false;
+    if (showSuccess && result.message) toast(result.message, "success");
     return result;
   } catch (error) {
     onError?.(error);
@@ -726,6 +777,10 @@ document.addEventListener("click", (event) => {
       return;
     const entry = state.snapshot.tasks.find((item) => item.task.id === id);
     if (!entry || !["retry", "cancel"].includes(command)) return;
+    if (command === "retry" && entry.reconciliation?.status === "required") {
+      toast("任务待核对，请先记录核对结论。", "error");
+      return;
+    }
     if (state.mode === "live") {
       void runMutation(
         `task:${command}:${id}`,
@@ -748,7 +803,26 @@ document.addEventListener("click", (event) => {
   }
 });
 
+function captureReconciliationDraft(target) {
+  const form = target.closest?.("#reconciliation-form");
+  if (!form || !["outcome", "note"].includes(target.name)) return false;
+  if (state.pendingAction) return true;
+  const entry = currentTask();
+  if (!entry || entry.task.id !== form.dataset.taskId) return true;
+  state.reconciliationDraft ||= {
+    taskId: entry.task.id,
+    expectedRevision: entry.revision,
+    outcome: "",
+    note: "",
+  };
+  state.reconciliationDraft[target.name] = target.value;
+  state.reconciliationError = "";
+  state.reconciliationSuccess = "";
+  return true;
+}
+
 document.addEventListener("input", (event) => {
+  if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
     if (state.pendingAction === "trigger") return;
     state.createDraft ||= {};
@@ -768,6 +842,7 @@ document.addEventListener("compositionend", (event) => {
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
     if (state.pendingAction === "trigger") return;
     state.createDraft ||= {};
@@ -787,6 +862,75 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.id === "reconciliation-form") {
+    event.preventDefault();
+    const id = event.target.dataset.taskId;
+    const entry = currentTask();
+    if (
+      !entry ||
+      entry.task.id !== id ||
+      state.mode !== "live" ||
+      state.pendingAction ||
+      state.authRequired ||
+      !state.snapshot?.capabilities.reconcile ||
+      entry.reconciliation?.status !== "required"
+    )
+      return;
+    const values = Object.fromEntries(new FormData(event.target));
+    const expectedRevision =
+      state.reconciliationDraft?.expectedRevision ?? entry.revision;
+    state.reconciliationDraft = {
+      taskId: id,
+      expectedRevision,
+      outcome: String(values.outcome || ""),
+      note: String(values.note || ""),
+    };
+    const { outcome } = state.reconciliationDraft;
+    const note = state.reconciliationDraft.note.trim();
+    state.reconciliationSuccess = "";
+    if (
+      !["no-changes", "changes-recorded"].includes(outcome) ||
+      !note ||
+      Array.from(note).length > 1000
+    ) {
+      state.reconciliationError =
+        "请选择核对结论，并填写 1–1000 字的核对说明。";
+      refreshDetail();
+      return;
+    }
+    state.reconciliationError = "";
+    void runMutation(
+      `reconcile:${id}`,
+      () => api.reconcileTask(id, { expectedRevision, outcome, note }),
+      {
+        onSuccess() {
+          const required =
+            state.snapshot?.tasks.find((item) => item.task.id === id)
+              ?.reconciliation?.status === "required";
+          const message = required
+            ? "任务已有新证据，请核对最新记录后再次提交结论。"
+            : "";
+          if (required) toast(message, "warning");
+          if (state.selectedTask !== id) return !required;
+          state.reconciliationDraft = null;
+          state.reconciliationError = message;
+          state.reconciliationSuccess = required
+            ? ""
+            : "核对结论已保存，可根据任务当前状态决定是否重试。";
+          return !required;
+        },
+        onError(error) {
+          if (state.selectedTask === id)
+            state.reconciliationError =
+              error.message +
+              (error.status === 409
+                ? " 请关闭并重新打开详情，核对最新证据后再提交。"
+                : "");
+        },
+      },
+    );
+    return;
+  }
   if (event.target.id === "session-form") {
     event.preventDefault();
     void authenticate(event.target);
@@ -1040,8 +1184,11 @@ setInterval(() => {
     state.pendingAction ||
     state.monitoringDirty ||
     state.approvalComment ||
-    document.querySelector("dialog[open]") ||
-    active?.matches("input,textarea,select")
+    state.reconciliationDraft ||
+    createDialog.open ||
+    bulkDialog.open ||
+    (detailDialog.open && !state.selectedTask) ||
+    active?.matches?.("input,textarea,select,[contenteditable='true']")
   )
     return;
   void loadData("live", { background: true });

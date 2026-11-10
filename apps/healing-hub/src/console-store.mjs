@@ -17,6 +17,8 @@ export function createConsoleStore({
   dataDir,
   initialState,
   validate,
+  migrate = () => {},
+  assertWritable = () => {},
   maxBytes = 32 * 1024 * 1024,
 }) {
   const directory = resolve(dataDir);
@@ -29,6 +31,15 @@ export function createConsoleStore({
   let queue = Promise.resolve();
   let closing = false;
   let closePromise;
+  let bytes = 0;
+  let writeFailure = null;
+
+  function storageStatus() {
+    return {
+      bytes: { used: bytes, limit: maxBytes },
+      failure: writeFailure && { ...writeFailure },
+    };
+  }
 
   async function releaseLock() {
     if (!lock) return;
@@ -64,8 +75,7 @@ export function createConsoleStore({
       let contents;
       try {
         const info = await lstat(filename);
-        if (!info.isFile() || info.size > maxBytes)
-          throw failure("STORE_INVALID", "持久状态无效或超过大小限制。");
+        if (!info.isFile()) throw failure("STORE_INVALID", "持久状态无效。");
         contents = await readFile(filename, "utf8");
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
@@ -75,7 +85,9 @@ export function createConsoleStore({
           contents === undefined
             ? structuredClone(initialState)
             : JSON.parse(contents);
+        migrate(state);
         validate(state);
+        bytes = contents === undefined ? 0 : Buffer.byteLength(contents);
       } catch {
         throw failure(
           "STORE_INVALID",
@@ -113,6 +125,8 @@ export function createConsoleStore({
       // Rename is the commit point. A later directory-sync failure must never
       // make memory disagree with the document that was already committed.
       state = next;
+      bytes = Buffer.byteLength(body);
+      writeFailure = null;
       let directoryHandle;
       try {
         directoryHandle = await open(directory, "r");
@@ -143,15 +157,33 @@ export function createConsoleStore({
 
   return {
     read: () => serialize(() => structuredClone(state)),
+    inspect: () =>
+      serialize(() => ({
+        state: structuredClone(state),
+        storage: storageStatus(),
+      })),
     transact: (operation) =>
       serialize(async () => {
-        const next = structuredClone(state);
-        const outcome = await operation(next);
-        if (outcome?.changed) {
-          next.revision = state.revision + 1;
-          await persist(next);
+        try {
+          const next = structuredClone(state);
+          const outcome = await operation(next);
+          if (outcome?.changed) {
+            if (bytes >= maxBytes)
+              throw failure("STORE_FULL", "持久状态已达到大小上限。");
+            assertWritable(state);
+            next.revision = state.revision + 1;
+            await persist(next);
+          }
+          return {
+            state: structuredClone(state),
+            value: outcome?.value,
+            storage: storageStatus(),
+          };
+        } catch (error) {
+          if (["STORE_FULL", "STORE_WRITE_ERROR"].includes(error.code))
+            writeFailure = { code: error.code, message: error.message };
+          throw error;
         }
-        return { state: structuredClone(state), value: outcome?.value };
       }),
     close() {
       if (closePromise) return closePromise;

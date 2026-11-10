@@ -5,6 +5,47 @@ import { createDemoSnapshot } from "../apps/console/public/data.js";
 import * as administrationModel from "../apps/console/public/administration-model.js";
 import * as administrationViews from "../apps/console/public/administration-views.js";
 import { createAdministrationController } from "../apps/console/public/administration-controller.js";
+
+test("rule toggles send their independent rules revision after unrelated snapshot changes", () => {
+  let sent;
+  const state = {
+    mode: "live",
+    snapshot: {
+      mode: "live",
+      revision: 100,
+      configRevisions: { rules: 3, monitoring: 7 },
+      capabilities: { updateRules: true },
+      rules: [{ id: "rule-a", enabled: true }],
+      activity: [],
+    },
+  };
+  const controller = createAdministrationController({
+    state,
+    render() {},
+    toast() {},
+    openRule() {},
+    openActivity() {},
+    setSnapshot() {},
+    api: {
+      updateRule(id, body) {
+        sent = { id, ...body };
+      },
+    },
+    runMutation(key, request) {
+      request();
+    },
+  });
+  controller.handleClick(
+    {},
+    { dataset: { action: "toggle-rule", id: "rule-a" } },
+  );
+  assert.deepEqual(sent, {
+    id: "rule-a",
+    enabled: false,
+    expectedRevision: 100,
+    expectedConfigRevision: 3,
+  });
+});
 import {
   describeActivity,
   filterActivities,
@@ -29,6 +70,23 @@ const event = (id, fields = {}) => ({
 
 test("activity descriptions use supplied action and never infer actors or outcomes", () => {
   assert.equal(describeActivity(event("one")).category, "tasks");
+  for (const [action, label, icon] of [
+    ["late-result", "补录执行回执", "History"],
+    ["reconciled", "核对执行结果", "CheckCheck"],
+    ["retry-interrupted", "重试任务已停止", "Square"],
+  ]) {
+    const record = event(action, { action });
+    const description = describeActivity(record);
+    assert.equal(description.label, label);
+    assert.equal(description.category, "tasks");
+    assert.equal(description.icon, icon);
+    assert.deepEqual(
+      filterActivities([record], { category: "tasks", query: label }).map(
+        (entry) => entry.id,
+      ),
+      [action],
+    );
+  }
   assert.equal(
     describeActivity(event("one", { action: "approve-gate" })).category,
     "approvals",

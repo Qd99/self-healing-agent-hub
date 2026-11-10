@@ -51,7 +51,7 @@ server.listen(8787, "127.0.0.1");
 
 所有浏览器写请求携带 `X-Heal-CSRF: <snapshot.csrfToken>` 和同源 Cookie。服务校验 Origin / Fetch Metadata，并校验 CSRF。`DELETE /session` 注销当前会话。管理 API 也接受独立脚本直接使用管理 Bearer；显式 Bearer 不依赖 Cookie，免除 CSRF nonce，但仍检查提供的 Origin。
 
-Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务，Worker 令牌不能调用管理快照或批准方案。
+Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务，Worker 令牌不能调用管理快照、批准方案或核对执行结果。所有 Worker 成功响应也不携带管理 snapshot。
 
 除登录/注销外，写请求要求 `Content-Type: application/json` 和 JSON 对象，最大 1 MiB。超大、畸形、慢请求及错误方法返回结构化错误；未知 API 不回退到 HTML。
 
@@ -71,10 +71,11 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 `GET /api/healing/snapshot` 返回：
 
 - `apiVersion: 1`、`mode: "live"`、`generatedAt`、全局 `revision`。
+- `configRevisions: { rules, monitoring }` 与 `storage` 容量/只读状态；完整字段见 [配置版本与存储恢复](console-storage-recovery.md)。
 - `project`、`rules`、`rulesVersion`、`safety`、`triggers`、`monitoring`。
 - `configSource`、`rulesSource`：分别为 `configured` 或 `example`。
 - `rulesOverridden`、`monitoringSource`：持久覆盖来源。
-- `capabilities`：`trigger/cancel/retry/approve/updateRules/updateMonitoring`。
+- `capabilities`：`trigger/cancel/retry/approve/updateRules/updateMonitoring/reconcile`；存储只读降级时全部写能力为 false。
 - `auth: { required, actor }` 与当前会话 `csrfToken`。
 - `tasks`、`activity` 与基于最近 Worker 通信的 `engines`。
 
@@ -90,11 +91,20 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
     cancelRequested: boolean;
     workerId?: string;
     leaseExpiresAt?: string;
+    blockedByReconciliation?: { taskId: string; reason: string; at: string };
   };
   proposal?: { id: string; kind: "code-change" | "action"; summary: string; submittedAt: string; contentHash: string };
   evidence?: object; // 提案证据，与最后的 result.evidence 区分
   reviewState?: "pending" | "approved" | "rejected";
   approvalFlow?: object;
+  reconciliation?: {
+    status: "required" | "resolved";
+    reason: string;
+    updatedAt: string;
+    resolution?: { outcome: "no-changes" | "changes-recorded"; note: string; actor: string; at: string };
+    history?: object[];
+  };
+  resultReceipts?: { kind: "complete" | "cancelled"; receivedAt: string; result?: object }[];
 }
 ```
 
@@ -104,16 +114,17 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 
 成功响应统一为 `{ snapshot, message, taskId?, report? }`。前端使用响应快照更新界面，不能把点击或请求发出当作保存成功。
 
-| 方法与路径（前缀 `/api/healing`） | 请求体                                                                  |
-| --------------------------------- | ----------------------------------------------------------------------- |
-| POST `/trigger`                   | `{ title, type, priority, description?, branch?, requestId? }`          |
-| POST `/tasks/:id/cancel`          | `{ expectedRevision, requestId? }`                                      |
-| POST `/tasks/:id/retry`           | `{ expectedRevision, requestId? }`                                      |
-| POST `/tasks/bulk`                | `{ type: "cancel"                                                       | "retry", items: [{ id, revision }], requestId? }` |
-| POST `/approvals/:id/decision`    | `{ decision: "approve"                                                  | "reject"                                          | "resubmit", nodeId?, round, comment, expectedRevision }` |
-| PATCH `/rules/:id`                | `{ enabled: boolean, expectedRevision }`                                |
-| PUT `/monitoring`                 | `{ monitoring: { grafana, datasource, namespaces }, expectedRevision }` |
-| POST `/monitoring/check`          | `{}`；返回 `{ check, monitoring, revision }`，无保存副作用              |
+| 方法与路径（前缀 `/api/healing`） | 请求体                                                                                                   |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| POST `/trigger`                   | `{ title, type, priority, description?, branch?, requestId? }`                                           |
+| POST `/tasks/:id/cancel`          | `{ expectedRevision, requestId? }`                                                                       |
+| POST `/tasks/:id/retry`           | `{ expectedRevision, requestId? }`                                                                       |
+| POST `/tasks/:id/reconcile`       | `{ expectedRevision, requestId?, outcome, note }`；outcome 为 `no-changes` 或 `changes-recorded`         |
+| POST `/tasks/bulk`                | `{ type, items: [{ id, revision }], requestId? }`；type 为 `cancel` 或 `retry`                           |
+| POST `/approvals/:id/decision`    | `{ decision, nodeId?, round, comment, expectedRevision }`；decision 为 `approve`、`reject` 或 `resubmit` |
+| PATCH `/rules/:id`                | `{ enabled: boolean, expectedConfigRevision }`；兼容旧 `expectedRevision`                                |
+| PUT `/monitoring`                 | `{ monitoring: { grafana, datasource, namespaces }, expectedConfigRevision }`；兼容旧 `expectedRevision` |
+| POST `/monitoring/check`          | `{}`；返回 `{ check, monitoring, revision }`，无保存副作用                                               |
 
 ### 任务与批量操作
 
@@ -122,6 +133,10 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 路由按配置顺序选择首个启用且匹配的规则，包括 `context.retryCount` 数值条件。不匹配返回 `NO_MATCHING_RULE`，不偷偷换到其他引擎。原任务保存当时选定的路由和安全策略，重试重新进行路由选择。
 
 取消等待中的任务直接结束；运行中的任务记录 `cancelRequested`，等待 Worker 确认。界面必须保持“请求取消”的语义，不能宣称远程进程已经停止。只有失败或取消任务可以重试；重试建立新 ID、递增 retryCount 并保存 retryOf，原结果保留。
+
+执行中断、失联和需要核对外部副作用的任务会返回 `reconciliation.status: "required"`。待核对任务的单项/批量重试返回 `RECONCILIATION_REQUIRED`；仅管理者可通过 reconcile 接口记录实际核查结论，不能由 Worker 自行解除。note 为必填 1–1000 字符；已有回执记录变更时，no-changes 返回 `RECONCILIATION_MISMATCH`。结论、历史及实际回执均持久保存；其语义是人工核对记录，尚不代表服务独立查询了外部系统。
+
+重试和领取检查完整重试祖先链。原任务补录新证据后，尚未运行的后继被停止，运行中后继被请求取消；`execution.blockedByReconciliation` 保留原任务、原因及时间。核对原任务不会自动恢复已经停止的后继。该字段是停止历史，新的重试仍以当前祖先核对状态为准。未执行后继的活动审批会同步取消，已批准关卡和既有历史保留。单个审批流已有 10,000 条历史时，此安全停止不追加第 10,001 条；取消状态和 `execution.blockedByReconciliation` 记录停止事实及原因，实时补录仍保存回执和 `retry-interrupted` 审计。
 
 `expectedRevision` 使用对应任务的 `revision`。批量最多 100 个唯一任务，逐项校验版本/状态，结果为：
 
@@ -143,7 +158,7 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 
 重试成功项另带 `newId`。畸形批次直接拒绝；合法但过期/不可执行的项进入 skipped。
 
-创建、任务动作和批量操作支持 `requestId`，最多 128 字符。相同管理身份使用相同 key 与相同命令/参数会得到原 taskId/report 和最新快照；不同参数复用 key 返回 `IDEMPOTENCY_CONFLICT`。UI 在网络结果不明确时保留该 ID，不自动重发写请求。
+创建、任务动作、核对和批量操作支持 `requestId`，最多 128 字符。相同管理身份使用相同 key 与相同命令/参数会得到原 taskId/report 和最新快照；不同参数复用 key 返回 `IDEMPOTENCY_CONFLICT`。UI 在网络结果不明确时保留该 ID，不自动重发写请求。
 
 ### 两级审批
 
@@ -155,7 +170,7 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 
 ### 规则与监控
 
-规则修改是显式设置 enabled，不是无条件翻转。配置写入使用全局 `snapshot.revision`，过期返回 409。规则开关和监控配置保存在状态文档，并被后续快照及任务路由实际读取；不改写原配置文件中的凭据。
+规则修改是显式设置 enabled，不是无条件翻转。新版配置写入发送 `expectedConfigRevision`，分别使用 `snapshot.configRevisions.rules` 或 `.monitoring`，同资源的过期版本返回 409，Worker 心跳和空领取不使其失效。没有提供新字段时，继续用旧 `expectedRevision` 校验全局 `snapshot.revision`。规则开关和监控配置保存在状态文档，并被后续快照及任务路由实际读取；不改写原配置文件中的凭据。
 
 服务每次仍读取 `configs/healing-config.json` / `healing-rules.json`；不存在才使用对应 example。真实文件损坏不能回退示例。逐层白名单过滤 API key、GitHub 私钥、Webhook secret 和未知嵌套字段。
 
@@ -169,10 +184,12 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 
 容量限制为 10,000 任务、50,000 审计记录、50,000 幂等记录、1,000 Worker、32 MiB 状态文件；不会自动清理历史。上线前安排持久卷和备份，长期大规模历史应迁移数据库。
 
+容量耗尽或租约过期事务无法保存时，管理快照仍返回最后成功提交的数据，并通过 `storage` 显示只读原因、用量和上限，全部写能力关闭。未保存的过期状态不会伪装为已提交结果；有效超限文档仍能读取和导出。恢复方法与兼容迁移见 [配置版本与存储恢复](console-storage-recovery.md)。
+
 租约默认 60 秒。失联任务标记失败并保留未知执行结果说明，不自动重复执行，避免一次外部写入被再次触发。服务没有事务性控制远程 Git/CI，因此 Worker 也必须对外部动作做幂等，并在重试前核对已经产生的外部结果。
 
 ## 验证范围
 
-`npm test` 覆盖真实 HTTP 会话、CSRF、创建/持久重启、批量部分成功、规则/监控保存、独立 Worker 身份、诊断/两级审批/执行、租约失效、取消确认、幂等、原子写失败、候选文件边界和静态目录隔离。`npm run build` 覆盖类型与静态构建。
+`npm test` 覆盖真实 HTTP 会话、CSRF、创建/持久重启、批量部分成功、配置独立版本、Worker 返回范围、诊断/两级审批/执行、租约失效、取消与迟到回执、人工核对、幂等、容量只读降级、原子写失败、候选文件边界和静态目录隔离。`npm run lint` 检查 JS/MJS 运行源码；`npm run build` 覆盖框架类型与静态构建。
 
 这些测试使用隔离的本地 Agent/HTTP 夹具，不代表已经连接用户的生产 AI、GitHub、Grafana 或 Kubernetes。静态 Site 不能运行本 Node 服务；实际部署需要把此服务放在可访问的运行环境中。

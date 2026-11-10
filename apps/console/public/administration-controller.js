@@ -154,6 +154,12 @@ export function createAdministrationController({
               api.updateRule(id, {
                 enabled: !rule.enabled,
                 expectedRevision: state.snapshot.revision,
+                ...(Number.isSafeInteger(state.snapshot.configRevisions?.rules)
+                  ? {
+                      expectedConfigRevision:
+                        state.snapshot.configRevisions.rules,
+                    }
+                  : {}),
               }),
             {
               onSuccess() {

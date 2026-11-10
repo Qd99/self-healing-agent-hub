@@ -243,3 +243,35 @@ test("creation retries after an uncertain connection result reuse their request 
   });
   assert.equal(sent[3].requestId, "caller-key");
 });
+
+test("reconciliation uses the task revision and reuses an uncertain request identity", async () => {
+  const requests = [];
+  const client = clientModule.createApiClient({
+    fetch: async (path, options) => {
+      requests.push({ path, ...JSON.parse(options.body) });
+      if (requests.length === 1) throw new TypeError("disconnected");
+      return new Response(
+        JSON.stringify({ snapshot: snapshot(), message: "已核对" }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    },
+  });
+  client.setSnapshot(snapshot());
+  const body = {
+    expectedRevision: 9,
+    outcome: "changes-recorded",
+    note: "已核对仓库提交",
+  };
+  assert.equal(typeof client.reconcileTask, "function");
+  await assert.rejects(
+    client.reconcileTask("task #1", body),
+    (error) => error.code === "NETWORK_ERROR",
+  );
+  await client.reconcileTask("task #1", body);
+  assert.equal(requests[0].path, "/api/healing/tasks/task%20%231/reconcile");
+  assert.equal(requests[0].expectedRevision, 9);
+  assert.equal(requests[0].outcome, "changes-recorded");
+  assert.equal(requests[0].note, "已核对仓库提交");
+  assert.ok(requests[0].requestId);
+  assert.equal(requests[1].requestId, requests[0].requestId);
+});

@@ -171,6 +171,8 @@ export function createApiClient({
     },
     bulkTaskAction: (body) =>
       idempotentRequest("/api/healing/tasks/bulk", body),
+    reconcileTask: (id, body) =>
+      idempotentRequest(`${taskPath(id)}/reconcile`, body),
     decideApproval: (id, body) =>
       request(`/api/healing/approvals/${encodeURIComponent(id)}/decision`, {
         method: "POST",

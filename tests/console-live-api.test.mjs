@@ -602,3 +602,107 @@ test("nonexistent storage under a symlinked public ancestor is rejected before c
   assert.equal(response.status, 500);
   assert.equal(response.data.error.code, "UNSAFE_STORAGE_PATH");
 });
+
+test("Worker replies omit management data and reconciliation remains an authenticated CSRF-protected operation", async (t) => {
+  const api = await fixture(t);
+  const session = await api.login();
+  const created = await api.request("/trigger", {
+    method: "POST",
+    ...session,
+    body: { title: "核对异常执行结果", type: "lint-error", priority: "high" },
+  });
+  const id = created.data.taskId;
+  const claim = await api.request("/worker/claim", {
+    method: "POST",
+    token: workerToken,
+    body: { engineId: "fast", workerId: "receipt-worker" },
+  });
+  const leaseId = claim.data.lease.id;
+  const heartbeat = await api.request(`/worker/tasks/${id}/heartbeat`, {
+    method: "POST",
+    token: workerToken,
+    body: { leaseId },
+  });
+  assert.equal(heartbeat.status, 200);
+  assert.equal(heartbeat.data.snapshot, undefined);
+  const resultBody = {
+    leaseId,
+    result: {
+      success: false,
+      action: "failed",
+      changes: { files: [], pr: 77 },
+      logs: ["Unexpected external side effect recorded"],
+      error: {
+        code: "SIDE_EFFECT",
+        message: "PR exists and needs inspection",
+        retriable: false,
+      },
+    },
+  };
+  const received = await api.request(`/worker/tasks/${id}/complete`, {
+    method: "POST",
+    token: workerToken,
+    body: resultBody,
+  });
+  assert.equal(received.status, 200, JSON.stringify(received.data));
+  assert.equal(received.data.snapshot, undefined);
+  const item = (await api.request("/snapshot", session)).data.tasks.find(
+    (item) => item.task.id === id,
+  );
+  assert.equal(item.reconciliation.status, "required");
+  assert.ok(!JSON.stringify(item).includes(leaseId));
+  const body = {
+    requestId: "confirm-external-77",
+    expectedRevision: item.revision,
+    outcome: "changes-recorded",
+    note: "已在仓库中核对 PR #77",
+  };
+  assert.equal(
+    (
+      await api.request(`/tasks/${id}/reconcile`, {
+        method: "POST",
+        token: workerToken,
+        body,
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await api.request(`/tasks/${id}/reconcile`, {
+        method: "POST",
+        cookie: session.cookie,
+        body,
+      })
+    ).status,
+    403,
+  );
+  const confirmed = await api.request(`/tasks/${id}/reconcile`, {
+    method: "POST",
+    ...session,
+    body,
+  });
+  assert.equal(confirmed.status, 200, JSON.stringify(confirmed.data));
+  assert.equal(
+    confirmed.data.snapshot.tasks.find((item) => item.task.id === id)
+      .reconciliation.status,
+    "resolved",
+  );
+  const replayed = await api.request(`/tasks/${id}/reconcile`, {
+    method: "POST",
+    ...session,
+    body,
+  });
+  assert.equal(replayed.status, 200);
+  assert.equal(
+    replayed.data.snapshot.revision,
+    confirmed.data.snapshot.revision,
+  );
+  const duplicate = await api.request(`/worker/tasks/${id}/complete`, {
+    method: "POST",
+    token: workerToken,
+    body: resultBody,
+  });
+  assert.equal(duplicate.status, 200);
+  assert.deepEqual(duplicate.data, received.data);
+});

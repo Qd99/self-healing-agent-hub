@@ -87,6 +87,21 @@ export interface ConsoleFileDiff {
   lines: { type: "context" | "add" | "remove"; content: string }[];
 }
 
+export interface ConsoleReconciliationResolution {
+  outcome: "no-changes" | "changes-recorded";
+  note: string;
+  actor: string;
+  at: string;
+}
+
+export interface ConsoleReconciliation {
+  status: "required" | "resolved";
+  reason: string;
+  updatedAt: string;
+  resolution?: ConsoleReconciliationResolution;
+  history?: ConsoleReconciliationResolution[];
+}
+
 /** Approval, trace and diff are UI metadata; they do not add values to TaskStatus. */
 export interface ConsoleTask {
   task: SerializedTask;
@@ -100,6 +115,8 @@ export interface ConsoleTask {
     workerId?: string;
     leaseExpiresAt?: string;
     cancelRequested?: boolean;
+    /** Historical source of this interruption; resolving it never resumes this task. */
+    blockedByReconciliation?: { taskId: string; reason: string; at: string };
   };
   /** Candidate check evidence; final execution evidence remains in result. */
   evidence?: Partial<SerializedResult["evidence"]>;
@@ -115,6 +132,12 @@ export interface ConsoleTask {
   trace: ConsoleTraceStep[];
   diff: ConsoleFileDiff[];
   result?: SerializedResult;
+  reconciliation?: ConsoleReconciliation;
+  resultReceipts?: {
+    kind: "complete" | "cancelled";
+    receivedAt: string;
+    result?: SerializedResult;
+  }[];
 }
 
 export interface ConsoleActivity {
@@ -135,6 +158,7 @@ export interface ConsoleCapabilities {
   approve: boolean;
   updateRules: boolean;
   updateMonitoring?: boolean;
+  reconcile?: boolean;
 }
 
 export interface ConsoleEngine {
@@ -277,12 +301,45 @@ export type MonitoringSnapshot =
         errors: [];
       });
 
+export interface ConsoleStorageUsage {
+  used: number;
+  limit: number;
+}
+
+/** Capacity and the last persistence failure; includes no private store fields. */
+export interface ConsoleStorage {
+  status: "ready" | "read-only";
+  reason: "STORE_FULL" | "STORE_WRITE_ERROR" | null;
+  message: string;
+  usage: Record<
+    "bytes" | "tasks" | "activity" | "requests" | "workers",
+    ConsoleStorageUsage
+  >;
+}
+
+/** New clients use the resource version; legacy clients use the global version. */
+export type ConsoleConfigRevisionRequest =
+  | { expectedConfigRevision: number; expectedRevision?: number }
+  | { expectedConfigRevision?: never; expectedRevision: number };
+
+export type ConsoleRuleUpdateRequest = ConsoleConfigRevisionRequest & {
+  enabled: boolean;
+};
+
+export type ConsoleMonitoringSaveRequest = ConsoleConfigRevisionRequest & {
+  monitoring: MonitoringConfig;
+};
+
 export interface ConsoleSnapshot {
   apiVersion: 1;
   mode: "live" | "demo";
   generatedAt: string;
-  /** Monotonic persisted version. Live writes use this for configuration changes. */
+  /** Monotonic persisted version; retained for legacy configuration writes. */
   revision?: number;
+  /** Independent resource versions, unaffected by Worker activity. */
+  configRevisions?: { rules: number; monitoring: number };
+  /** Optional for legacy/demo snapshots. Read-only snapshots retain committed facts. */
+  storage?: ConsoleStorage;
   /** Session-bound CSRF token, never a management or worker bearer token. */
   csrfToken?: string;
   auth?: { required: boolean; actor: string };

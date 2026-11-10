@@ -16,6 +16,7 @@ import {
 } from "./administration-views.js";
 import { filterActivities } from "./administration-model.js";
 import { uiButton, uiStatus, uiEmpty, uiSelect } from "./ui.js";
+import { renderTaskFeedback, renderReconciliation } from "./task-feedback.js";
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
@@ -58,24 +59,6 @@ const engineName = (id) =>
       : String(id || "未分配");
 const stateOf = (item) =>
   item.reviewState === "pending" ? "review" : item.status.status;
-const nowDate = () =>
-  new Intl.DateTimeFormat("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    month: "long",
-    day: "numeric",
-    weekday: "long",
-  }).format(new Date());
-const timeOf = (value) => {
-  const d = new Date(value);
-  return Number.isNaN(+d)
-    ? "—"
-    : new Intl.DateTimeFormat("zh-CN", {
-        timeZone: "Asia/Shanghai",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(d);
-};
 const dateTime = (value) => {
   const d = new Date(value);
   return Number.isNaN(+d)
@@ -108,13 +91,7 @@ export function statusLabel(item) {
     className: `status-label ${value}`,
   });
 }
-function mark(item) {
-  const value = safeStatus(stateOf(item));
-  return `<span class="status-mark ${value}" aria-label="${statusNames[value]}">${value === "completed" ? icon("Check", 14) : value === "failed" ? icon("CircleAlert", 14) : ["cancelled", "skipped"].includes(value) ? icon("Square", 10) : ""}</span>`;
-}
 const action = (name, extra = "") => `data-action="${name}" ${extra}`;
-const taskButton = (id, label, tab = "trace", className = "text-button") =>
-  `<button class="${className}" ${action("open-task", `data-id="${e(id)}" data-tab="${e(tab)}"`)}>${label}</button>`;
 const empty = (title, description = "") =>
   uiEmpty({ icon: "ListTodo", title, description });
 const periodSelect = (days) =>
@@ -131,7 +108,12 @@ const periodSelect = (days) =>
   });
 
 export function renderShell(s) {
-  return `${renderSidebar(s, pages)}<div class="shell">${renderTopbar(s, pages)}<main id="main-content" class="content" tabindex="-1">${renderPage(s)}</main></div>`;
+  const storage = s.snapshot?.storage;
+  const warning =
+    storage?.status === "read-only"
+      ? `<div class="detail-callout storage-warning" role="status"><strong>存储只读${storage.reason ? ` · ${e(storage.reason)}` : ""}</strong><p>${e(storage.message || "当前无法写入，可以继续查看和导出记录。")}</p></div>`
+      : "";
+  return `${renderSidebar(s, pages)}<div class="shell">${renderTopbar(s, pages)}<main id="main-content" class="content" tabindex="-1">${warning}${renderPage(s)}</main></div>`;
 }
 
 function renderPage(s) {
@@ -199,7 +181,7 @@ export function renderTaskDetail(item, s) {
   const status = stateOf(item);
   let body = "";
   if (tab === "trace")
-    body = `<div class="detail-callout">${e(item.task.payload.errorDetails?.message || item.status.message || "暂无诊断信息")}</div>${item.trace.length ? item.trace.map((t) => `<div class="trace-step ${t.parentId ? "child" : ""}"><span class="trace-node ${["completed", "running", "failed"].includes(t.status) ? t.status : ""}">${icon(t.status === "completed" ? "Check" : t.status === "running" ? "Play" : t.status === "failed" ? "X" : "Circle", 11)}</span><div class="grow"><p class="trace-title">${e(t.title)}</p><p class="trace-detail">${e(t.detail || "")}</p></div><span class="trace-duration">${t.durationMs != null ? formatDuration(t.durationMs) : t.status === "running" ? "进行中" : "—"}</span></div>`).join("") : empty("还没有执行步骤")}`;
+    body = `<div class="detail-callout"><strong>触发原因</strong><p>${e(item.task.payload.errorDetails?.message || "暂无触发描述")}</p></div>${item.trace.length ? item.trace.map((t) => `<div class="trace-step ${t.parentId ? "child" : ""}"><span class="trace-node ${["completed", "running", "failed"].includes(t.status) ? t.status : ""}">${icon(t.status === "completed" ? "Check" : t.status === "running" ? "Play" : t.status === "failed" ? "X" : "Circle", 11)}</span><div class="grow"><p class="trace-title">${e(t.title)}</p><p class="trace-detail">${e(t.detail || "")}</p></div><span class="trace-duration">${t.durationMs != null ? formatDuration(t.durationMs) : t.status === "running" ? "进行中" : "—"}</span></div>`).join("") : empty("还没有执行步骤")}`;
   else if (tab === "diff")
     body =
       (item.diff?.length
@@ -235,7 +217,8 @@ export function renderTaskDetail(item, s) {
     s.snapshot.capabilities[key] === true &&
     !s.pendingAction &&
     !s.authRequired &&
-    !(key === "cancel" && item.execution?.cancelRequested);
+    !(key === "cancel" && item.execution?.cancelRequested) &&
+    !(key === "retry" && item.reconciliation?.status === "required");
   const buttons =
     status === "review"
       ? `<button class="ui-button btn" data-action="close-detail">稍后处理</button><button class="ui-button btn primary" data-action="select-approval" data-id="${e(item.task.id)}">${icon("GitPullRequestArrow", 15)}打开审批流</button>`
@@ -256,7 +239,7 @@ export function renderTaskDetail(item, s) {
     )
     .join(
       "",
-    )}</div><div class="detail-content">${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
+    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderReconciliation(item, s)}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
 }
 
 export function renderCreate(s) {

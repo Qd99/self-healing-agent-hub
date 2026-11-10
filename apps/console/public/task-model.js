@@ -209,6 +209,9 @@ export function planBulkAction(snapshot, { type, ids } = {}) {
         (type === "cancel" && item.execution?.cancelRequested
           ? "取消请求已提交，等待 Agent 确认"
           : "") ||
+        (type === "retry" && item.reconciliation?.status === "required"
+          ? "任务待核对，请先记录核对结论"
+          : "") ||
         (allowedStatuses.includes(item.status?.status) ? "" : statusReason);
     if (reason) skipped.push({ id, title, reason });
     else
@@ -231,7 +234,7 @@ export function planBulkAction(snapshot, { type, ids } = {}) {
       (!requestedIds.length
         ? "请先选择任务"
         : !eligible.length
-          ? statusReason
+          ? skipped[0]?.reason || statusReason
           : ""),
   };
 }

@@ -220,6 +220,8 @@ export async function checkGrafanaConnection(
       typeof datasource.name !== "string" ||
       !datasource.name.trim() ||
       datasource.name.length > 160 ||
+      // Reject control characters in identities received from Grafana.
+      // eslint-disable-next-line no-control-regex
       /[\u0000-\u001f\u007f]/.test(datasource.name)
     ) {
       throw new CheckFailure("Grafana 返回的数据源身份信息无效。");

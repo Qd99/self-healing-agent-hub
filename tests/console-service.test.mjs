@@ -273,7 +273,8 @@ test("a real proposal requires evidence and unprotected paths before two ordered
     { leaseId: claim.lease.id, ...proposed },
     worker,
   );
-  let task = entry(proposal.snapshot, id);
+  assert.equal(proposal.snapshot, undefined);
+  let task = entry(await service.snapshot(), id);
   assert.equal(task.reviewState, "pending");
   assert.equal(task.approvalFlow.source, "server");
   assert.equal(task.result, undefined);
@@ -308,17 +309,18 @@ test("a real proposal requires evidence and unprotected paths before two ordered
     { leaseId: execute.lease.id, result: completed },
     worker,
   );
-  task = entry(done.snapshot, id);
+  assert.equal(done.snapshot, undefined);
+  task = entry(await service.snapshot(), id);
   assert.equal(task.status.status, "completed");
   assert.equal(task.result.changes.pr, 42);
   assert.equal(task.execution.phase, "done");
-  await assert.rejects(
-    service.complete(
+  assert.deepEqual(
+    await service.complete(
       id,
       { leaseId: execute.lease.id, result: completed },
       worker,
     ),
-    (error) => error.status === 409,
+    done,
   );
 });
 
@@ -344,7 +346,7 @@ test("diagnosis cannot report a successful code change and unauthorized workers 
   assert.equal(entry(await service.snapshot(), id).status.status, "running");
 });
 
-test("cancellation of running work is a request until worker acknowledgement and rejects late completion", async (t) => {
+test("cancellation remains a request until a Worker receipt and cannot resume execution", async (t) => {
   const { service } = await fixture(t);
   const { id, claim } = await createAndClaim(service);
   const response = await service.taskAction(
@@ -361,23 +363,23 @@ test("cancellation of running work is a request until worker acknowledgement and
     worker,
   );
   assert.equal(heartbeat.cancelRequested, true);
-  await assert.rejects(
-    service.complete(
-      id,
-      {
-        leaseId: claim.lease.id,
-        result: { success: false, action: "failed", logs: [], evidence },
-      },
-      worker,
-    ),
-    (error) => error.status === 409,
+  const interrupted = await service.complete(
+    id,
+    {
+      leaseId: claim.lease.id,
+      result: { success: false, action: "failed", logs: [], evidence },
+    },
+    worker,
   );
+  assert.equal(interrupted.snapshot, undefined);
+  assert.equal(entry(await service.snapshot(), id).status.status, "cancelled");
   const acknowledged = await service.acknowledgeCancellation(
     id,
     { leaseId: claim.lease.id },
     worker,
   );
-  assert.equal(entry(acknowledged.snapshot, id).status.status, "cancelled");
+  assert.equal(acknowledged.snapshot, undefined);
+  assert.equal(entry(await service.snapshot(), id).status.status, "cancelled");
   await assert.rejects(
     service.proposal(id, { leaseId: claim.lease.id, ...proposed }, worker),
     (error) => error.status === 409,
@@ -521,6 +523,7 @@ test("rejection and resubmission preserve history and stale rounds cannot approv
     { leaseId: claim.lease.id, ...proposed },
     worker,
   );
+  assert.equal(proposal.snapshot, undefined);
   const rejected = await service.decide(
     id,
     {
@@ -528,7 +531,7 @@ test("rejection and resubmission preserve history and stale rounds cannot approv
       nodeId: "code-review",
       round: 1,
       comment: "Needs another review",
-      expectedRevision: entry(proposal.snapshot, id).revision,
+      expectedRevision: entry(await service.snapshot(), id).revision,
     },
     manager,
   );
@@ -784,7 +787,8 @@ test("code completion requires the exact unique approved file set", async (t) =>
     },
     worker,
   );
-  assert.equal(entry(result.snapshot, id).status.status, "completed");
+  assert.equal(result.snapshot, undefined);
+  assert.equal(entry(await service.snapshot(), id).status.status, "completed");
 });
 
 for (const phase of ["diagnose", "execute"]) {
@@ -831,8 +835,9 @@ for (const phase of ["diagnose", "execute"]) {
       },
       worker,
     );
-    assert.equal(entry(skipped.snapshot, id).status.status, "skipped");
-    assert.equal(entry(skipped.snapshot, id).result.changes, undefined);
+    assert.equal(skipped.snapshot, undefined);
+    assert.equal(entry(await service.snapshot(), id).status.status, "skipped");
+    assert.equal(entry(await service.snapshot(), id).result.changes, undefined);
   });
 }
 
@@ -862,8 +867,9 @@ test("failure reports preserve partial external effects for inspection", async (
     },
     worker,
   );
-  assert.equal(entry(result.snapshot, id).status.status, "failed");
-  assert.deepEqual(entry(result.snapshot, id).result.changes, changes);
+  assert.equal(result.snapshot, undefined);
+  assert.equal(entry(await service.snapshot(), id).status.status, "failed");
+  assert.deepEqual(entry(await service.snapshot(), id).result.changes, changes);
 });
 
 async function actionFixture(t, action) {
@@ -926,7 +932,8 @@ for (const action of ["create-issue", "retry"]) {
       },
       worker,
     );
-    let task = entry(response.snapshot, id);
+    assert.equal(response.snapshot, undefined);
+    let task = entry(await service.snapshot(), id);
     assert.equal(task.proposal.kind, "action");
     assert.deepEqual(task.diff, []);
     assert.deepEqual(task.evidence.checksFail, ["inspect CI failure"]);
@@ -972,7 +979,8 @@ for (const action of ["create-issue", "retry"]) {
       { leaseId: execution.lease.id, result },
       worker,
     );
-    task = entry(done.snapshot, id);
+    assert.equal(done.snapshot, undefined);
+    task = entry(await service.snapshot(), id);
     assert.equal(task.status.status, "completed");
     assert.equal(task.result.action, resultAction);
     assert.deepEqual(task.result.evidence.checksFail, ["inspect CI failure"]);

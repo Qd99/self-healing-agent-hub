@@ -225,6 +225,8 @@ export function normalizeMonitoringConfig(input) {
       (value) =>
         typeof value === "string" &&
         value.length <= 160 &&
+        // Reject control characters in public datasource names used in links and exports.
+        // eslint-disable-next-line no-control-regex
         !/[\u0000-\u001f\u007f]/.test(value),
       "Datasource display name must be plain text of at most 160 characters, or empty if unknown.",
     ),

@@ -85,6 +85,8 @@ export function createMonitoringController({
     state.monitoringDirty = false;
     state.monitoringSaveError = "";
     state.monitoringDraftRevision = state.snapshot?.revision;
+    state.monitoringDraftConfigRevision =
+      state.snapshot?.configRevisions?.monitoring;
     state.monitoringSource = source;
     state.monitoringScope = MONITORING_ALL_SCOPE;
     state.monitoringRange ||= "6h";
@@ -133,8 +135,11 @@ export function createMonitoringController({
   function handleInput(event) {
     if (!event.target.closest?.("#monitoring-form") || !event.target.name)
       return false;
-    if (!state.monitoringDirty)
+    if (!state.monitoringDirty) {
       state.monitoringDraftRevision = state.snapshot?.revision;
+      state.monitoringDraftConfigRevision =
+        state.snapshot?.configRevisions?.monitoring;
+    }
     state.monitoringDraft[event.target.name] = event.target.value;
     state.monitoringDirty = true;
     draftEditGeneration += 1;
@@ -203,6 +208,7 @@ export function createMonitoringController({
       const submittedEdits = draftEditGeneration;
       const submittedRevision =
         state.monitoringDraftRevision ?? state.snapshot.revision;
+      const submittedConfigRevision = state.monitoringDraftConfigRevision;
       invalidateCheck();
       void runMutation(
         "monitoring-save",
@@ -210,6 +216,9 @@ export function createMonitoringController({
           api.updateMonitoring({
             monitoring: exported,
             expectedRevision: submittedRevision,
+            ...(Number.isSafeInteger(submittedConfigRevision)
+              ? { expectedConfigRevision: submittedConfigRevision }
+              : {}),
           }),
         {
           onSuccess() {
@@ -226,8 +235,10 @@ export function createMonitoringController({
               if (
                 configIdentity(state.snapshot.monitoring) !==
                 configIdentity(exported)
-              )
+              ) {
                 state.monitoringDraftRevision = submittedRevision;
+                state.monitoringDraftConfigRevision = submittedConfigRevision;
+              }
             }
             lastSnapshot = state.snapshot;
             invalidateCheck();

@@ -367,6 +367,7 @@ export function createConsoleServer({
         return;
       }
       const taskAction = /^\/tasks\/([^/]+)\/(cancel|retry)$/.exec(route);
+      const reconciliation = /^\/tasks\/([^/]+)\/reconcile$/.exec(route);
       const decision = /^\/approvals\/([^/]+)\/decision$/.exec(route);
       const rule = /^\/rules\/([^/]+)$/.exec(route);
       if (
@@ -377,6 +378,7 @@ export function createConsoleServer({
           "/monitoring/check",
         ].includes(route) &&
         !taskAction &&
+        !reconciliation &&
         !decision &&
         !rule
       )
@@ -414,6 +416,12 @@ export function createConsoleServer({
         result = await service.taskAction(
           taskAction[1],
           taskAction[2],
+          body,
+          identity.actor,
+        );
+      else if (reconciliation)
+        result = await service.reconcile(
+          reconciliation[1],
           body,
           identity.actor,
         );

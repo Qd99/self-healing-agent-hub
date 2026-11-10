@@ -39,7 +39,7 @@ test("dashboard escapes untrusted category, engine and task values", (t) => {
   t.mock.method(Date, "now", () => NOW);
   const snapshot = createDemoSnapshot(NOW);
   const entry = snapshot.tasks[0];
-  const unsafe = `odd\"><img src=x onerror='alert(1)'>&`;
+  const unsafe = `odd"><img src=x onerror='alert(1)'>&`;
   entry.title = unsafe;
   entry.task.id = unsafe;
   entry.task.type = unsafe;

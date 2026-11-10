@@ -1253,6 +1253,90 @@ dialog::backdrop {
   color: var(--muted);
   font-size: 10px;
 }
+.task-result,
+.task-reconciliation,
+.task-receipts {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.task-result h3,
+.task-reconciliation h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.task-result-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.task-artifact {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px;
+  padding: 5px 0;
+}
+.task-artifact > span,
+.task-result-files > span {
+  color: var(--muted);
+}
+.task-artifact a {
+  color: var(--blue);
+  width: fit-content;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.task-result-files {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+}
+.task-final-error {
+  border-left: 2px solid var(--red);
+}
+.task-feedback-error {
+  color: var(--red);
+}
+.task-feedback-success {
+  color: var(--green);
+}
+.task-reconciliation-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.task-reconciliation-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 11px;
+}
+.task-reconciliation-form textarea {
+  resize: vertical;
+  min-height: 64px;
+}
+.task-receipts summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.task-receipt + .task-receipt {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 8px;
+}
+.storage-warning {
+  margin: 0 0 20px;
+  border-left: 2px solid var(--red);
+  font-size: 12px;
+}
+.storage-warning p {
+  margin: 6px 0 0;
+}
 .trace-step {
   display: flex;
   gap: 16px;

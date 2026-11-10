@@ -71,6 +71,8 @@ function text(value, limit = 500, allowEmpty = false) {
   if (
     typeof value !== "string" ||
     value.length > limit ||
+    // Reject control characters in persisted text and protocol identifiers.
+    // eslint-disable-next-line no-control-regex
     /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)
   )
     invalid();
@@ -123,7 +125,7 @@ function branchName(value) {
   const name = text(value, 200);
   if (
     name.startsWith("-") ||
-    /[\s~^:?*\[\\]/.test(name) ||
+    /[\s~^:?*[\\]/.test(name) ||
     name.includes("..") ||
     name.includes("@{") ||
     name.endsWith(".") ||
@@ -137,6 +139,11 @@ function branchName(value) {
 function checkRevision(expected, actual) {
   if (!Number.isSafeInteger(expected) || expected < 0) invalid();
   if (expected !== actual) conflict();
+}
+function checkConfigRevision(body, state, resource) {
+  if (body.expectedConfigRevision !== undefined)
+    checkRevision(body.expectedConfigRevision, state.configRevisions[resource]);
+  else checkRevision(body.expectedRevision, state.revision);
 }
 function safeState(value) {
   if (value === undefined || value === null) return null;
@@ -321,7 +328,8 @@ function commandFingerprint(command, body) {
       );
     return value;
   };
-  const { requestId, ...payload } = body;
+  const payload = { ...body };
+  delete payload.requestId;
   let serialized;
   try {
     serialized = JSON.stringify({ command, payload });
@@ -332,10 +340,164 @@ function commandFingerprint(command, body) {
   }
   return createHash("sha256").update(serialized).digest("hex");
 }
+
+function hasSideEffects(result) {
+  const changes = result?.changes;
+  return Boolean(
+    changes?.files?.length ||
+    changes?.commit !== undefined ||
+    changes?.pr !== undefined ||
+    changes?.issue !== undefined,
+  );
+}
+
+function readResult(value, entry, lease, at) {
+  const source = object(value);
+  if (typeof source.success !== "boolean") invalid();
+  const action = member(source.action, ACTIONS);
+  if (
+    (source.success && action === "failed") ||
+    (!source.success && !["failed", "skipped"].includes(action))
+  )
+    invalid();
+  const evidence = readEvidence(source.evidence ?? {});
+  const logs = list(source.logs ?? [], 1000, (line) => text(line, 4000, true));
+  if (
+    logs.reduce((size, line) => size + Buffer.byteLength(line), 0) >
+    1024 * 1024
+  )
+    invalid();
+  let changes;
+  if (source.changes !== undefined) {
+    const change = object(source.changes);
+    changes = { files: list(change.files ?? [], 100, safePath) };
+    if (change.commit !== undefined) {
+      if (
+        typeof change.commit !== "string" ||
+        !/^[0-9a-f]{40,64}$/i.test(change.commit)
+      )
+        invalid();
+      changes.commit = change.commit;
+    }
+    for (const key of ["pr", "issue"]) {
+      if (change[key] === undefined) continue;
+      const value = integer(change[key]);
+      if (!value) invalid();
+      changes[key] = value;
+    }
+  }
+  const startedAt = entry.status.startedAt ?? lease.claimedAt;
+  const result = {
+    taskId: entry.task.id,
+    success: source.success,
+    action,
+    ...(changes ? { changes } : {}),
+    logs,
+    evidence,
+    timings: {
+      startedAt,
+      completedAt: at,
+      durationMs: Math.max(0, Date.parse(at) - Date.parse(startedAt)),
+    },
+  };
+  if (!source.success) {
+    const error = source.error ? object(source.error) : {};
+    result.error = {
+      code: text(error.code ?? "WORKER_FAILED", 120),
+      message: text(error.message ?? "执行器已报告失败。", 1000),
+      retriable: error.retriable === true,
+    };
+  }
+  return result;
+}
+
+function validateSuccessfulResult(result, entry, lease) {
+  if (!result.success) return;
+  const { action, changes, evidence } = result;
+  if (action === "skipped") {
+    if (hasSideEffects(result))
+      fail(422, "UNAPPROVED_CHANGE", "跳过的操作不得包含外部变更。");
+    return;
+  }
+  if (lease.phase !== "execute")
+    conflict("成功的操作必须来自已批准的执行租约。");
+  if (action !== RESULT_ACTION[entry.routingRule.processor.action])
+    fail(422, "ACTION_MISMATCH", "完成的操作与路由授权不一致。");
+  const allowed = {
+    committed: new Set(["commit"]),
+    "pr-created": new Set(["pr", "commit"]),
+    "issue-created": new Set(["issue"]),
+    retry: new Set(),
+  }[action];
+  if (
+    ["commit", "pr", "issue"].some(
+      (key) => changes?.[key] !== undefined && !allowed.has(key),
+    )
+  )
+    fail(422, "UNAPPROVED_CHANGE", "完成结果包含路由未授权的外部产物。");
+  if (proposalKind(entry) === "code-change")
+    requiredEvidence(evidence, entry.safety);
+  else {
+    diagnosticEvidence(evidence);
+    if (changes?.files.length)
+      fail(422, "UNAPPROVED_CHANGE", "操作结果不得包含未经授权的代码变更。");
+  }
+  if (
+    (action === "committed" && !changes?.commit) ||
+    (action === "pr-created" && !changes?.pr) ||
+    (action === "issue-created" && !changes?.issue)
+  )
+    invalid();
+  if (["committed", "pr-created"].includes(action)) {
+    const files = changes?.files ?? [];
+    const approved = new Set(entry.diff.map((item) => item.path));
+    if (
+      !files.length ||
+      files.length !== approved.size ||
+      new Set(files).size !== files.length ||
+      files.some((path) => !approved.has(path))
+    )
+      fail(
+        422,
+        "UNAPPROVED_CHANGE",
+        "完成结果必须准确列明已批准方案的全部文件，且不能重复。",
+      );
+  }
+}
+
+function requireReconciliation(entry, reason, at) {
+  entry.reconciliation = {
+    status: "required",
+    reason,
+    updatedAt: at,
+    ...(entry.reconciliation?.history
+      ? { history: copy(entry.reconciliation.history) }
+      : {}),
+  };
+}
+// Follow the complete retry chain; a resolved immediate parent cannot hide an
+// unresolved earlier execution. The visited set also bounds corrupt cycles.
+function retryAncestors(state, entry) {
+  const ancestors = [];
+  const visited = new Set([entry.task.id]);
+  let id = entry.task.payload.context.retryOf;
+  while (id && !visited.has(id)) {
+    visited.add(id);
+    const parent = state.tasks.find((item) => item.task.id === id);
+    if (!parent) break;
+    ancestors.push(parent);
+    id = parent.task.payload.context.retryOf;
+  }
+  return ancestors;
+}
+
 function validateStoredState(state) {
   object(state);
   if (state.schemaVersion !== 1) invalid();
   integer(state.revision);
+  object(state.configRevisions);
+  integer(state.configRevisions.rules);
+  integer(state.configRevisions.monitoring);
   list(state.tasks, MAX_TASKS, (entry) => {
     object(entry);
     if (!UUID.test(entry.task?.id)) invalid();
@@ -369,6 +531,56 @@ function validateStoredState(state) {
       text(entry.lease.actorId, 160);
       if (!Number.isFinite(Date.parse(entry.lease.expiresAt))) invalid();
     } else if (entry.status.status === "running") invalid();
+    if (entry.interruption !== undefined)
+      member(entry.interruption, new Set(["cancelled", "lease-expired"]));
+    if (entry.blockedByReconciliation) {
+      const blocked = object(entry.blockedByReconciliation);
+      if (
+        !UUID.test(blocked.taskId) ||
+        !Number.isFinite(Date.parse(blocked.at))
+      )
+        invalid();
+      text(blocked.reason, 500);
+    }
+    if (entry.terminalLease) {
+      const lease = object(entry.terminalLease);
+      if (!UUID.test(lease.id)) invalid();
+      member(lease.phase, new Set(["diagnose", "execute"]));
+      text(lease.actorId, 160);
+      text(lease.workerId, 120);
+      if (
+        !Number.isFinite(Date.parse(lease.claimedAt)) ||
+        !Number.isFinite(Date.parse(lease.expiresAt))
+      )
+        invalid();
+    }
+    if (entry.receipts)
+      list(entry.receipts, 10, (receipt) => {
+        object(receipt);
+        member(receipt.kind, new Set(["complete", "cancelled"]));
+        if (
+          !/^[0-9a-f]{64}$/.test(receipt.fingerprint) ||
+          !Number.isFinite(Date.parse(receipt.receivedAt))
+        )
+          invalid();
+        object(receipt.response);
+        if (receipt.result) object(receipt.result);
+      });
+    if (entry.reconciliation) {
+      const record = object(entry.reconciliation);
+      member(record.status, new Set(["required", "resolved"]));
+      text(record.reason, 500);
+      if (!Number.isFinite(Date.parse(record.updatedAt))) invalid();
+      const validateResolution = (resolution) => {
+        object(resolution);
+        member(resolution.outcome, new Set(["no-changes", "changes-recorded"]));
+        text(resolution.note, 1000);
+        text(resolution.actor, 160);
+        if (!Number.isFinite(Date.parse(resolution.at))) invalid();
+      };
+      if (record.status === "resolved") validateResolution(record.resolution);
+      if (record.history) list(record.history, 100, validateResolution);
+    }
     if (entry.approvalFlow) {
       const flow = object(entry.approvalFlow);
       if (
@@ -472,6 +684,9 @@ function publicTask(entry) {
     execution: {
       phase: entry.executionPhase,
       cancelRequested: entry.cancellationRequested,
+      ...(entry.blockedByReconciliation
+        ? { blockedByReconciliation: copy(entry.blockedByReconciliation) }
+        : {}),
       ...(entry.lease
         ? {
             workerId: entry.lease.workerId,
@@ -486,6 +701,18 @@ function publicTask(entry) {
       ? { proposal: { ...copy(entry.proposal), kind: proposalKind(entry) } }
       : {}),
     ...(entry.result ? { result: copy(entry.result) } : {}),
+    ...(entry.reconciliation
+      ? { reconciliation: copy(entry.reconciliation) }
+      : {}),
+    ...(entry.receipts?.length
+      ? {
+          resultReceipts: entry.receipts.map((receipt) => ({
+            kind: receipt.kind,
+            receivedAt: receipt.receivedAt,
+            ...(receipt.result ? { result: copy(receipt.result) } : {}),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -495,6 +722,7 @@ export function createHealingService({
   dataDir,
   clock = () => new Date(),
   leaseMs = 60000,
+  maxBytes,
 } = {}) {
   const root = resolve(rootDir);
   if (!Number.isSafeInteger(leaseMs) || leaseMs < 1 || leaseMs > 3600000)
@@ -503,9 +731,11 @@ export function createHealingService({
     );
   const store = createConsoleStore({
     dataDir: dataDir ?? join(root, ".healing"),
+    maxBytes,
     initialState: {
       schemaVersion: 1,
       revision: 0,
+      configRevisions: { rules: 0, monitoring: 0 },
       tasks: [],
       activity: [],
       ruleOverrides: [],
@@ -514,6 +744,83 @@ export function createHealingService({
       monitoring: null,
     },
     validate: validateStoredState,
+    assertWritable(state) {
+      if (
+        state.tasks.length >= MAX_TASKS ||
+        state.activity.length >= MAX_EVENTS ||
+        state.requests.length >= 50000 ||
+        state.workers.length >= 1000
+      )
+        fail(503, "STORE_FULL", "持久状态已达到容量上限。");
+    },
+    migrate(state) {
+      if (state && state.configRevisions === undefined)
+        state.configRevisions = {
+          rules: state.revision,
+          monitoring: state.revision,
+        };
+      for (const entry of state?.tasks ?? []) {
+        if (!["failed", "cancelled"].includes(entry.status?.status)) continue;
+        // Repair terminal retries saved by the older hold path without reopening
+        // gates or altering recorded approvals and proposal evidence.
+        if (
+          entry.status.status === "cancelled" &&
+          entry.blockedByReconciliation &&
+          (entry.reviewState !== undefined ||
+            ["pending", "approved"].includes(entry.approvalFlow?.status))
+        )
+          cancelFlow(
+            entry,
+            { name: "管理服务" },
+            entry.status.completedAt ?? entry.blockedByReconciliation.at,
+            { allowFullHistory: true },
+          );
+        const expired =
+          (!entry.receipts?.length &&
+            entry.result?.error?.code === "LEASE_EXPIRED") ||
+          state.activity?.some(
+            (event) =>
+              event.taskId === entry.task.id &&
+              event.action === "failed" &&
+              event.message ===
+                "执行器租约已过期，执行结果未知；请确认外部变更后再重试。",
+          );
+        if (!entry.interruption) {
+          if (expired) entry.interruption = "lease-expired";
+          else if (entry.cancellationRequested)
+            entry.interruption = "cancelled";
+        }
+        // Old stores have no retained lease. Infer uncertainty from saved facts,
+        // never manufacture a lease or reinterpret an ordinary failed receipt.
+        const executedCancellation =
+          !entry.blockedByReconciliation &&
+          entry.cancellationRequested &&
+          (entry.terminalLease?.phase === "execute" ||
+            entry.approvalFlow?.gates.every(
+              (gate) => gate.status === "approved",
+            ));
+        // A retained diagnosis lease proves this expiry did not execute. Legacy
+        // entries without a retained phase still require conservative review.
+        const uncertainExpiry =
+          expired && entry.terminalLease?.phase !== "diagnose";
+        if (
+          !entry.reconciliation &&
+          (hasSideEffects(entry.result) ||
+            uncertainExpiry ||
+            executedCancellation)
+        ) {
+          requireReconciliation(
+            entry,
+            "旧任务记录含外部变更或未知执行结果，请先核对。",
+            entry.status.completedAt ?? entry.task.metadata.createdAt,
+          );
+        }
+      }
+      for (const entry of state?.tasks ?? []) {
+        if (entry.reconciliation?.status === "required")
+          holdRetryDescendants(state, entry, entry.reconciliation.updatedAt);
+      }
+    },
   });
   const now = () => {
     const value = new Date(clock());
@@ -544,6 +851,49 @@ export function createHealingService({
       ...(ruleId ? { ruleId } : {}),
     });
   }
+  function holdRetryDescendants(
+    state,
+    origin,
+    at,
+    actor = { name: "管理服务" },
+  ) {
+    const held = [];
+    for (const entry of state.tasks) {
+      if (
+        !["pending", "running"].includes(entry.status.status) ||
+        !retryAncestors(state, entry).includes(origin) ||
+        entry.blockedByReconciliation
+      )
+        continue;
+      const reason = `来源任务 ${origin.task.id} 的外部结果需要重新核对，重试任务已停止，须核对后手动重试。`;
+      entry.blockedByReconciliation = { taskId: origin.task.id, reason, at };
+      entry.cancellationRequested = true;
+      entry.status.message = reason;
+      if (!entry.lease) {
+        entry.status.status = "cancelled";
+        entry.status.completedAt = at;
+        entry.executionPhase = "done";
+        cancelFlow(entry, actor, at, { allowFullHistory: true });
+      } else entry.interruption = "cancelled";
+      entry.revision += 1;
+      held.push(entry);
+    }
+    return held;
+  }
+
+  function markReconciliation(state, entry, reason, at, actor) {
+    requireReconciliation(entry, reason, at);
+    for (const held of holdRetryDescendants(state, entry, at, actor))
+      audit(
+        state,
+        "retry-interrupted",
+        held.status.message,
+        actor,
+        at,
+        held.task.id,
+        "warning",
+      );
+  }
   function rulesFor(config, state) {
     return config.rules.map((rule) => ({
       ...copy(rule),
@@ -557,7 +907,28 @@ export function createHealingService({
       ? copy(config.monitoring)
       : normalizeMonitoringConfig(state.monitoring);
   }
-  function snapshotFor(config, state, time) {
+  function storageFor(state, stored) {
+    const usage = {
+      bytes: stored.bytes,
+      tasks: { used: state.tasks.length, limit: MAX_TASKS },
+      activity: { used: state.activity.length, limit: MAX_EVENTS },
+      requests: { used: state.requests.length, limit: 50000 },
+      workers: { used: state.workers.length, limit: 1000 },
+    };
+    const full = Object.values(usage).some(({ used, limit }) => used >= limit);
+    const reason = full ? "STORE_FULL" : (stored.failure?.code ?? null);
+    return {
+      status: reason ? "read-only" : "ready",
+      reason,
+      message: reason
+        ? `${full ? "持久状态已达到容量上限。" : stored.failure.message}当前显示最后成功保存的状态；租约过期等变更可能尚未保存。请备份导出并恢复存储容量或可写权限。`
+        : "持久状态可写。",
+      usage,
+    };
+  }
+  function snapshotFor(config, state, time, stored) {
+    const storage = storageFor(state, stored);
+    const writable = storage.status === "ready";
     const liveWorkers = state.workers.filter(
       (item) => time.getTime() - Date.parse(item.lastSeenAt) <= leaseMs,
     );
@@ -565,6 +936,8 @@ export function createHealingService({
       apiVersion: 1,
       mode: "live",
       revision: state.revision,
+      configRevisions: copy(state.configRevisions),
+      storage,
       generatedAt: time.toISOString(),
       configSource: config.configSource,
       rulesSource: config.rulesSource,
@@ -573,12 +946,13 @@ export function createHealingService({
       safety: copy(config.safety),
       triggers: copy(config.triggers),
       capabilities: {
-        trigger: config.triggers.manual?.enabled !== false,
-        cancel: true,
-        retry: true,
-        approve: true,
-        updateRules: true,
-        updateMonitoring: true,
+        trigger: writable && config.triggers.manual?.enabled !== false,
+        cancel: writable,
+        retry: writable,
+        approve: writable,
+        updateRules: writable,
+        updateMonitoring: writable,
+        reconcile: writable,
       },
       engines: config.engines.map((engine) => {
         const connected = liveWorkers.some(
@@ -630,7 +1004,7 @@ export function createHealingService({
       comment,
     });
   }
-  function cancelFlow(entry, actor, at) {
+  function cancelFlow(entry, actor, at, { allowFullHistory = false } = {}) {
     if (!entry.approvalFlow) return;
     const flow = entry.approvalFlow;
     const nodeId =
@@ -638,7 +1012,10 @@ export function createHealingService({
     flow.status = "cancelled";
     for (const gate of flow.gates)
       if (gate.status === "pending") gate.status = "blocked";
-    history(entry, "cancelled", nodeId, "任务已取消。", actor, at);
+    // Retry safety transitions must not need an extra approval-history slot.
+    // At capacity, their stop marker/status (and live audit) retain the reason.
+    if (!allowFullHistory || flow.history.length < 10000)
+      history(entry, "cancelled", nodeId, "任务已取消。", actor, at);
     delete entry.reviewState;
   }
   function failureResult(entry, code, message, at) {
@@ -683,6 +1060,16 @@ export function createHealingService({
         };
         entry.executionPhase = "done";
         entry.revision += 1;
+        entry.terminalLease = copy(entry.lease);
+        entry.interruption = "lease-expired";
+        if (entry.lease.phase === "execute")
+          markReconciliation(
+            state,
+            entry,
+            "执行租约已过期，外部操作结果需要核对。",
+            at,
+            { name: "管理服务" },
+          );
         delete entry.lease;
         audit(
           state,
@@ -698,7 +1085,7 @@ export function createHealingService({
       return { changed };
     });
   }
-  async function mutate(actor, operation) {
+  async function mutate(actor, operation, includeSnapshot = true) {
     const identity = actorIdentity(actor);
     const config = await loadConsoleConfiguration(root);
     const time = now();
@@ -708,9 +1095,14 @@ export function createHealingService({
     );
     return {
       ...outcome.value,
-      snapshot: snapshotFor(config, outcome.state, time),
+      ...(includeSnapshot
+        ? {
+            snapshot: snapshotFor(config, outcome.state, time, outcome.storage),
+          }
+        : {}),
     };
   }
+  const workerMutation = (actor, operation) => mutate(actor, operation, false);
   function idempotent(state, command, body, identity, operation) {
     object(body);
     if (body.requestId === undefined) return operation();
@@ -847,6 +1239,16 @@ export function createHealingService({
     if (action === "retry") {
       if (!["failed", "cancelled"].includes(entry.status.status))
         conflict("只有失败或已取消的任务可以重试。");
+      if (
+        [entry, ...retryAncestors(state, entry)].some(
+          (item) => item.reconciliation?.status === "required",
+        )
+      )
+        fail(
+          409,
+          "RECONCILIATION_REQUIRED",
+          "请先核对外部执行结果，再创建重试任务。",
+        );
       const next = newTask(
         state,
         config,
@@ -873,6 +1275,7 @@ export function createHealingService({
     entry.revision += 1;
     if (entry.lease) {
       entry.cancellationRequested = true;
+      entry.interruption = "cancelled";
       entry.status.message = "已请求取消，等待执行器确认。";
     } else {
       entry.status = {
@@ -932,20 +1335,82 @@ export function createHealingService({
     ];
   }
   function refreshWorker(state, entry, actor, at) {
+    const lease = entry.lease ?? entry.terminalLease;
     const registered = state.workers.find(
       (item) =>
-        item.workerId === entry.lease.workerId &&
+        item.workerId === lease.workerId &&
         item.actorId === actor.id &&
         item.engineId === entry.engineId,
     );
     if (registered) registered.lastSeenAt = at;
   }
+
+  function receiptContext(state, id, body, actor, kind) {
+    object(body);
+    const entry = taskFor(state, id);
+    const lease = entry.lease ?? entry.terminalLease;
+    if (
+      !lease ||
+      lease.id !== text(body.leaseId, 100) ||
+      lease.actorId !== actor.id ||
+      (actor.workerId && actor.workerId !== lease.workerId)
+    )
+      conflict("执行器回执不属于当前执行器或已知租约。");
+    const fingerprint = commandFingerprint(kind, body);
+    const previous = entry.receipts?.find(
+      (receipt) => receipt.kind === kind && receipt.fingerprint === fingerprint,
+    );
+    if (previous)
+      return { replay: { changed: false, value: copy(previous.response) } };
+    if (
+      !entry.lease &&
+      !(
+        ["failed", "cancelled"].includes(entry.status.status) &&
+        entry.interruption
+      )
+    )
+      conflict("终态执行结果不能由另一份完成回执覆盖。");
+    if ((entry.receipts?.length ?? 0) >= 10)
+      fail(
+        409,
+        "RECEIPT_LIMIT",
+        "此任务的回执数量已达上限，请由管理员核对现有证据。",
+      );
+    return { entry, lease, fingerprint, late: !entry.lease };
+  }
+
+  function rememberReceipt(
+    entry,
+    kind,
+    fingerprint,
+    lease,
+    result,
+    response,
+    at,
+  ) {
+    entry.terminalLease = copy(lease);
+    (entry.receipts ??= []).push({
+      kind,
+      fingerprint,
+      receivedAt: at,
+      response: copy(response),
+      ...(result ? { result: copy(result) } : {}),
+    });
+  }
   return {
     async snapshot() {
       const config = await loadConsoleConfiguration(root);
       const time = now();
-      const { state } = await expire(time);
-      return snapshotFor(config, state, time);
+      let outcome;
+      try {
+        outcome = await expire(time);
+      } catch (error) {
+        if (!["STORE_FULL", "STORE_WRITE_ERROR"].includes(error.code))
+          throw error;
+        // Read the committed state, never the discarded expiry transaction.
+        outcome = await store.inspect();
+      }
+      return snapshotFor(config, outcome.state, time, outcome.storage);
     },
     trigger(body, actor) {
       return mutate(actor, (state, config, identity, time) =>
@@ -972,6 +1437,62 @@ export function createHealingService({
           changed: true,
           value: actionOn(state, config, id, action, body, identity, time),
         })),
+      );
+    },
+    reconcile(id, body, actor) {
+      return mutate(actor, (state, config, identity, time) =>
+        idempotent(state, `reconcile:${id}`, body, identity, () => {
+          const entry = taskFor(state, id);
+          checkRevision(body.expectedRevision, entry.revision);
+          if (
+            !["failed", "cancelled"].includes(entry.status.status) ||
+            entry.reconciliation?.status !== "required"
+          )
+            conflict("当前任务没有待核对的外部执行结果。");
+          const outcome = member(
+            body.outcome,
+            new Set(["no-changes", "changes-recorded"]),
+          );
+          const note = text(body.note, 1000);
+          if (
+            outcome === "no-changes" &&
+            (hasSideEffects(entry.result) ||
+              entry.receipts?.some((receipt) => hasSideEffects(receipt.result)))
+          )
+            fail(
+              422,
+              "RECONCILIATION_MISMATCH",
+              "已有回执记录外部变更，请选择已记录变更并说明核对结果。",
+            );
+          const at = time.toISOString();
+          const resolution = { outcome, note, actor: identity.name, at };
+          const previous = entry.reconciliation.history ?? [];
+          if (previous.length >= 100)
+            fail(409, "RECONCILIATION_LIMIT", "核对记录已达到上限。");
+          entry.reconciliation = {
+            ...entry.reconciliation,
+            status: "resolved",
+            updatedAt: at,
+            resolution,
+            history: [...previous, copy(resolution)],
+          };
+          entry.revision += 1;
+          audit(
+            state,
+            "reconciled",
+            "管理员已记录外部执行结果核对结论。",
+            identity,
+            at,
+            id,
+          );
+          return {
+            changed: true,
+            value: {
+              taskId: id,
+              message: "核对结论已保存，可按实际情况重新尝试。",
+            },
+          };
+        }),
       );
     },
     bulk(body, actor) {
@@ -1137,13 +1658,14 @@ export function createHealingService({
     toggleRule(id, body, actor) {
       return mutate(actor, (state, config, identity, time) => {
         object(body);
-        checkRevision(body.expectedRevision, state.revision);
+        checkConfigRevision(body, state, "rules");
         if (typeof body.enabled !== "boolean") invalid();
         if (!config.rules.some((rule) => rule.id === id))
           fail(404, "RULE_NOT_FOUND", "找不到指定规则。");
         const current = state.ruleOverrides.find((item) => item.id === id);
         if (current) current.enabled = body.enabled;
         else state.ruleOverrides.push({ id, enabled: body.enabled });
+        state.configRevisions.rules += 1;
         audit(
           state,
           "toggle-rule",
@@ -1160,11 +1682,12 @@ export function createHealingService({
     saveMonitoring(body, actor) {
       return mutate(actor, (state, config, identity, time) => {
         object(body);
-        checkRevision(body.expectedRevision, state.revision);
+        checkConfigRevision(body, state, "monitoring");
         const exported = exportMonitoringConfig(body.monitoring);
         if (!exported)
           fail(422, "MONITORING_INVALID", "监控配置不完整或格式无效。");
         state.monitoring = exported.monitoring;
+        state.configRevisions.monitoring += 1;
         audit(
           state,
           "update-monitoring",
@@ -1179,103 +1702,108 @@ export function createHealingService({
       });
     },
     async claim(body, actor) {
-      const response = await mutate(actor, (state, config, identity, time) => {
-        object(body);
-        const engineId = text(body.engineId, 120);
-        const workerId = text(body.workerId, 120);
-        if (identity.workerId && identity.workerId !== workerId)
-          fail(403, "WORKER_ID_MISMATCH", "执行器标识与认证身份不匹配。");
-        if (!config.engines.some((engine) => engine.id === engineId))
-          fail(422, "ENGINE_UNAVAILABLE", "指定引擎尚未配置。");
-        const at = time.toISOString();
-        const registered = state.workers.find(
-          (item) =>
-            item.workerId === workerId &&
-            item.actorId === identity.id &&
-            item.engineId === engineId,
-        );
-        if (registered) registered.lastSeenAt = at;
-        else {
-          if (state.workers.length >= 1000)
-            fail(503, "STORE_FULL", "执行器注册记录已达到存储上限。");
-          state.workers.push({
+      const response = await workerMutation(
+        actor,
+        (state, config, identity, time) => {
+          object(body);
+          const engineId = text(body.engineId, 120);
+          const workerId = text(body.workerId, 120);
+          if (identity.workerId && identity.workerId !== workerId)
+            fail(403, "WORKER_ID_MISMATCH", "执行器标识与认证身份不匹配。");
+          if (!config.engines.some((engine) => engine.id === engineId))
+            fail(422, "ENGINE_UNAVAILABLE", "指定引擎尚未配置。");
+          const at = time.toISOString();
+          const registered = state.workers.find(
+            (item) =>
+              item.workerId === workerId &&
+              item.actorId === identity.id &&
+              item.engineId === engineId,
+          );
+          if (registered) registered.lastSeenAt = at;
+          else {
+            if (state.workers.length >= 1000)
+              fail(503, "STORE_FULL", "执行器注册记录已达到存储上限。");
+            state.workers.push({
+              workerId,
+              actorId: identity.id,
+              engineId,
+              lastSeenAt: at,
+            });
+            audit(
+              state,
+              "worker-connected",
+              "已认证的执行器已注册到引擎。",
+              identity,
+              at,
+            );
+          }
+          const entry = [...state.tasks]
+            .reverse()
+            .find(
+              (task) =>
+                task.engineId === engineId &&
+                task.status.status === "pending" &&
+                !task.lease &&
+                !task.cancellationRequested &&
+                !retryAncestors(state, task).some(
+                  (parent) => parent.reconciliation?.status === "required",
+                ) &&
+                (task.executionPhase === "diagnose" ||
+                  (task.executionPhase === "execute" &&
+                    task.reviewState === "approved" &&
+                    task.approvalFlow?.gates.every(
+                      (gate) => gate.status === "approved",
+                    ))),
+            );
+          if (!entry) return { changed: true, value: { task: null } };
+          entry.lease = {
+            id: randomUUID(),
+            phase: entry.executionPhase,
             workerId,
             actorId: identity.id,
-            engineId,
-            lastSeenAt: at,
-          });
+            claimedAt: at,
+            expiresAt: new Date(time.getTime() + leaseMs).toISOString(),
+          };
+          entry.status = {
+            ...entry.status,
+            status: "running",
+            startedAt: entry.status.startedAt ?? at,
+            message:
+              entry.executionPhase === "execute"
+                ? "执行器正在执行已批准的候选方案。"
+                : "执行器正在诊断任务。",
+          };
+          entry.revision += 1;
           audit(
             state,
-            "worker-connected",
-            "已认证的执行器已注册到引擎。",
+            "running",
+            entry.status.message,
             identity,
             at,
+            entry.task.id,
           );
-        }
-        const entry = [...state.tasks]
-          .reverse()
-          .find(
-            (task) =>
-              task.engineId === engineId &&
-              task.status.status === "pending" &&
-              !task.lease &&
-              !task.cancellationRequested &&
-              (task.executionPhase === "diagnose" ||
-                (task.executionPhase === "execute" &&
-                  task.reviewState === "approved" &&
-                  task.approvalFlow?.gates.every(
-                    (gate) => gate.status === "approved",
-                  ))),
-          );
-        if (!entry) return { changed: true, value: { task: null } };
-        entry.lease = {
-          id: randomUUID(),
-          phase: entry.executionPhase,
-          workerId,
-          actorId: identity.id,
-          claimedAt: at,
-          expiresAt: new Date(time.getTime() + leaseMs).toISOString(),
-        };
-        entry.status = {
-          ...entry.status,
-          status: "running",
-          startedAt: entry.status.startedAt ?? at,
-          message:
-            entry.executionPhase === "execute"
-              ? "执行器正在执行已批准的候选方案。"
-              : "执行器正在诊断任务。",
-        };
-        entry.revision += 1;
-        audit(
-          state,
-          "running",
-          entry.status.message,
-          identity,
-          at,
-          entry.task.id,
-        );
-        return {
-          changed: true,
-          value: {
-            task: publicTask(entry),
-            lease: {
-              id: entry.lease.id,
-              phase: entry.lease.phase,
-              expiresAt: entry.lease.expiresAt,
+          return {
+            changed: true,
+            value: {
+              task: publicTask(entry),
+              lease: {
+                id: entry.lease.id,
+                phase: entry.lease.phase,
+                expiresAt: entry.lease.expiresAt,
+              },
+              context: {
+                safety: copy(entry.safety),
+                rule: copy(entry.routingRule),
+                monitoring: monitoringFor(config, state),
+              },
             },
-            context: {
-              safety: copy(entry.safety),
-              rule: copy(entry.routingRule),
-              monitoring: monitoringFor(config, state),
-            },
-          },
-        };
-      });
-      const { snapshot, ...result } = response;
-      return result;
+          };
+        },
+      );
+      return response;
     },
     heartbeat(id, body, actor) {
-      return mutate(actor, (state, config, identity, time) => {
+      return workerMutation(actor, (state, config, identity, time) => {
         const entry = activeLease(state, id, body, identity, undefined, true);
         entry.lease.expiresAt = new Date(
           time.getTime() + leaseMs,
@@ -1298,7 +1826,7 @@ export function createHealingService({
       });
     },
     proposal(id, body, actor) {
-      return mutate(actor, (state, config, identity, time) => {
+      return workerMutation(actor, (state, config, identity, time) => {
         const entry = activeLease(state, id, body, identity, "diagnose");
         const summary = text(body.summary, 4000);
         const kind = proposalKind(entry);
@@ -1391,180 +1919,138 @@ export function createHealingService({
       });
     },
     complete(id, body, actor) {
-      return mutate(actor, (state, config, identity, time) => {
-        const entry = activeLease(state, id, body, identity);
-        const source = object(body.result);
-        if (typeof source.success !== "boolean") invalid();
-        const action = member(source.action, ACTIONS);
-        if (
-          (source.success && action === "failed") ||
-          (!source.success && !["failed", "skipped"].includes(action))
-        )
-          invalid();
-        if (
-          source.success &&
-          entry.lease.phase !== "execute" &&
-          action !== "skipped"
-        )
-          conflict("成功的代码变更必须来自已批准的执行租约。");
-        if (
-          source.success &&
-          action !== "skipped" &&
-          action !== RESULT_ACTION[entry.routingRule.processor.action]
-        )
-          fail(422, "ACTION_MISMATCH", "完成的操作与路由授权不一致。");
-        const evidence = readEvidence(source.evidence ?? {});
-        const logs = list(source.logs ?? [], 1000, (line) =>
-          text(line, 4000, true),
-        );
-        if (
-          logs.reduce((size, line) => size + Buffer.byteLength(line), 0) >
-          1024 * 1024
-        )
-          invalid();
-        let changes;
-        if (source.changes !== undefined) {
-          const change = object(source.changes);
-          const files = list(change.files ?? [], 100, safePath);
-          changes = { files };
-          if (change.commit !== undefined) {
-            if (
-              typeof change.commit !== "string" ||
-              !/^[0-9a-f]{40,64}$/i.test(change.commit)
-            )
-              invalid();
-            changes.commit = change.commit;
-          }
-          for (const key of ["pr", "issue"])
-            if (change[key] !== undefined) {
-              const value = integer(change[key]);
-              if (!value) invalid();
-              changes[key] = value;
-            }
-        }
-        if (
-          source.success &&
-          action === "skipped" &&
-          (changes?.files.length ||
-            changes?.commit !== undefined ||
-            changes?.pr !== undefined ||
-            changes?.issue !== undefined)
-        )
-          fail(
-            422,
-            "UNAPPROVED_CHANGE",
-            "跳过的操作不得包含文件变更、提交、拉取请求或议题。",
-          );
-        if (source.success && entry.lease.phase === "execute") {
-          if (proposalKind(entry) === "code-change")
-            requiredEvidence(evidence, entry.safety);
-          else {
-            diagnosticEvidence(evidence);
-            if (
-              changes?.files.length ||
-              changes?.commit !== undefined ||
-              changes?.pr !== undefined ||
-              (action !== "issue-created" && changes?.issue !== undefined)
-            )
-              fail(
-                422,
-                "UNAPPROVED_CHANGE",
-                "操作结果不得包含代码变更或未经授权的外部产物。",
-              );
-          }
-          if (
-            (action === "committed" && !changes?.commit) ||
-            (action === "pr-created" && !changes?.pr) ||
-            (action === "issue-created" && !changes?.issue)
-          )
-            invalid();
-          if (["committed", "pr-created"].includes(action)) {
-            const files = changes?.files ?? [];
-            const approved = new Set(entry.diff.map((item) => item.path));
-            if (
-              !files.length ||
-              files.length !== approved.size ||
-              new Set(files).size !== files.length ||
-              files.some((path) => !approved.has(path))
-            )
-              fail(
-                422,
-                "UNAPPROVED_CHANGE",
-                "完成结果必须准确列明已批准方案的全部文件，且不能重复。",
-              );
-          }
-        }
+      return workerMutation(actor, (state, config, identity, time) => {
+        const context = receiptContext(state, id, body, identity, "complete");
+        if (context.replay) return context.replay;
+        const { entry, lease, fingerprint, late } = context;
         const at = time.toISOString();
+        const result = readResult(body.result, entry, lease, at);
+        const interrupted = late || entry.cancellationRequested;
+        // Interrupted reports record facts only; they never authorize or resume an action.
+        if (!interrupted) validateSuccessfulResult(result, entry, lease);
         refreshWorker(state, entry, identity, at);
-        const startedAt = entry.status.startedAt ?? entry.lease.claimedAt;
-        entry.result = {
-          taskId: id,
-          success: source.success,
-          action,
-          ...(changes ? { changes } : {}),
-          logs,
-          evidence,
-          timings: {
-            startedAt,
+        entry.result = result;
+        if (!late) {
+          entry.status = {
+            ...entry.status,
+            status: entry.cancellationRequested
+              ? "cancelled"
+              : result.success
+                ? result.action === "skipped"
+                  ? "skipped"
+                  : "completed"
+                : "failed",
             completedAt: at,
-            durationMs: Math.max(0, time.getTime() - Date.parse(startedAt)),
-          },
-        };
-        if (!source.success) {
-          const error = source.error ? object(source.error) : {};
-          entry.result.error = {
-            code: text(error.code ?? "WORKER_FAILED", 120),
-            message: text(error.message ?? "执行器已报告失败。", 1000),
-            retriable: error.retriable === true,
+            progress:
+              !interrupted && result.success ? 100 : entry.status.progress,
+            message: entry.cancellationRequested
+              ? "执行已中断，回执已保存，请核对外部操作。"
+              : result.success
+                ? "执行器已报告执行成功。"
+                : "执行器已报告失败。",
           };
+        } else {
+          entry.status.message =
+            "已补录迟到回执，任务终态保持不变，请核对外部操作。";
         }
-        entry.status = {
-          ...entry.status,
-          status: source.success
-            ? action === "skipped"
-              ? "skipped"
-              : "completed"
-            : "failed",
-          completedAt: at,
-          progress: source.success ? 100 : entry.status.progress,
-          message: source.success
-            ? "执行器已报告执行成功。"
-            : "执行器已报告失败。",
-        };
+        if (
+          (interrupted && lease.phase === "execute") ||
+          (!result.success && lease.phase === "execute") ||
+          (interrupted && hasSideEffects(result)) ||
+          (!result.success && hasSideEffects(result))
+        ) {
+          markReconciliation(
+            state,
+            entry,
+            "执行中断或失败，外部操作结果需要核对。",
+            at,
+            identity,
+          );
+        }
         entry.executionPhase = "done";
         entry.revision += 1;
+        if (entry.cancellationRequested && !late)
+          cancelFlow(entry, identity, at);
+        const response = { message: entry.status.message, taskId: id };
+        rememberReceipt(
+          entry,
+          "complete",
+          fingerprint,
+          lease,
+          result,
+          response,
+          at,
+        );
         delete entry.lease;
         audit(
           state,
-          entry.status.status,
+          late ? "late-result" : entry.status.status,
           entry.status.message,
           identity,
           at,
           id,
-          source.success ? "success" : "error",
+          entry.reconciliation?.status === "required"
+            ? "warning"
+            : result.success
+              ? "success"
+              : "error",
         );
-        return {
-          changed: true,
-          value: { message: entry.status.message, taskId: id },
-        };
+        return { changed: true, value: response };
       });
     },
     acknowledgeCancellation(id, body, actor) {
-      return mutate(actor, (state, config, identity, time) => {
-        const entry = activeLease(state, id, body, identity, undefined, true);
+      return workerMutation(actor, (state, config, identity, time) => {
+        const context = receiptContext(state, id, body, identity, "cancelled");
+        if (context.replay) return context.replay;
+        const { entry, lease, fingerprint, late } = context;
         if (!entry.cancellationRequested) conflict("此任务尚未请求取消。");
         const at = time.toISOString();
+        const result =
+          body.result === undefined
+            ? undefined
+            : readResult(body.result, entry, lease, at);
         refreshWorker(state, entry, identity, at);
-        entry.status = {
-          ...entry.status,
-          status: "cancelled",
-          completedAt: at,
-          message: "执行器已确认取消。",
-        };
+        if (result) entry.result = result;
+        else if (!entry.result)
+          entry.result = failureResult(
+            entry,
+            "CANCELLED",
+            "执行器已确认停止，未提供执行回执。",
+            at,
+          );
+        if (!late) {
+          entry.status = {
+            ...entry.status,
+            status: "cancelled",
+            completedAt: at,
+            message: "执行器已确认取消。",
+          };
+          cancelFlow(entry, identity, at);
+        } else entry.status.message = "已补录取消确认，任务终态保持不变。";
+        if (
+          (!late || result) &&
+          (lease.phase === "execute" || hasSideEffects(result))
+        )
+          markReconciliation(
+            state,
+            entry,
+            "执行器已停止，请核对取消前可能发生的外部操作。",
+            at,
+            identity,
+          );
         entry.executionPhase = "done";
         entry.revision += 1;
+        const response = { message: entry.status.message, taskId: id };
+        rememberReceipt(
+          entry,
+          "cancelled",
+          fingerprint,
+          lease,
+          result,
+          response,
+          at,
+        );
         delete entry.lease;
-        cancelFlow(entry, identity, at);
         audit(
           state,
           "cancelled",
@@ -1574,10 +2060,7 @@ export function createHealingService({
           id,
           "warning",
         );
-        return {
-          changed: true,
-          value: { message: entry.status.message, taskId: id },
-        };
+        return { changed: true, value: response };
       });
     },
     close: () => store.close(),

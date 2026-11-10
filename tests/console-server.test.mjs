@@ -70,6 +70,7 @@ const capabilities = {
   approve: true,
   updateRules: true,
   updateMonitoring: true,
+  reconcile: true,
 };
 
 function get(base, path, method = "GET", body) {

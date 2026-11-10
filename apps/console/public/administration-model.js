@@ -53,6 +53,9 @@ const activityActions = {
   "update-monitoring": ["保存监控配置", "other", "Settings2"],
   "save-monitoring": ["保存监控配置", "other", "Settings2"],
   "cancel-requested": ["请求取消任务", "tasks", "Square"],
+  "retry-interrupted": ["重试任务已停止", "tasks", "Square"],
+  "late-result": ["补录执行回执", "tasks", "History"],
+  reconciled: ["核对执行结果", "tasks", "CheckCheck"],
 };
 const taskTypes = {
   "lint-error": "Lint 错误",

@@ -504,6 +504,47 @@ test("live save conflicts keep the editable draft and surface the server explana
   assert.match(h.state.monitoringSaveError, /配置已变化/);
 });
 
+test("monitoring saves retain the resource revision captured before background worker updates", async (t) => {
+  installBrowser(t);
+  let sent;
+  const h = liveHarness({
+    async updateMonitoring(body) {
+      sent = body;
+      return {
+        snapshot: {
+          ...h.state.snapshot,
+          revision: 101,
+          configRevisions: { rules: 8, monitoring: 4 },
+          monitoring: body.monitoring,
+        },
+      };
+    },
+  });
+  h.state.snapshot = {
+    ...h.state.snapshot,
+    configRevisions: { rules: 8, monitoring: 3 },
+  };
+  h.controller.reconcile();
+  h.controller.handleInput({
+    target: {
+      name: "dashboardUid",
+      value: "draft-dashboard",
+      closest: () => ({}),
+    },
+  });
+  h.state.snapshot = {
+    ...h.state.snapshot,
+    revision: 100,
+    configRevisions: { rules: 9, monitoring: 7 },
+  };
+  h.controller.reconcile();
+  submit(h.controller, { ...h.state.monitoringDraft });
+  await h.settled();
+  assert.equal(sent.expectedConfigRevision, 3);
+  assert.equal(sent.expectedRevision, 4);
+  assert.equal(sent.monitoring.grafana.dashboardUid, "draft-dashboard");
+});
+
 test("connection checks remain valid through unrelated snapshot revisions", async (t) => {
   installBrowser(t);
   const response = deferred();
