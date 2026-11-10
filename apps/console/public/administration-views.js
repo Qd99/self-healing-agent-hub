@@ -44,11 +44,13 @@ const timeOf = (at, full = false) =>
 const sourceOf = (s) =>
   s.mode === "demo"
     ? "演示模板"
-    : s.snapshot?.rulesSource === "configured"
-      ? "healing-rules.json"
-      : s.snapshot?.rulesSource === "example"
-        ? "healing-rules.example.json"
-        : "管理服务";
+    : s.snapshot?.rulesOverridden
+      ? "管理服务保存的规则"
+      : s.snapshot?.rulesSource === "configured"
+        ? "healing-rules.json"
+        : s.snapshot?.rulesSource === "example"
+          ? "healing-rules.example.json"
+          : "管理服务";
 const taskButton = (id, label, tab = "trace") =>
   uiButton({
     label,
@@ -171,8 +173,10 @@ function ruleToggle(rule, s) {
     className: "adm-rule-toggle",
     disabled: !canUpdateRules(s),
     title: canUpdateRules(s)
-      ? `${rule.enabled ? "停用" : "启用"}此规则（仅本次演示）`
-      : "配置只读，请在服务端配置中修改。",
+      ? `${rule.enabled ? "停用" : "启用"}此规则${s.mode === "demo" ? "（仅本次演示）" : ""}`
+      : s.pendingAction && canUpdateRules({ ...s, pendingAction: "" })
+        ? "正在保存，请稍候。"
+        : "配置只读，请在服务端配置中修改。",
     attrs: `data-id="${e(rule.id)}" role="switch" aria-checked="${rule.enabled === true}" aria-label="${e(rule.name)}：${rule.enabled ? "已启用" : "已停用"}"`,
   });
 }
@@ -201,9 +205,9 @@ export function renderRulesPage(s) {
   const engines = [
     ...new Set(all.map((rule) => rule.processor?.engine).filter(Boolean)),
   ];
-  const writable = canUpdateRules(s);
+  const writable = canUpdateRules({ ...s, pendingAction: "" });
   return `<section class="ui-card adm-workspace adm-rules" aria-label="路由规则">
-    <div class="adm-caption-row"><p class="adm-caption">定义什么任务交给哪个引擎，以及采用的处理动作。</p>${uiStatus({ label: writable ? "演示配置" : "配置只读", icon: writable ? "FlaskConical" : "LockKeyhole", tone: "neutral" })}</div>
+    <div class="adm-caption-row"><p class="adm-caption">定义什么任务交给哪个引擎，以及采用的处理动作。</p>${uiStatus({ label: writable ? (s.mode === "demo" ? "演示配置" : "服务端配置") : "配置只读", icon: writable ? (s.mode === "demo" ? "FlaskConical" : "Database") : "LockKeyhole", tone: "neutral" })}</div>
     <div class="ui-toolbar adm-toolbar">
       ${uiSearch({ id: "rules-search", value: filters.query, label: "搜索路由规则", placeholder: "搜索规则名称、条件或动作…", className: "adm-search" })}
       ${uiSelect({
@@ -219,7 +223,7 @@ export function renderRulesPage(s) {
       ${uiSelect({ id: "rules-engine", value: filters.engine, options: [{ value: "all", label: "全部引擎" }, ...engines.map((value) => ({ value, label: administrationEngineName(value) }))], label: "执行引擎" })}
       ${active ? resetButton("rules-reset") : ""}
     </div>
-    <div class="adm-list-summary"><span role="status" aria-live="polite">${active ? `筛选出 ${filtered.length} 条，共 ${all.length} 条` : `${all.length} 条规则 · ${all.filter((rule) => rule.enabled).length} 条已启用`}</span><span>${writable ? "开关仅影响本次演示" : `来源：${e(sourceOf(s))}`}</span></div>
+    <div class="adm-list-summary"><span role="status" aria-live="polite">${active ? `筛选出 ${filtered.length} 条，共 ${all.length} 条` : `${all.length} 条规则 · ${all.filter((rule) => rule.enabled).length} 条已启用`}</span><span>${writable ? (s.mode === "demo" ? "开关仅影响本次演示" : "开关影响新任务的路由") : `来源：${e(sourceOf(s))}`}</span></div>
     ${!all.length ? uiEmpty({ icon: "Workflow", title: "还没有路由规则", description: "管理服务提供规则配置后，可在这里查看分流条件与处理动作。" }) : !filtered.length ? uiEmpty({ icon: "Search", title: "没有匹配的规则", description: "试试其他关键词或调整规则状态。", action: resetButton("rules-reset") }) : `<div class="adm-rules-table"><table class="ui-table"><thead><tr><th scope="col">规则</th><th scope="col">当满足以下条件</th><th scope="col">交给引擎处理</th><th scope="col">配置状态</th><th scope="col"><span class="sr-only">详情</span></th></tr></thead><tbody>${filtered.map((rule) => renderRuleRow(rule, s)).join("")}</tbody></table></div>`}
   </section>`;
 }
@@ -227,7 +231,7 @@ export function renderRulesPage(s) {
 export function renderRoutingDetail(rule, s = {}) {
   const conditions = describeRuleConditions(rule);
   const processor = describeRuleProcessor(rule);
-  const writable = canUpdateRules(s);
+  const writable = canUpdateRules({ ...s, pendingAction: "" });
   return `<div class="detail-top"><span>路由规则 / <span class="mono">${e(rule.id)}</span></span>${uiButton({ label: "", icon: "X", action: "close-detail", variant: "ghost", className: "ui-icon-button", attrs: 'aria-label="关闭规则详情"' })}</div>
     <div class="detail-heading adm-rule-detail-heading"><h2 id="detail-title">${e(rule.name || rule.id)}</h2>${uiStatus({ label: rule.enabled ? "配置已启用" : "配置已停用", tone: rule.enabled ? "success" : "neutral" })}</div>
     <div class="detail-content adm-rule-detail">
@@ -241,8 +245,8 @@ export function renderRoutingDetail(rule, s = {}) {
           <div><dt>工作流</dt><dd>${e(processor.workflow)}${rule.processor?.workflow ? `<code>${e(rule.processor.workflow)}</code>` : ""}</dd></div>
         </dl></section>
       </div>
-      <p class="adm-rule-boundary">${writable ? "开关仅修改本次演示；真实执行器尚未接入。" : "当前为只读配置，实际执行器尚未接入。"}</p>
+      <p class="adm-rule-boundary">${writable ? (s.mode === "demo" ? "开关仅修改本次演示；真实执行器尚未接入。" : "保存后，新创建的任务按当前启用规则路由；已有任务记录保留。") : "当前会话仅可查看规则配置。"}</p>
       <details class="adm-rule-raw"><summary>${icon("Code2", 14)}查看配置 JSON${icon("ChevronDown", 14)}</summary><pre><code>${e(JSON.stringify(rule, null, 2))}</code></pre></details>
     </div>
-    <div class="detail-bottom"><small>来源：${e(sourceOf(s))}</small><div class="adm-detail-actions">${writable ? uiButton({ label: rule.enabled ? "停用此规则" : "启用此规则", action: "toggle-rule", attrs: `data-id="${e(rule.id)}"` }) : uiStatus({ label: "配置只读", tone: "neutral", icon: "LockKeyhole" })}${uiButton({ label: "关闭", action: "close-detail", variant: "default" })}</div></div>`;
+    <div class="detail-bottom"><small>来源：${e(sourceOf(s))}</small><div class="adm-detail-actions">${writable ? uiButton({ label: s.pendingAction === `rule:${rule.id}` ? "保存中…" : rule.enabled ? "停用此规则" : "启用此规则", action: "toggle-rule", disabled: Boolean(s.pendingAction), attrs: `data-id="${e(rule.id)}"` }) : uiStatus({ label: "配置只读", tone: "neutral", icon: "LockKeyhole" })}${uiButton({ label: "关闭", action: "close-detail", variant: "default" })}</div></div>`;
 }

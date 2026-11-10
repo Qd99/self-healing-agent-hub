@@ -1,4 +1,4 @@
-/** Pure task-list selection and local demo commands; no network or executor. */
+/** Pure task-list selection and capability planning; demo commands stay local. */
 
 import { filterTasks } from "./model.js";
 import { applyDemoAction } from "./data.js";
@@ -183,9 +183,10 @@ export function planBulkAction(snapshot, { type, ids } = {}) {
     ? [...new Set(ids.filter((id) => typeof id === "string" && id.trim()))]
     : [];
   const label = type === "cancel" ? "取消" : "重试";
-  const blocked =
-    snapshot?.mode !== "demo"
-      ? `仅演示模式支持批量${label}；真实数据为只读`
+  const blocked = !["demo", "live"].includes(snapshot?.mode)
+    ? "尚未读取任务数据"
+    : requestedIds.length > 100
+      ? "一次最多处理 100 项任务，请减少选择"
       : snapshot.capabilities?.[type] !== true
         ? `当前数据源未开放${label}能力`
         : "";
@@ -205,9 +206,19 @@ export function planBulkAction(snapshot, { type, ids } = {}) {
     const reason = !item
       ? "任务不存在或已被移除"
       : blocked ||
+        (type === "cancel" && item.execution?.cancelRequested
+          ? "取消请求已提交，等待 Agent 确认"
+          : "") ||
         (allowedStatuses.includes(item.status?.status) ? "" : statusReason);
     if (reason) skipped.push({ id, title, reason });
-    else eligible.push({ id, title });
+    else
+      eligible.push({
+        id,
+        title,
+        ...(Number.isSafeInteger(item.revision)
+          ? { revision: item.revision }
+          : {}),
+      });
   }
   return {
     type,
@@ -234,6 +245,15 @@ export function applyDemoBulkAction(snapshot, action, now = Date.now()) {
     applied: [],
     skipped: [...plan.skipped],
   };
+  if (snapshot?.mode !== "demo") {
+    report.skipped.push(
+      ...plan.eligible.map((entry) => ({
+        ...entry,
+        reason: "模拟操作仅适用于演示模式",
+      })),
+    );
+    return { snapshot, report };
+  }
   if (!plan.canExecute) return { snapshot, report };
   const timestamp = new Date(now).getTime();
   if (!Number.isFinite(timestamp)) throw new TypeError("操作需要有效时间");

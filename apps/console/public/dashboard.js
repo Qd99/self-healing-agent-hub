@@ -243,7 +243,7 @@ function typesChart(analytics) {
     }
   </section>`;
 }
-function engineRow(item) {
+function engineRow(item, mode = "demo") {
   const name =
     item.id === "unknown" ? "未知引擎" : administrationEngineName(item.id);
   const clickable = !["unknown", "all"].includes(item.id);
@@ -253,17 +253,30 @@ function engineRow(item) {
     item.count ? percent((count / item.count) * 100) : 0;
   return `<${tag} ${clickable ? `type="button" ${filterAttrs("engine", item.id)}` : ""} class="report-engine" aria-label="${e(name)}：${item.count} 项任务，已结束任务成功率 ${percentLabel(item.successRate)}，平均耗时 ${e(formatDuration(item.averageDurationMs))}">
     <span class="report-engine-heading"><span class="report-engine-icon" aria-hidden="true">${icon(item.id === "fast" ? "Zap" : "Bot", 16)}</span><strong>${e(name)}</strong><span class="report-engine-count"><b>${item.count}</b> 项</span></span>
-    <span class="report-engine-metrics"><span><strong>${percentLabel(item.successRate)}</strong><small>修复成功率</small></span><span><strong>${e(formatDuration(item.averageDurationMs))}</strong><small>平均耗时</small></span><span><strong>${item.failed}</strong><small>失败</small></span></span>
+    <span class="report-engine-metrics"><span><strong>${percentLabel(item.successRate)}</strong><small>${mode === "demo" ? "修复成功率" : "任务成功率"}</small></span><span><strong>${e(formatDuration(item.averageDurationMs))}</strong><small>平均耗时</small></span><span><strong>${item.failed}</strong><small>失败</small></span></span>
     <span class="report-engine-track" aria-hidden="true"><i class="is-completed" style="width:${share(item.completed)}%"></i><i class="is-failed" style="width:${share(item.failed)}%"></i><i class="is-other" style="width:${share(other)}%"></i></span>
     <span class="report-engine-legend">完成 ${item.completed} · 失败 ${item.failed} · 其他 ${other}</span>
   </${tag}>`;
 }
-function enginesChart(analytics) {
+function enginesChart(analytics, mode) {
   const items = analytics.engines;
   const rest = items.slice(2);
   return `<section class="report-card report-engines ui-card" aria-labelledby="home-engines-title">
     ${reportHeader("home-engines-title", "引擎表现", "Bot", `<span class="report-header-note">${items.length} 个引擎</span>`)}
-    ${items.length ? `<div class="report-engine-list">${items.slice(0, 2).map(engineRow).join("")}</div>${rest.length ? `<details class="report-more"><summary>另外 ${rest.length} 个引擎 ${icon("ChevronDown", 12)}</summary><div class="report-engine-list">${rest.map(engineRow).join("")}</div></details>` : ""}` : uiEmpty({ icon: "Bot", title: "暂无引擎任务数据", className: "report-empty" })}
+    ${
+      items.length
+        ? `<div class="report-engine-list">${items
+            .slice(0, 2)
+            .map((item) => engineRow(item, mode))
+            .join(
+              "",
+            )}</div>${rest.length ? `<details class="report-more"><summary>另外 ${rest.length} 个引擎 ${icon("ChevronDown", 12)}</summary><div class="report-engine-list">${rest.map((item) => engineRow(item, mode)).join("")}</div></details>` : ""}`
+        : uiEmpty({
+            icon: "Bot",
+            title: "暂无引擎任务数据",
+            className: "report-empty",
+          })
+    }
     <div class="report-footer"><span title="成功率仅计算已完成与失败的任务；平均耗时仅纳入有效测量。不同引擎的任务类型可能不同。">按分配任务统计</span>${uiButton({ label: "引擎设置", icon: "ArrowUpRight", action: "navigate", attrs: 'data-view="engines"', variant: "ghost", className: "report-link" })}</div>
   </section>`;
 }
@@ -314,11 +327,11 @@ export function renderStudioDashboard(state) {
   return `<div class="home-dashboard">
     <section class="home-metrics" aria-label="当前时间范围的运行统计">
       <div class="home-stat">${uiMetric({ label: "任务总量", value: metrics.total, unit: "项", icon: "Layers", tone: "info", detail: `${statusCount("running")} 运行 · ${statusCount("pending")} 排队`, className: "home-metric" })}</div>
-      <div class="home-stat">${uiMetric({ label: "修复成功率", value: metrics.successRate === null ? "—" : metrics.successRate.toFixed(1), unit: metrics.successRate === null ? "" : "%", icon: "CircleCheck", tone: "success", detail: `${metrics.completed} 完成 · ${metrics.failed} 失败`, className: "home-metric" })}</div>
-      <div class="home-stat">${uiMetric({ label: "平均修复耗时", value: formatDuration(metrics.averageDurationMs), icon: "Clock3", detail: metrics.averageDurationMs === null ? "暂无有效耗时" : "已结束任务的有效均值", className: "home-metric" })}</div>
+      <div class="home-stat">${uiMetric({ label: state.mode === "demo" ? "修复成功率" : "任务成功率", value: metrics.successRate === null ? "—" : metrics.successRate.toFixed(1), unit: metrics.successRate === null ? "" : "%", icon: "CircleCheck", tone: "success", detail: `${metrics.completed} 完成 · ${metrics.failed} 失败`, className: "home-metric" })}</div>
+      <div class="home-stat">${uiMetric({ label: state.mode === "demo" ? "平均修复耗时" : "平均任务耗时", value: formatDuration(metrics.averageDurationMs), icon: "Clock3", detail: metrics.averageDurationMs === null ? "暂无有效耗时" : "已结束任务的有效均值", className: "home-metric" })}</div>
       <div class="home-stat">${uiMetric({ label: "待审批", value: statusCount("review"), unit: "项", icon: "GitPullRequestArrow", tone: "warning", detail: statusCount("review") ? "等待人工确认" : "无需处理", className: "home-metric" })}${uiButton({ label: "去审批", icon: "ArrowUpRight", action: "navigate", attrs: 'data-view="approvals"', variant: "ghost", className: "home-stat-action" })}</div>
     </section>
     <div class="home-report-main">${volumeChart(analytics)}${statusChart(analytics)}</div>
-    <div class="home-report-bottom">${typesChart(analytics)}${enginesChart(analytics)}${recentTasks(analytics, state)}</div>
+    <div class="home-report-bottom">${typesChart(analytics)}${enginesChart(analytics, state.mode)}${recentTasks(analytics, state)}</div>
   </div>`;
 }

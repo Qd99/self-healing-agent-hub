@@ -352,9 +352,7 @@ async function fixture(t, monitoring) {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   t.after(async () => {
-    await new Promise((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    );
+    await server.shutdown();
     await rm(rootDir, { recursive: true, force: true });
   });
   return new Promise((resolve, reject) => {
@@ -383,9 +381,7 @@ test("gateway projects missing optional monitoring as unconfigured", async (t) =
   assert.equal(status, 200);
   assert.equal(snapshot.monitoring.status, "unconfigured");
   assert.equal(snapshot.monitoring.connectivity, "unverified");
-  assert.ok(
-    Object.values(snapshot.capabilities).every((value) => value === false),
-  );
+  assert.equal(snapshot.capabilities.updateMonitoring, true);
 });
 
 test("gateway strips monitoring secrets and never marks configuration as connected", async (t) => {
@@ -403,9 +399,7 @@ test("gateway strips monitoring secrets and never marks configuration as connect
   assert.deepEqual(snapshot.monitoring.namespaces, configured.namespaces);
   assert.doesNotMatch(body, /needle-|connected/);
   assert.deepEqual(snapshot.tasks, []);
-  assert.ok(
-    Object.values(snapshot.capabilities).every((value) => value === false),
-  );
+  assert.equal(snapshot.capabilities.updateMonitoring, true);
 });
 
 for (const input of [
@@ -419,7 +413,7 @@ for (const input of [
     },
   },
 ]) {
-  test("invalid optional monitoring remains explicit without breaking the read-only snapshot", async (t) => {
+  test("invalid optional monitoring remains explicit without breaking the management snapshot", async (t) => {
     const { status, body, snapshot } = await fixture(t, input);
     assert.equal(status, 200);
     assert.equal(snapshot.monitoring.status, "invalid");

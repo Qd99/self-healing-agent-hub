@@ -82,6 +82,35 @@ function externalButton(s, className = "") {
   return `<a class="ui-button ${e(className)}" href="${e(url)}" target="_blank" rel="noopener noreferrer" title="在新标签页打开 Grafana，需有相应访问权限">${icon("ArrowUpRight", 15)}打开 Grafana</a>`;
 }
 
+function connectionCheck(s) {
+  if (s.mode === "demo" || !s.monitoringCheck) return "";
+  const check = s.monitoringCheck;
+  const label =
+    check.status === "connected"
+      ? "连接检查通过"
+      : check.status === "unconfigured"
+        ? "尚未配置"
+        : "连接检查未通过";
+  return `<div class="mon-connection-check ui-section-note" role="status">${uiStatus({ label, tone: check.status === "connected" ? "success" : "warning", icon: check.status === "connected" ? "CircleCheck" : "CircleAlert" })}<p>${e(check.message || "")}</p><small>${check.checkedAt ? `检查时间：${e(check.checkedAt)} · ` : ""}连接检查不代表实时指标或 Agent 健康。</small></div>`;
+}
+function checkButton(s) {
+  if (s.mode === "demo") return "";
+  return uiButton({
+    label: s.pendingAction === "monitoring-check" ? "检查中…" : "检查连接",
+    icon: "RefreshCw",
+    action: "monitoring-check",
+    disabled:
+      currentMonitoring(s).status !== "ready" ||
+      Boolean(s.monitoringDirty) ||
+      Boolean(s.pendingAction) ||
+      s.authRequired,
+    loading: s.pendingAction === "monitoring-check",
+    title: s.monitoringDirty
+      ? "请先保存修改后再检查服务端配置"
+      : "检查已保存的 Grafana 与数据源配置",
+  });
+}
+
 function renderDashboard(s) {
   const config = currentMonitoring(s);
   const configured = config.status === "ready";
@@ -100,7 +129,9 @@ function renderDashboard(s) {
     : config.status === "invalid"
       ? "接入配置需要修正"
       : configured
-        ? "连接与指标尚未验证"
+        ? s.monitoringCheck?.status === "connected"
+          ? "连接已检查 · 实时指标请在 Grafana 查看"
+          : "连接与指标尚未验证"
         : "尚未接入监控";
   const previewDescription = placeholder
     ? "替换示例配置后，在 Grafana 中验证连接与指标。"
@@ -115,9 +146,9 @@ function renderDashboard(s) {
         <div class="mon-control"><span class="mon-control-label">${icon("Boxes", 14)}命名空间</span>${uiSelect({ id: "monitoring-scope", value: scope, label: "监控命名空间", disabled: !configured, options: [{ value: MONITORING_ALL_SCOPE, label: configured ? `全部已配置 · ${config.namespaces.length}` : "尚未配置命名空间" }, ...config.namespaces.map((value) => ({ value, label: value }))] })}</div>
         <div class="mon-control"><span class="mon-control-label">${icon("Clock3", 14)}时间范围</span>${uiSelect({ id: "monitoring-range", value: s.monitoringRange || "6h", label: "监控时间范围", disabled: !configured, options: MONITORING_TIME_RANGES.map(({ id, label }) => ({ value: id, label })) })}</div>
         <div class="mon-source"><span class="mon-control-label">${icon("Database", 14)}Prometheus 数据源</span><div class="mon-source-value"><strong title="${e(datasourceName)}">${e(datasourceName)}</strong><code title="${e(config.datasource?.uid || "尚未绑定 UID")}">${e(config.datasource?.uid ? `UID · ${config.datasource.uid}` : "尚未绑定 UID")}</code></div></div>
-        ${externalButton(s, "mon-open-grafana")}
+        ${checkButton(s)}${externalButton(s, "mon-open-grafana")}
       </div>
-      <div class="mon-summary" aria-label="抓取指标与已配置范围">
+      ${connectionCheck(s)}<div class="mon-summary" aria-label="抓取指标与已配置范围">
         ${uiMetric({ label: "可抓取目标", value: "—", unit: "个", icon: "Activity" })}
         ${uiMetric({ label: "抓取异常", value: "—", unit: "个", icon: "CircleAlert" })}
         ${uiMetric({ label: "已配置命名空间", value: configured ? config.namespaces.length : 0, unit: "个", icon: "Boxes", detail: configured ? `当前范围 · ${namespaces.length} 个` : "配置后可按范围筛选" })}
@@ -146,6 +177,9 @@ function renderDashboard(s) {
 
 function renderConfiguration(s) {
   const draft = s.monitoringDraft || {};
+  const demo = s.mode === "demo";
+  const writable =
+    demo || (s.snapshot?.capabilities.updateMonitoring && !s.authRequired);
   const value = (key) => draft[key] ?? "";
   const fields = (key, options) =>
     uiField({
@@ -158,9 +192,9 @@ function renderConfiguration(s) {
     });
   const configured = currentMonitoring(s).status === "ready";
   return `<form id="monitoring-form" class="ui-card mon-config" novalidate>
-    <header class="mon-config-header"><div class="mon-config-title"><span class="mon-config-mark">${icon("Plug", 20)}</span><div><h2>Grafana 接入</h2><p>绑定范围与数据源，保存为本机配置草稿。</p></div></div>${uiStatus({ label: sourceLabel(s), icon: s.monitoringSource === "local" ? "Laptop" : s.mode === "demo" ? "FlaskConical" : "Database", tone: "neutral" })}</header>
+    <header class="mon-config-header"><div class="mon-config-title"><span class="mon-config-mark">${icon("Plug", 20)}</span><div><h2>Grafana 接入</h2><p>${demo ? "绑定范围与数据源，保存为本机配置草稿。" : "绑定范围与数据源，保存到管理服务。"}</p></div></div>${uiStatus({ label: sourceLabel(s), icon: s.monitoringSource === "local" ? "Laptop" : s.mode === "demo" ? "FlaskConical" : "Database", tone: "neutral" })}</header>
     ${s.mode === "demo" && s.monitoringSource === "example" ? '<div class="mon-demo-note">当前字段为示例，请替换成你环境中的实际值。</div>' : ""}
-    <section class="mon-config-section"><div class="mon-section-label">${icon("ChartNoAxesCombined", 17)}<h3>Grafana</h3></div><div class="mon-fields">
+    ${connectionCheck(s)}${s.monitoringSaveError ? `<p class="form-error ui-section-note" role="alert">${e(s.monitoringSaveError)}</p>` : ""}<section class="mon-config-section"><div class="mon-section-label">${icon("ChartNoAxesCombined", 17)}<h3>Grafana</h3></div><div class="mon-fields">
       ${fields("baseUrl", { label: "服务地址", placeholder: "https://grafana.your-domain.com", required: true, path: "grafana.baseUrl", className: "mon-field-wide" })}
       ${fields("dashboardUid", { label: "仪表盘 UID", placeholder: "例如 healing-overview", required: true, path: "grafana.dashboardUid", hint: "仪表盘地址中 /d/ 后的标识。" })}
       ${fields("dashboardSlug", { label: "仪表盘路径名称", placeholder: "healing-overview", path: "grafana.dashboardSlug", hint: "仪表盘地址中 UID 后的名称。" })}
@@ -175,7 +209,7 @@ function renderConfiguration(s) {
       ${fields("datasourceVariable", { label: "数据源变量", placeholder: "datasource", path: "grafana.datasourceVariable", hint: "使用 Prometheus 类型的数据源变量。" })}
       ${fields("orgId", { label: "组织 ID（可选）", type: "number", placeholder: "使用 Grafana 当前组织", path: "grafana.orgId" })}
     </div></details>
-    <footer class="mon-config-footer"><div role="status" class="mon-save-state">${s.monitoringErrors?.length ? `${icon("CircleAlert", 14)}<span>请检查标记的字段</span>` : `${icon(s.monitoringDirty ? "CircleDashed" : "Laptop", 14)}<span>${s.monitoringDirty ? "有未保存的修改" : s.monitoringSource === "local" ? "已保存到本机，未应用到服务端" : s.monitoringSource === "session" ? "仅本次会话可用，未应用到服务端" : "保存为本机配置草稿"}</span>`}</div><div class="ui-toolbar-actions">${uiButton({ label: "恢复来源配置", action: "monitoring-reset", variant: "ghost", disabled: !s.monitoringDirty && !["local", "session"].includes(s.monitoringSource) })}${uiButton({ label: "导出配置", icon: "Download", action: "monitoring-export-config", disabled: !configured || s.monitoringDirty, title: s.monitoringDirty ? "请先保存当前修改" : "下载配置片段，合并到服务端配置后生效" })}${uiButton({ label: "保存到本机", icon: "Check", type: "submit", variant: "primary" })}</div></footer>
+    <footer class="mon-config-footer"><div role="status" class="mon-save-state">${s.monitoringErrors?.length ? `${icon("CircleAlert", 14)}<span>请检查标记的字段</span>` : `${icon(s.monitoringDirty ? "CircleDashed" : demo ? "Laptop" : "Database", 14)}<span>${s.monitoringDirty ? "有未保存的修改" : s.monitoringSource === "local" ? "已保存到本机，未应用到服务端" : s.monitoringSource === "session" ? "仅本次会话可用，未应用到服务端" : demo ? "保存为本机配置草稿" : s.snapshot?.monitoringSource === "saved" ? "已保存到管理服务" : "当前为服务端配置"}</span>`}</div><div class="ui-toolbar-actions">${uiButton({ label: "恢复来源配置", action: "monitoring-reset", variant: "ghost", disabled: Boolean(s.pendingAction) || (!s.monitoringDirty && !["local", "session"].includes(s.monitoringSource)) })}${checkButton(s)}${uiButton({ label: "导出配置", icon: "Download", action: "monitoring-export-config", disabled: !configured || s.monitoringDirty, title: s.monitoringDirty ? "请先保存当前修改" : demo ? "下载配置片段，合并到服务端配置后生效" : "下载已保存的配置片段" })}${uiButton({ label: s.pendingAction === "monitoring-save" ? "保存中…" : demo ? "保存到本机" : "保存配置", icon: "Check", type: "submit", variant: "primary", disabled: !writable || Boolean(s.pendingAction), loading: s.pendingAction === "monitoring-save" })}</div></footer>
   </form>`;
 }
 

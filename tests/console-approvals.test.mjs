@@ -5,12 +5,101 @@ import {
   applyDemoAction,
 } from "../apps/console/public/data.js";
 import { getApprovalFlow } from "../apps/console/public/approvals.js";
+import {
+  renderApprovalPage,
+  renderFlowCanvas,
+} from "../apps/console/public/approval-views.js";
 
 const NOW = Date.parse("2026-11-09T10:00:00.000Z");
 const firstReview = (snapshot) =>
   snapshot.tasks.find((entry) => entry.reviewState === "pending");
 const find = (snapshot, id) =>
   snapshot.tasks.find((entry) => entry.task.id === id);
+
+test("a skipped live execution remains terminal in the approval graph", () => {
+  const entry = firstReview(createDemoSnapshot(NOW));
+  entry.approvalFlow.source = "server";
+  entry.approvalFlow.status = "approved";
+  entry.approvalFlow.gates.forEach((gate) => {
+    gate.status = "approved";
+  });
+  entry.status.status = "skipped";
+  entry.status.message = "Agent 已确认无需执行变更。";
+  entry.execution = { phase: "done", cancelRequested: false };
+  const execution = getApprovalFlow(entry).nodes.find(
+    (node) => node.id === "execute",
+  );
+  assert.equal(execution.status, "skipped");
+  assert.equal(execution.detail, "Agent 已确认无需执行变更。");
+  const html = renderFlowCanvas(entry, { mode: "live" });
+  assert.match(html, /aria-label="执行与归档，已跳过"/);
+  assert.doesNotMatch(html, /aria-label="执行与归档，等待执行器"/);
+  delete entry.status.message;
+  assert.match(
+    getApprovalFlow(entry).nodes.find((node) => node.id === "execute").detail,
+    /跳过/,
+  );
+});
+
+test("approved live requests describe their actual execution state", () => {
+  for (const [status, expected] of [
+    ["pending", "已授权，等待执行器"],
+    ["running", "已授权，执行中"],
+    ["completed", "已授权，已完成"],
+    ["failed", "已授权，执行失败"],
+    ["skipped", "已授权，已跳过"],
+    ["cancelled", "已取消，流程停止"],
+  ]) {
+    const snapshot = createDemoSnapshot(NOW);
+    const entry = firstReview(snapshot);
+    snapshot.tasks = [entry];
+    snapshot.mode = "live";
+    entry.approvalFlow.source = "server";
+    entry.approvalFlow.status =
+      status === "cancelled" ? "cancelled" : "approved";
+    entry.approvalFlow.gates.forEach((gate) => {
+      gate.status = "approved";
+    });
+    entry.status.status = status;
+    entry.execution = {
+      phase: ["pending", "running"].includes(status) ? "execute" : "done",
+    };
+    const html = renderApprovalPage({
+      mode: "live",
+      snapshot,
+      approvalFilter: "all",
+    });
+    const subtitle = html
+      .match(/<span class="af-request-stage">([\s\S]*?)<\/span>/)?.[1]
+      .replace(/<[^>]+>/g, "");
+    assert.equal(subtitle, expected, status);
+    assert.doesNotMatch(html, /等待执行器处理/, status);
+  }
+});
+
+test("an action proposal without a diff displays its submitted plan and evidence access", () => {
+  const snapshot = createDemoSnapshot(NOW);
+  const entry = firstReview(snapshot);
+  snapshot.tasks = [entry];
+  snapshot.mode = "live";
+  entry.approvalFlow.source = "server";
+  entry.diff = [];
+  entry.proposal = {
+    kind: "action",
+    id: "action-proposal",
+    summary: "为失败的诊断创建 Issue",
+    submittedAt: new Date(NOW).toISOString(),
+    contentHash: "f".repeat(64),
+  };
+  const state = { mode: "live", snapshot, approvalTab: "diff" };
+  const html = renderApprovalPage(state);
+  assert.match(html, /此方案不修改代码/);
+  assert.match(html, /为失败的诊断创建 Issue/);
+  assert.match(html, /data-action="open-task"[^>]*data-tab="evidence"/);
+  assert.doesNotMatch(html, /尚无候选变更|Agent 提交变更后/);
+  delete entry.proposal;
+  assert.match(renderApprovalPage(state), /尚无候选变更/);
+});
 
 test("approving the first human gate leaves the task waiting for execution authorization", () => {
   const original = createDemoSnapshot(NOW);

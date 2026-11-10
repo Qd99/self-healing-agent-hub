@@ -376,7 +376,7 @@ test("bulk retries are eligible only for failed or cancelled tasks", () => {
   );
 });
 
-test("bulk mutations require demo mode and an explicit true capability", () => {
+test("bulk plans require an explicit true capability and local reducers never mutate live data", () => {
   const original = createDemoSnapshot(NOW);
   for (const type of ["cancel", "retry"]) {
     const target = original.tasks.find(
@@ -384,7 +384,11 @@ test("bulk mutations require demo mode and an explicit true capability", () => {
         item.status.status === (type === "cancel" ? "running" : "failed"),
     );
     for (const snapshot of [
-      { ...original, mode: "live" },
+      {
+        ...original,
+        mode: "live",
+        capabilities: { ...original.capabilities, [type]: false },
+      },
       {
         ...original,
         capabilities: { ...original.capabilities, [type]: false },

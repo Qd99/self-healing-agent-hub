@@ -64,11 +64,12 @@ const rules = {
 };
 
 const capabilities = {
-  trigger: false,
-  cancel: false,
-  retry: false,
-  approve: false,
-  updateRules: false,
+  trigger: true,
+  cancel: true,
+  retry: true,
+  approve: true,
+  updateRules: true,
+  updateMonitoring: true,
 };
 
 function get(base, path, method = "GET", body) {
@@ -124,9 +125,7 @@ async function fixture(t) {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
   t.after(async () => {
-    await new Promise((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    );
+    await server.shutdown();
     await rm(rootDir, { recursive: true, force: true });
   });
   return {
@@ -136,7 +135,7 @@ async function fixture(t) {
   };
 }
 
-test("snapshot labels example configuration and reports no implemented execution capabilities", async (t) => {
+test("snapshot labels example configuration, enables management and reports disconnected engines", async (t) => {
   const { base } = await fixture(t);
   const before = Date.now();
   const response = await get(base, "/api/healing/snapshot");
@@ -344,7 +343,7 @@ for (const [filename, code] of [
   });
 }
 
-test("mutation endpoints return 501 and do not manufacture tasks or echo request bodies", async (t) => {
+test("unauthorized mutations fail CSRF validation without creating tasks or echoing bodies", async (t) => {
   const { base } = await fixture(t);
   for (const path of [
     "/api/healing/trigger",
@@ -358,8 +357,8 @@ test("mutation endpoints return 501 and do not manufacture tasks or echo request
       "POST",
       '{"secret":"needle-request-secret"}',
     );
-    assert.equal(response.status, 501, path);
-    assert.equal(JSON.parse(response.text).error.code, "NOT_IMPLEMENTED");
+    assert.equal(response.status, 403, path);
+    assert.equal(JSON.parse(response.text).error.code, "CSRF_REJECTED");
     assert.doesNotMatch(response.text, /needle-/);
     assert.equal(response.headers["cache-control"], "no-store");
   }
@@ -462,8 +461,10 @@ test(
   "the entry point defaults to localhost and locates repository config independently of cwd",
   { timeout: 5000 },
   async (t) => {
-    const env = { ...process.env, PORT: "0" };
+    const dataDir = await mkdtemp(join(tmpdir(), "heal-entry-state-"));
+    const env = { ...process.env, PORT: "0", HEALING_DATA_DIR: dataDir };
     delete env.HOST;
+    delete env.CONSOLE_API_TOKEN;
     const child = spawn(
       process.execPath,
       [
@@ -483,6 +484,7 @@ test(
         child.kill("SIGTERM");
         await exited;
       }
+      await rm(dataDir, { recursive: true, force: true });
     });
     let output = "";
     const address = await new Promise((resolve, reject) => {

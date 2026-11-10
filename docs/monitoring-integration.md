@@ -1,12 +1,16 @@
 # Grafana 与 Prometheus 监控对接
 
-管理台提供监控配置、命名空间范围选择、Grafana 链接和仪表盘模板导出。当前网关不会请求 Grafana、Prometheus 或 Kubernetes，也不会读取真实指标。`ready` 表示配置结构完整、可生成链接；所有状态的 `connectivity` 都是 `unverified`。打开 Grafana 后，需要在目标环境验证访问权限、数据源和查询结果。
+v11 管理台支持服务端保存监控配置，并通过独立检查请求验证允许来源的 Grafana 健康及 Prometheus 数据源身份。命名空间范围选择、Grafana 外部链接和仪表盘模板导出继续保留。当前不查询指标、不调用 Kubernetes，也不验证命名空间或 Agent 的实际监听状态。
 
-浏览器中的配置修改是当前模式的本地草稿。导出配置不等于保存到服务器；网关仍只读取仓库配置。真实任务触发、取消、重试、审批、规则修改能力继续为 `false`。示例模式使用保留的 `.invalid` 主机和明确的 demo 数据源名称，不表示已经建立监控连接。
+`ready` 表示配置结构完整、可生成链接；快照配置的 `connectivity` 仍为 `unverified`。独立的连接检查结果记录特定时间、特定已保存配置的检查情况，不能把保存成功、配置有效或曾经检查通过理解为持续在线。实际图表与指标仍在目标 Grafana 中验证。
+
+真实模式以服务端配置为准，表单通过同源认证 API 保存，历史浏览器 live 草稿不再覆盖它。只有显式演示模式将配置保存为本机／会话草稿；演示草稿和 `.invalid` 占位地址不进入真实配置，也不执行连接检查。任务、审批、规则和审计的真实能力见 [管理 API](console-api.md)。
 
 ## 配置位置与字段
 
-将下面的 `monitoring` 块合并到现有 `configs/healing-config.json`，保留原有项目、引擎、安全和触发配置。示例中的主机、UID、数据源名称和命名空间需要替换为实际环境值。不要用这个片段覆盖整个配置文件。
+推荐在「监控面板 → 接入配置」填写字段并点击「保存配置」。服务将规范化后的公开配置保存到持久状态，后续快照和 Worker 领取上下文使用该配置；不改写原项目配置中的凭据。
+
+也可将下面的 `monitoring` 块合并到 `configs/healing-config.json` 作为基础配置，保留原有项目、引擎、安全和触发字段。已有服务端保存覆盖时，以覆盖为准，可通过页面再次保存更新；`monitoringSource` 标明来源。示例中的主机、UID、名称和命名空间必须替换，不要用片段覆盖整个配置文件。
 
 ```json
 {
@@ -38,13 +42,91 @@
 | `grafana.namespaceVariable`  | 仪表盘中的命名空间变量名，默认 `namespace`。填写实际变量名，不带 `var-` 前缀。                                                                                                          |
 | `grafana.datasourceVariable` | 仪表盘中的 Prometheus 数据源变量名，默认 `datasource`，必须与命名空间变量不同。                                                                                                         |
 | `datasource.uid`             | 必填的 Grafana 数据源 UID，1–40 位字母、数字、下划线或连字符。链接和仪表盘引用均绑定此 UID。                                                                                            |
-| `datasource.name`            | 仅供显示，可省略或留空。不会用名称推断、查找或替代 UID。                                                                                                                                |
+| `datasource.name`            | 可省略或留空，不能替代 UID。填写后，连接检查会核对 Grafana 返回的名称是否完全一致。                                                                                                     |
 | `datasource.type`            | 可省略，默认为 `prometheus`；当前只支持 Prometheus。                                                                                                                                    |
 | `namespaces`                 | 1–100 个显式 Kubernetes 命名空间名称。每个名称为 1–63 位小写字母、数字或连字符，首尾必须是字母或数字。重复项保留第一次出现的顺序并去重。                                                |
 
 两个变量名仅允许字母、数字、下划线，首字符必须是字母或下划线；不允许使用 Grafana 保留的 `__` 前缀。基础地址中的简单子路径允许字母、数字、`-`、`_`、`.`、`~`；不接受路径穿越和百分号编码路径。
 
-Grafana 官方配置将数据源 `name` 和 `uid` 分开：名称是显示引用，UID 用于其他配置中的稳定引用。数据源变量应使用 **Data source** 类型，并限定 **Prometheus**，其当前值绑定实际 UID。此功能不创建数据源、不修改 Grafana provisioning，也不会请求 Grafana 数据源 API。[Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/) · [Data source variables](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/add-template-variables/) · [UID 字符限制](https://grafana.com/docs/grafana/latest/upgrade-guide/upgrade-v11/upgrade-v11.2/)
+Grafana 官方配置将数据源 `name` 和 `uid` 分开：名称是显示引用，UID 用于其他配置中的稳定引用。数据源变量应使用 **Data source** 类型，并限定 **Prometheus**，其当前值绑定实际 UID。本功能不创建数据源或修改 Grafana provisioning。只有显式连接检查会读取 Grafana 数据源 API，按已保存 UID 定位并校验类型；填写了显示名称时还会核对名称。[Grafana provisioning](https://grafana.com/docs/grafana/latest/administration/provisioning/) · [Data source variables](https://grafana.com/docs/grafana/latest/visualizations/dashboards/variables/add-template-variables/) · [UID 字符限制](https://grafana.com/docs/grafana/latest/upgrade-guide/upgrade-v11/upgrade-v11.2/)
+
+## 保存与检查连接
+
+### 1. 在部署环境配置允许来源和凭据
+
+| 服务端环境变量                  | 作用                                                                                                  |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `GRAFANA_ALLOWED_ORIGINS`       | 允许检查的精确 origin，逗号分隔，例如 `https://grafana.example.com`；不带路径、通配符、查询参数或凭据 |
+| `GRAFANA_SERVICE_ACCOUNT_TOKEN` | 可选 Grafana 服务账户令牌，仅由管理服务发送到允许的目标；需要认证的实例应提供检查端点所需的读取权限   |
+
+例如基础地址是 `https://grafana.example.com/observability`，允许来源应为 `https://grafana.example.com`，基础路径仍保留在实际请求中。空允许列表会拒绝远端检查，不自动放行用户在表单中填写的地址。部署者需确保该来源是允许访问的 Grafana 服务，并由运行环境提供网络及 TLS 访问。
+
+凭据通过部署环境注入，不填写在浏览器表单、配置显示名称、URL 或请求体中，也不写入仓库。当前启动入口不自动加载 `.env`。管理身份和 Worker 身份另用 `CONSOLE_API_TOKEN` 与 `HEALING_WORKER_TOKEN`；不要复用这些令牌。完整环境变量和 HTTPS 同源部署方法见 [管理 API](console-api.md#启动与部署)。
+
+### 2. 保存公开配置
+
+真实模式的浏览器写入使用管理会话、同源检查及 CSRF。表单提交的请求是：
+
+```http
+PUT /api/healing/monitoring
+Content-Type: application/json
+X-Heal-CSRF: <当前会话的 csrfToken>
+```
+
+```js
+{
+  monitoring: { grafana, datasource, namespaces },
+  expectedRevision: snapshot.revision
+}
+```
+
+服务校验字段和全局版本，成功后返回 `{ snapshot, message }`，同时保存公开配置及操作记录。版本过期返回 409；保存失败保留原服务端值，界面保留正在编辑的草稿。字段正常化会去掉未知项和凭据，保存成功不表示远端已经连接。
+
+「恢复来源配置」仅丢弃当前未保存的表单编辑，恢复最新服务端值，不删除持久覆盖。配置导出只是下载公开片段；真正的保存依据服务器成功响应。演示模式的「保存到本机」不会调用该接口，不能替代真实保存。
+
+### 3. 检查实际已保存的目标
+
+保存完成后点击「检查连接」；有未保存修改时先保存。浏览器发送：
+
+```http
+POST /api/healing/monitoring/check
+Content-Type: application/json
+X-Heal-CSRF: <当前会话的 csrfToken>
+```
+
+请求体为 `{}`。服务自行读取已保存配置，不接受请求体提供的替代 URL 或凭据，依次读取：
+
+1. `<grafana.baseUrl>/api/health`，核对 Grafana 健康响应。
+2. `<grafana.baseUrl>/api/datasources/uid/<datasource.uid>`，核对返回 UID、`prometheus` 类型和数据源名称。配置了非空名称时必须完全匹配；未填写名称时返回实际名称供查看。
+
+检查保留基础子路径，可按配置发送组织 ID。上游重定向被拒绝；两次请求和响应读取共用超时限制，并限制响应大小。原始上游响应、令牌和底层异常不直接回显给浏览器。
+
+响应为 `{ check, monitoring, revision }`：
+
+| 字段               | 含义                                                          |
+| ------------------ | ------------------------------------------------------------- |
+| `check.status`     | `connected`、`error` 或 `unconfigured`，描述本次检查结果      |
+| `check.checkedAt`  | 本次检查时间                                                  |
+| `check.message`    | 可公开显示的结果或失败原因                                    |
+| `check.checks`     | 分别记录 Grafana 和数据源阶段的 `ok`／`error`／`unknown` 状态 |
+| `check.datasource` | 成功时返回经过安全投影的 UID、名称和类型                      |
+| `monitoring`       | 本次实际检查的完整规范化公开配置，作为结果的目标身份          |
+| `revision`         | 读取该配置时的全局快照版本；不是远端健康版本                  |
+
+页面把结果绑定到响应中的具体配置。检查期间若有人保存了另一套地址、UID、命名空间或其他配置，旧结果不能表示新配置已经连接，应对当前配置重新检查。普通刷新若仍是同一份规范化配置，不会把结果重新解释为其他目标的验证。由于全局版本也会随任务等操作变化，判断目标一致性不能仅凭全局版本数字，必须对应完整的规范化配置。
+
+连接结果不持久化为“始终在线”，也不会修改原配置。成功只证明本次 Grafana 健康及其 Prometheus 数据源身份检查通过；不证明 Prometheus 查询可用、任何指标有数据、命名空间存在、集群健康、Agent 已监听，或用户可以打开特定仪表盘。服务端检查凭据和用户在 Grafana 的登录会话是两套访问上下文。
+
+### 常见结果与下一步
+
+| 结果                   | 需要核对的内容                                                         |
+| ---------------------- | ---------------------------------------------------------------------- |
+| 未配置／配置无效       | 先保存完整合法的基础地址、仪表盘 UID、数据源 UID 和命名空间            |
+| 来源未允许             | 由部署者核对 `GRAFANA_ALLOWED_ORIGINS`，页面不能自行扩大允许列表       |
+| 认证失败               | 核对服务端 Grafana 令牌及读取权限，不要把令牌粘贴到公开配置            |
+| UID／类型／名称不匹配  | 核对 Grafana 中实际数据源的 UID、类型及名称；不要用名称替代 UID        |
+| 重定向／超时／TLS 错误 | 配置最终基础地址，并核对管理服务到目标 Grafana 的网络与 TLS            |
+| 检查通过但面板无数据   | 在 Grafana 验证仪表盘变量、Prometheus 查询和真实标签；本检查未读取指标 |
 
 ## 命名空间范围与链接
 
@@ -86,19 +168,19 @@ Prometheus 自动生成 `up`，成功抓取为 1，失败为 0。它表示目标
 
 当前集成在用户操作后打开 Grafana 外部页面，使用 `noopener noreferrer`，不在后台加载 iframe，也不传递浏览器 API token。Grafana 登录沿用用户在目标站点的正常登录流程。
 
-Grafana 官方文档说明，iframe 面板访问需要有效登录，除非实例允许匿名访问；Grafana Cloud 不支持该文档描述的面板嵌入和匿名访问能力。自托管环境还受实例配置、Cookie 与浏览器框架策略约束。因此本次提供外部打开，不宣称能够直接内嵌任何 Grafana 实例。[Share dashboards and panels](https://grafana.com/docs/grafana/latest/visualizations/dashboards/share-dashboards-panels/)
+本版本不提供 iframe 嵌入。嵌入能力还取决于目标 Grafana 的认证、实例配置、Cookie 和浏览器框架策略；需要嵌入时另行核对目标环境的官方说明。[Share dashboards and panels](https://grafana.com/docs/grafana/latest/visualizations/dashboards/share-dashboards-panels/)
 
 ## 网关快照与模块接口
 
-`GET /api/healing/snapshot` 增加可选配置的安全投影 `monitoring`。不填写 `monitoring` 时，旧配置文件仍然可用。网关每次读取快照时重新读取所选配置文件，配置来源继续由已有 `configSource` 表示。
+`GET /api/healing/snapshot` 返回可选配置的安全投影 `monitoring`，并通过 `monitoringSource: "configuration" | "saved"` 区分基础配置与持久覆盖。没有任何监控配置时，旧项目文件仍然可用。服务每次读取基础配置，再叠加已保存覆盖；`configSource` 继续表示所选项目文件来自 `configured` 还是 `example`。
 
 | `status`       | `configured` | 含义                                                                                      |
 | -------------- | ------------ | ----------------------------------------------------------------------------------------- |
 | `unconfigured` | `false`      | 未提供监控块；`grafana` 与 `datasource` 为 `null`，命名空间与错误列表为空。               |
 | `invalid`      | `false`      | 监控块或已知字段不合法，`errors` 提供字段与说明，链接和导出被禁用。无效值不回显到浏览器。 |
-| `ready`        | `true`       | 必填字段和本地格式检查通过，可以构造链接和导出草稿；尚未验证任何远端连接。                |
+| `ready`        | `true`       | 必填字段和格式校验通过，可以构造链接和导出配置；该状态本身不包含远端验证结论。            |
 
-以上状态的 `connectivity` 一律为 `unverified`。无效的可选监控块会报告 `invalid`，不会影响快照中的项目、任务、规则或安全配置。其他已有必填配置错误仍遵循原 API 的错误处理。
+以上配置状态的 `connectivity` 一律为 `unverified`，独立检查不会将它改写为永久在线。无效的可选基础监控块报告 `invalid`，不会影响其他合法项目、任务、规则或安全配置；通过保存 API 提交的无效监控配置会被拒绝，不覆盖原值。其他必填配置错误遵循 [API 错误契约](console-api.md#认证请求与错误)。
 
 网关与浏览器共享 `apps/console/public/monitoring-model.js`，所有对象通过明确的字段白名单构造。`token`、`headers`、认证信息、Prometheus 服务端 URL 和未知字段不会被投影。监控字段都属于公开显示配置，不应把秘密放进显示名称或地址路径。API token 应保留在 Grafana 或受控服务端的配置中。
 
@@ -111,12 +193,14 @@ Grafana 官方文档说明，iframe 面板访问需要有效登录，除非实�
 | `MONITORING_TIME_RANGES`                            | `{ id, label, from, to }` 预设列表。                                                                               |
 | `DEMO_MONITORING_CONFIG`                            | 使用 `.invalid` 主机的只读占位示例；不含真实测量值。                                                               |
 
-URL、配置导出和模板导出都会重新验证输入，包括从浏览器本地存储恢复的数据。对配置字段的修改不能改变网关的写入能力。
+这些共享模型函数仍是纯本地校验／导出函数，不自行保存或发起远端请求。URL、配置和模板导出都会重新校验输入，包括显式演示模式恢复的本机草稿。真实保存由 `PUT /api/healing/monitoring` 完成，远端检查由 `POST /api/healing/monitoring/check` 完成；表单不能通过伪造状态字段开启权限或改变允许来源。
 
-## 本地验证
+## 本地验证与交付边界
 
 ```bash
-node --test tests/console-monitoring.test.mjs tests/console-server.test.mjs
+node --test tests/console-monitoring.test.mjs tests/console-monitoring-controller.test.mjs tests/grafana-connection.test.mjs tests/console-live-api.test.mjs
 ```
 
-测试覆盖缺失与非法配置、凭证白名单、未验证状态、UID 与显示名称分离、单/多命名空间和子集约束、危险 URL、变量名冲突、支持的时间范围、模板中的数据源引用、命名空间正则与真实 Prometheus 表达式，以及只读网关的回归行为。这些测试证明本地配置和链接契约，不证明远端 Grafana、Prometheus 或 Kubernetes 的可用性。
+这些测试覆盖配置校验与秘密过滤、服务端保存和冲突、演示草稿隔离、检查目标绑定、精确允许来源、UID／名称匹配、超时、重定向、响应大小，以及链接变量、命名空间范围和模板 PromQL。具体结果以 [v11 验收记录](design/console-v11-integration.md) 为准。
+
+隔离测试和示例响应不表示已经访问用户的生产 Grafana、Prometheus 或 Kubernetes。当前没有实时指标代理、集群发现或预装生产 Agent；实际图表仍需在目标 Grafana 验证。本轮也没有把 Node 服务部署到静态 Site，仅发布静态资源不能提供保存或检查 API。

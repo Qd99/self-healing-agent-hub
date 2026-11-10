@@ -6,6 +6,7 @@ import {
 } from "../apps/console/public/monitoring-controller.js";
 import {
   MONITORING_ALL_SCOPE,
+  DEMO_MONITORING_CONFIG,
   normalizeMonitoringConfig,
 } from "../apps/console/public/monitoring-model.js";
 import {
@@ -83,10 +84,16 @@ function installBrowser(
 }
 
 function snapshot(id = "project-a", monitoring = configured) {
-  return { project: { id }, monitoring: structuredClone(monitoring) };
+  return {
+    mode: "live",
+    revision: 4,
+    capabilities: { updateMonitoring: true },
+    project: { id },
+    monitoring: structuredClone(monitoring),
+  };
 }
 
-function harness(initial = {}) {
+function harness(initial = {}, services = {}) {
   const state = {
     mode: "live",
     loading: false,
@@ -97,6 +104,7 @@ function harness(initial = {}) {
   let renders = 0;
   let controller;
   controller = createMonitoringController({
+    ...services,
     state,
     render() {
       renders += 1;
@@ -129,6 +137,67 @@ function click(controller, action) {
   );
 }
 
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((finish, fail) => {
+    resolve = finish;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+function liveHarness(api) {
+  let pending = Promise.resolve();
+  const h = harness(
+    {},
+    {
+      api,
+      runMutation(key, request, hooks) {
+        h.state.pendingAction = key;
+        h.controller.reconcile();
+        pending = (async () => {
+          try {
+            const result = await request();
+            // The app rejects old snapshots but still invokes mutation hooks.
+            if (result.snapshot?.revision >= h.state.snapshot.revision)
+              h.state.snapshot = result.snapshot;
+            hooks.onSuccess?.(result);
+            return result;
+          } catch (error) {
+            hooks.onError?.(error);
+            return null;
+          } finally {
+            h.state.pendingAction = "";
+            h.controller.reconcile();
+          }
+        })();
+        return pending;
+      },
+    },
+  );
+  return { ...h, settled: () => pending };
+}
+
+function refreshMonitoring(h, monitoring, revision) {
+  h.state.snapshot = { ...snapshot("project-a", monitoring), revision };
+  h.controller.reconcile();
+}
+
+const connected = {
+  status: "connected",
+  checkedAt: "2026-11-10T12:00:00.000Z",
+  message: "Grafana and the configured datasource are reachable.",
+  checks: { grafana: "ok", datasource: "ok" },
+};
+
+function checked(monitoring = configured, revision = 4) {
+  return {
+    check: structuredClone(connected),
+    monitoring: normalizeMonitoringConfig(monitoring),
+    revision,
+  };
+}
+
 test("monitoring form parsing trims fields and preserves explicit namespace names", () => {
   const result = monitoringDraftConfig({
     baseUrl: " https://grafana.example.com ",
@@ -157,7 +226,7 @@ test("monitoring form parsing trims fields and preserves explicit namespace name
   assert.equal(normalizeMonitoringConfig(result).status, "ready");
 });
 
-test("local monitoring drafts are isolated by mode and project and cannot assert connectivity", (t) => {
+test("live monitoring configuration is authoritative while demo drafts stay isolated", (t) => {
   const local = structuredClone(configured);
   local.grafana.dashboardUid = "local-a";
   local.connectivity = "verified";
@@ -171,8 +240,11 @@ test("local monitoring drafts are isolated by mode and project and cannot assert
     },
   });
   const { state, controller } = harness();
-  assert.equal(state.monitoringSource, "local");
-  assert.equal(state.monitoringConfig.grafana.dashboardUid, "local-a");
+  assert.equal(state.monitoringSource, "server");
+  assert.equal(
+    state.monitoringConfig.grafana.dashboardUid,
+    "healing-monitoring",
+  );
   assert.equal(state.monitoringConfig.connectivity, "unverified");
   assert.doesNotMatch(JSON.stringify(state.monitoringConfig), /needle-secret/);
   state.mode = "demo";
@@ -188,7 +260,10 @@ test("local monitoring drafts are isolated by mode and project and cannot assert
   );
   state.snapshot = snapshot("project-a");
   controller.reconcile();
-  assert.equal(state.monitoringConfig.grafana.dashboardUid, "local-a");
+  assert.equal(
+    state.monitoringConfig.grafana.dashboardUid,
+    "healing-monitoring",
+  );
 });
 
 test("malformed or credential-bearing saved drafts fall back to safe source configuration", (t) => {
@@ -260,9 +335,9 @@ test("submission revalidates form values before writing and never persists a sec
   assert.equal(browser.focus.at(-1), '#monitoring-form [aria-invalid="true"]');
 });
 
-test("successful submission stores only validated public config and leaves the snapshot unchanged", (t) => {
+test("demo submission stores only validated public config and leaves the snapshot unchanged", (t) => {
   const browser = installBrowser(t);
-  const { state, controller, messages } = harness();
+  const { state, controller, messages } = harness({ mode: "demo" });
   const originalSnapshot = structuredClone(state.snapshot);
   submit(controller, {
     ...state.monitoringDraft,
@@ -271,7 +346,7 @@ test("successful submission stores only validated public config and leaves the s
   });
   assert.equal(browser.writes.length, 1);
   const [key, raw] = browser.writes[0];
-  assert.equal(key, "heal-monitoring-v1:live:project-a");
+  assert.equal(key, "heal-monitoring-v1:demo:project-a");
   assert.doesNotMatch(raw, /needle-|connectivity|errors|configured/);
   assert.equal(JSON.parse(raw).grafana.dashboardUid, "saved-dashboard");
   assert.equal(state.monitoringSource, "local");
@@ -283,7 +358,7 @@ test("successful submission stores only validated public config and leaves the s
 
 test("storage failure retains a truthful session draft that can still be discarded", (t) => {
   const browser = installBrowser(t, { failWrite: true, failRemove: true });
-  const { state, controller, messages } = harness();
+  const { state, controller, messages } = harness({ mode: "demo" });
   submit(controller, {
     ...state.monitoringDraft,
     dashboardUid: "session-dashboard",
@@ -298,7 +373,7 @@ test("storage failure retains a truthful session draft that can still be discard
   assert.equal(click(controller, "monitoring-reset"), true);
   assert.equal(
     state.monitoringConfig.grafana.dashboardUid,
-    configured.grafana.dashboardUid,
+    DEMO_MONITORING_CONFIG.grafana.dashboardUid,
   );
   assert.equal(state.monitoringDirty, false);
 });
@@ -336,3 +411,253 @@ test("unsaved edits block both exports before any download is attempted", (t) =>
   assert.equal(messages.length, 2);
   assert.ok(messages.every((message) => /请先保存/.test(message)));
 });
+
+test("a failed refresh preserves the project draft and its dirty state", (t) => {
+  installBrowser(t);
+  const { state, controller } = harness();
+  state.monitoringDraft.dashboardUid = "unsaved-dashboard";
+  state.monitoringDirty = true;
+  state.snapshot = null;
+  controller.reconcile();
+  assert.equal(state.monitoringDraft.dashboardUid, "unsaved-dashboard");
+  assert.equal(state.monitoringDirty, true);
+});
+
+test("live save waits for server confirmation and never writes a browser override", async (t) => {
+  const browser = installBrowser(t);
+  let finish;
+  const response = new Promise((resolve) => {
+    finish = resolve;
+  });
+  let sent;
+  let state;
+  const h = harness(
+    {},
+    {
+      api: {
+        updateMonitoring(body) {
+          sent = body;
+          return response;
+        },
+      },
+      async runMutation(key, request, hooks) {
+        state.pendingAction = key;
+        const result = await request();
+        state.snapshot = result.snapshot;
+        hooks?.onSuccess?.(result);
+        state.pendingAction = "";
+        return result;
+      },
+    },
+  );
+  state = h.state;
+  submit(h.controller, {
+    ...state.monitoringDraft,
+    dashboardUid: "server-saved",
+  });
+  assert.equal(
+    state.monitoringConfig.grafana.dashboardUid,
+    "healing-monitoring",
+  );
+  assert.equal(state.monitoringDirty, true);
+  assert.equal(browser.writes.length, 0);
+  assert.equal(sent.expectedRevision, 4);
+  assert.equal(sent.monitoring.grafana.dashboardUid, "server-saved");
+  finish({
+    snapshot: { ...snapshot(), revision: 5, monitoring: sent.monitoring },
+    message: "已保存",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(state.monitoringConfig.grafana.dashboardUid, "server-saved");
+  assert.equal(state.monitoringSource, "server");
+  assert.equal(state.monitoringDirty, false);
+  assert.equal(browser.writes.length, 0);
+});
+
+test("live save conflicts keep the editable draft and surface the server explanation", async (t) => {
+  installBrowser(t);
+  const h = harness(
+    {},
+    {
+      api: {
+        async updateMonitoring() {
+          throw Object.assign(new Error("配置已变化，请核对"), { status: 409 });
+        },
+      },
+      async runMutation(key, request, hooks) {
+        try {
+          return await request();
+        } catch (error) {
+          hooks.onError(error);
+          return null;
+        }
+      },
+    },
+  );
+  submit(h.controller, {
+    ...h.state.monitoringDraft,
+    dashboardUid: "draft-after-conflict",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(h.state.monitoringDraft.dashboardUid, "draft-after-conflict");
+  assert.equal(h.state.monitoringDirty, true);
+  assert.match(h.state.monitoringSaveError, /配置已变化/);
+});
+
+test("connection checks remain valid through unrelated snapshot revisions", async (t) => {
+  installBrowser(t);
+  const response = deferred();
+  const h = liveHarness({ checkMonitoring: () => response.promise });
+  click(h.controller, "monitoring-check");
+  refreshMonitoring(h, configured, 5);
+  response.resolve(checked());
+  await h.settled();
+  assert.deepEqual(h.state.monitoringCheck, connected);
+  assert.match(renderMonitoringPage(h.state), /连接检查通过/);
+});
+
+for (const outcome of ["success", "failure"])
+  test(`a delayed check ${outcome} cannot attach to a refreshed configuration`, async (t) => {
+    installBrowser(t);
+    const response = deferred();
+    const h = liveHarness({ checkMonitoring: () => response.promise });
+    click(h.controller, "monitoring-check");
+    const refreshed = structuredClone(configured);
+    refreshed.grafana.baseUrl = "https://new-grafana.example.com";
+    refreshMonitoring(h, refreshed, 5);
+    assert.equal(h.state.monitoringCheck, null);
+    if (outcome === "success") response.resolve(checked());
+    else response.reject(new Error("The old check timed out"));
+    await h.settled();
+    assert.equal(
+      h.state.monitoringConfig.grafana.baseUrl,
+      refreshed.grafana.baseUrl,
+    );
+    assert.equal(h.state.monitoringCheck, null);
+    assert.doesNotMatch(renderMonitoringPage(h.state), /连接检查通过/);
+  });
+
+test("an invalidated check stays discarded after the original configuration is restored", async (t) => {
+  installBrowser(t);
+  const response = deferred();
+  const h = liveHarness({ checkMonitoring: () => response.promise });
+  click(h.controller, "monitoring-check");
+  const changed = structuredClone(configured);
+  changed.datasource.uid = "new-datasource";
+  refreshMonitoring(h, changed, 5);
+  refreshMonitoring(h, configured, 6);
+  response.resolve(checked());
+  await h.settled();
+  assert.equal(h.state.monitoringCheck, null);
+});
+
+test("a check of newer server config cannot mark the still-displayed saved config connected", async (t) => {
+  installBrowser(t);
+  const serverConfig = structuredClone(configured);
+  serverConfig.grafana.baseUrl = "https://new-grafana.example.com";
+  const h = liveHarness({
+    checkMonitoring: async () => checked(serverConfig, 5),
+  });
+  click(h.controller, "monitoring-check");
+  await h.settled();
+  assert.equal(
+    h.state.monitoringConfig.grafana.baseUrl,
+    configured.grafana.baseUrl,
+  );
+  assert.equal(h.state.snapshot.revision, 4);
+  assert.equal(h.state.monitoringCheck, null);
+  assert.doesNotMatch(renderMonitoringPage(h.state), /连接检查通过/);
+  assert.match(h.messages.at(-1), /刷新.*重新检查/);
+});
+
+test("editing the draft while a check is pending invalidates that check", async (t) => {
+  installBrowser(t);
+  const response = deferred();
+  const h = liveHarness({ checkMonitoring: () => response.promise });
+  click(h.controller, "monitoring-check");
+  h.controller.handleInput({
+    target: {
+      name: "dashboardUid",
+      value: "unsaved-dashboard",
+      closest: () => ({}),
+    },
+  });
+  response.resolve(checked());
+  await h.settled();
+  assert.equal(h.state.monitoringCheck, null);
+  assert.equal(h.state.monitoringDraft.dashboardUid, "unsaved-dashboard");
+  assert.equal(h.state.monitoringDirty, true);
+});
+
+test("a stale save completion uses the accepted snapshot rather than its rejected response", async (t) => {
+  installBrowser(t);
+  const response = deferred();
+  let sent;
+  const h = liveHarness({
+    updateMonitoring(body) {
+      sent = body;
+      return response.promise;
+    },
+  });
+  submit(h.controller, {
+    ...h.state.monitoringDraft,
+    dashboardUid: "submitted-dashboard",
+  });
+  const newer = structuredClone(configured);
+  newer.grafana.dashboardUid = "newer-server-dashboard";
+  refreshMonitoring(h, newer, 6);
+  response.resolve({
+    snapshot: { ...snapshot("project-a", sent.monitoring), revision: 5 },
+    message: "已保存",
+  });
+  await h.settled();
+  assert.equal(h.state.snapshot.revision, 6);
+  assert.equal(
+    h.state.monitoringConfig.grafana.dashboardUid,
+    "newer-server-dashboard",
+  );
+  assert.equal(h.state.monitoringDraft.dashboardUid, "newer-server-dashboard");
+  assert.equal(h.state.monitoringDraftRevision, 6);
+  assert.equal(h.state.monitoringDirty, false);
+});
+
+for (const newerServerChange of [false, true])
+  test(`save completion preserves newer user edits${newerServerChange ? " without rebasing them onto a different server config" : " against the confirmed saved config"}`, async (t) => {
+    installBrowser(t);
+    const response = deferred();
+    let sent;
+    const h = liveHarness({
+      updateMonitoring(body) {
+        sent = body;
+        return response.promise;
+      },
+    });
+    submit(h.controller, {
+      ...h.state.monitoringDraft,
+      dashboardUid: "submitted-dashboard",
+    });
+    h.controller.handleInput({
+      target: {
+        name: "dashboardUid",
+        value: "newer-user-draft",
+        closest: () => ({}),
+      },
+    });
+    if (newerServerChange) {
+      const newer = structuredClone(configured);
+      newer.grafana.dashboardUid = "newer-server-dashboard";
+      refreshMonitoring(h, newer, 6);
+    }
+    response.resolve({
+      snapshot: { ...snapshot("project-a", sent.monitoring), revision: 5 },
+      message: "已保存",
+    });
+    await h.settled();
+    assert.equal(
+      h.state.monitoringConfig.grafana.dashboardUid,
+      newerServerChange ? "newer-server-dashboard" : "submitted-dashboard",
+    );
+    assert.equal(h.state.monitoringDraft.dashboardUid, "newer-user-draft");
+    assert.equal(h.state.monitoringDirty, true);
+    assert.equal(h.state.monitoringDraftRevision, newerServerChange ? 4 : 5);
+  });

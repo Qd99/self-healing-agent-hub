@@ -18,12 +18,15 @@ export type SerializedResult = Serialized<Result>;
 export type ConsoleReviewState = "pending" | "approved" | "rejected";
 
 export type ConsoleApprovalNodeStatus =
+  | "running"
+  | "failed"
   | "completed"
   | "pending"
   | "blocked"
   | "rejected"
   | "queued"
   | "cancelled"
+  | "skipped"
   | "unknown";
 
 export interface ConsoleApprovalGate {
@@ -90,6 +93,23 @@ export interface ConsoleTask {
   status: SerializedTaskStatusInfo;
   title: string;
   engineId: string;
+  /** Required for live writes; omitted by legacy and explicit demo snapshots. */
+  revision?: number;
+  execution?: {
+    phase: "diagnose" | "review" | "execute" | "done";
+    workerId?: string;
+    leaseExpiresAt?: string;
+    cancelRequested?: boolean;
+  };
+  /** Candidate check evidence; final execution evidence remains in result. */
+  evidence?: Partial<SerializedResult["evidence"]>;
+  proposal?: {
+    kind?: "action" | "code-change";
+    id: string;
+    summary: string;
+    submittedAt: string;
+    contentHash: string;
+  };
   reviewState?: ConsoleReviewState;
   approvalFlow?: ConsoleApprovalFlow;
   trace: ConsoleTraceStep[];
@@ -103,6 +123,7 @@ export interface ConsoleActivity {
   action: string;
   message: string;
   taskId?: Task["id"];
+  ruleId?: string;
   actor?: string;
   level?: "info" | "success" | "warning" | "error";
 }
@@ -113,6 +134,7 @@ export interface ConsoleCapabilities {
   retry: boolean;
   approve: boolean;
   updateRules: boolean;
+  updateMonitoring?: boolean;
 }
 
 export interface ConsoleEngine {
@@ -259,9 +281,16 @@ export interface ConsoleSnapshot {
   apiVersion: 1;
   mode: "live" | "demo";
   generatedAt: string;
+  /** Monotonic persisted version. Live writes use this for configuration changes. */
+  revision?: number;
+  /** Session-bound CSRF token, never a management or worker bearer token. */
+  csrfToken?: string;
+  auth?: { required: boolean; actor: string };
   configSource: "example" | "configured";
   rulesSource: "example" | "configured";
   rulesVersion: string;
+  rulesOverridden?: boolean;
+  monitoringSource?: "configuration" | "saved";
   project: { id: string; repo: string; defaultBranch: string };
   capabilities: ConsoleCapabilities;
   engines: ConsoleEngine[];
@@ -275,5 +304,62 @@ export interface ConsoleSnapshot {
 }
 
 export interface ConsoleApiError {
-  error: { code: string; message: string };
+  error: {
+    code: string;
+    message: string;
+    fieldErrors?: MonitoringValidationError[];
+  };
+}
+
+export interface ConsoleMutationResponse {
+  snapshot: ConsoleSnapshot;
+  message: string;
+  taskId?: string;
+  report?: ConsoleBulkReport;
+}
+
+export interface ConsoleBulkReport {
+  type: "cancel" | "retry";
+  requested: number;
+  applied: { id: string; title: string; newId?: string }[];
+  skipped: { id: string; title: string; reason: string; code?: string }[];
+}
+
+export interface ConsoleTriggerRequest {
+  title: string;
+  type: Task["type"];
+  priority: Priority;
+  branch?: string;
+  description?: string;
+  requestId?: string;
+}
+
+export interface ConsoleTaskActionRequest {
+  expectedRevision: number;
+  requestId?: string;
+}
+
+export interface ConsoleBulkRequest {
+  type: "cancel" | "retry";
+  items: { id: string; revision: number }[];
+  requestId?: string;
+}
+
+export interface ConsoleApprovalRequest {
+  decision: "approve" | "reject" | "resubmit";
+  expectedRevision: number;
+  nodeId?: ConsoleApprovalGate["id"];
+  round: number;
+  comment: string;
+}
+
+export interface ConsoleMonitoringCheck {
+  status: "connected" | "error" | "unconfigured";
+  checkedAt: string;
+  message: string;
+  checks: {
+    grafana: "ok" | "error" | "unknown";
+    datasource: "ok" | "error" | "unknown";
+  };
+  datasource?: { uid: string; name: string; type: "prometheus" };
 }

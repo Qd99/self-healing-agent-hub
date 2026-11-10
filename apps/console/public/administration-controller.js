@@ -22,6 +22,8 @@ export function createAdministrationController({
   openRule,
   openActivity,
   setSnapshot,
+  api,
+  runMutation,
 }) {
   function reconcile() {
     state.activityFilters = {
@@ -143,6 +145,24 @@ export function createAdministrationController({
       }
       try {
         const fromDetail = Boolean(button.closest?.("#detail-dialog"));
+        if (state.mode === "live") {
+          const rule = state.snapshot.rules.find((entry) => entry.id === id);
+          if (!rule || !api || !runMutation) return true;
+          void runMutation(
+            `rule:${id}`,
+            () =>
+              api.updateRule(id, {
+                enabled: !rule.enabled,
+                expectedRevision: state.snapshot.revision,
+              }),
+            {
+              onSuccess() {
+                if (fromDetail) openRule(id);
+              },
+            },
+          );
+          return true;
+        }
         const next = applyDemoAction(state.snapshot, {
           type: "toggle-rule",
           id,

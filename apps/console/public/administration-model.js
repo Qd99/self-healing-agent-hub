@@ -34,7 +34,9 @@ const activityActions = {
   trigger: ["发起巡检", "tasks", "Plus"],
   retry: ["重试任务", "tasks", "RotateCcw"],
   cancel: ["取消任务", "tasks", "Square"],
-  running: ["任务开始执行", "tasks", "Play"],
+  running: ["Agent 领取任务", "tasks", "Play"],
+  proposal: ["提交候选方案", "approvals", "GitPullRequestArrow"],
+  "worker-connected": ["Agent 接入服务", "other", "Plug"],
   pending: ["任务进入队列", "tasks", "Clock3"],
   completed: ["任务已完成", "tasks", "Check"],
   failed: ["任务执行失败", "tasks", "CircleAlert"],
@@ -47,6 +49,10 @@ const activityActions = {
   "reject-gate": ["拒绝审批节点", "approvals", "X"],
   "resubmit-approval": ["重新提交审批", "approvals", "GitPullRequestArrow"],
   "toggle-rule": ["变更路由规则", "rules", "Workflow"],
+  "update-rule": ["变更路由规则", "rules", "Workflow"],
+  "update-monitoring": ["保存监控配置", "other", "Settings2"],
+  "save-monitoring": ["保存监控配置", "other", "Settings2"],
+  "cancel-requested": ["请求取消任务", "tasks", "Square"],
 };
 const taskTypes = {
   "lint-error": "Lint 错误",
@@ -339,8 +345,10 @@ export function filterRules(
 
 export function canUpdateRules(state = {}) {
   return (
-    state.mode === "demo" &&
-    state.snapshot?.mode === "demo" &&
+    ["demo", "live"].includes(state.mode) &&
+    state.snapshot?.mode === state.mode &&
+    !state.authRequired &&
+    !state.pendingAction &&
     state.snapshot.capabilities?.updateRules === true
   );
 }

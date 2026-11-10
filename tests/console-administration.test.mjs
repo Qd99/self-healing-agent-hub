@@ -452,7 +452,7 @@ test("rule filters match names, IDs, human-readable conditions and engine withou
   );
 });
 
-test("rule mutation requires both demo contexts and the explicit updateRules capability", () => {
+test("rule mutation requires matching source contexts and the explicit updateRules capability", () => {
   const snapshot = createDemoSnapshot(NOW);
   assert.equal(canUpdateRules({ mode: "demo", snapshot }), true);
   assert.equal(canUpdateRules({ mode: "live", snapshot }), false);

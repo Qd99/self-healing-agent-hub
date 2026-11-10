@@ -329,11 +329,13 @@
   color: var(--af-teal);
   background: var(--af-teal-soft);
 }
-.af-state-rejected {
+.af-state-rejected,
+.af-state-failed {
   color: var(--af-red);
   background: var(--af-red-soft);
 }
-.af-state-queued {
+.af-state-queued,
+.af-state-running {
   color: var(--af-blue);
   background: var(--af-blue-soft);
 }
@@ -669,7 +671,8 @@
   color: var(--af-amber);
   background: var(--af-amber-soft);
 }
-.af-node-rejected .af-node-indicator {
+.af-node-rejected .af-node-indicator,
+.af-node-failed .af-node-indicator {
   color: var(--af-red);
   background: var(--af-red-soft);
 }

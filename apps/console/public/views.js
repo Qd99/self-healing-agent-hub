@@ -1,6 +1,9 @@
 import { icon } from "./icons.js";
 import { renderStudioDashboard } from "./dashboard.js";
-import { renderConnectionSettings } from "./connection-views.js";
+import {
+  renderConnectionSettings,
+  renderSessionForm,
+} from "./connection-views.js";
 import { renderApprovalPage } from "./approval-views.js";
 import { escapeHtml as e, formatDuration } from "./model.js";
 import { renderTaskPage } from "./task-views.js";
@@ -135,7 +138,8 @@ function renderPage(s) {
   const activityCount = s.snapshot
     ? filterActivities(s.snapshot.activity, s.activityFilters).length
     : 0;
-  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger, title: !s.snapshot?.capabilities.trigger ? "执行引擎尚未接入" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
+  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading || s.refreshing, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger || Boolean(s.pendingAction) || s.authRequired, title: !s.snapshot?.capabilities.trigger ? "当前服务未开放创建任务" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : s.snapshot.capabilities.approve ? "服务端审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
+  if (s.authRequired) return header + renderSessionForm(s);
   if (s.loading && s.view !== "settings")
     return (
       header +
@@ -154,7 +158,11 @@ function renderPage(s) {
     monitoring: renderMonitoringPage,
     settings: renderConnectionSettings,
   };
-  return header + views[s.view](s);
+  const stale =
+    s.error && s.snapshot
+      ? `<p class="ui-section-note" role="status">${icon("CircleAlert", 14)}${e(s.error)} 当前显示最近一次读取的数据。</p>`
+      : "";
+  return header + stale + views[s.view](s);
 }
 function connectionError() {
   return `<section class="ui-card connection-unavailable">${uiEmpty({
@@ -172,7 +180,7 @@ function connectionError() {
 }
 
 function engines(s) {
-  return `<div class="ui-setting-stack">${s.snapshot.engines.map((x) => `<section class="ui-card"><header class="ui-section-header"><h2>${icon(x.id === "fast" ? "Zap" : "Workflow", 17)}${e(engineName(x.id))}</h2>${uiStatus({ label: "执行器未接入", icon: "Plug", tone: "neutral" })}</header><dl class="ui-config-grid"><div><dt>适用任务</dt><dd>${x.id === "fast" ? "格式、Lint 与轻量修复" : "诊断、多步骤修复与验证"}</dd></div><div><dt>配置模型</dt><dd>${e(x.model || "未配置")}</dd></div><div><dt>引擎类型</dt><dd><code>${e(x.type)}</code></dd></div><div><dt>关联规则</dt><dd>${uiButton({ label: `${s.snapshot.rules.filter((r) => r.processor.engine === x.id).length} 条路由规则`, action: "navigate", variant: "ghost", attrs: 'data-view="rules"' })}</dd></div></dl></section>`).join("")}<details class="ui-card ui-fold"><summary>执行引擎接入说明</summary><div class="ui-fold-content">当前展示${s.mode === "demo" ? "示例" : "已读取的"}配置，尚未提供执行器健康检查。实现 WorkflowEngine 的 execute、healthCheck、cancel 与 getStatus 后，管理台才能显示真实运行状态。</div></details></div>`;
+  return `<div class="ui-setting-stack">${s.snapshot.engines.map((x) => `<section class="ui-card"><header class="ui-section-header"><h2>${icon(x.id === "fast" ? "Zap" : "Workflow", 17)}${e(engineName(x.id))}</h2>${uiStatus({ label: { unavailable: "等待 Agent 接入", idle: "可领取任务", running: "运行中", error: "连接异常" }[x.status] || "状态未知", icon: x.status === "running" ? "Activity" : "Plug", tone: x.status === "running" ? "info" : x.status === "idle" ? "success" : "neutral" })}</header><dl class="ui-config-grid"><div><dt>适用任务</dt><dd>${x.id === "fast" ? "格式、Lint 与轻量修复" : "诊断、多步骤修复与验证"}</dd></div><div><dt>配置模型</dt><dd>${e(x.model || "未配置")}</dd></div><div><dt>引擎类型</dt><dd><code>${e(x.type)}</code></dd></div><div><dt>关联规则</dt><dd>${uiButton({ label: `${s.snapshot.rules.filter((r) => r.processor.engine === x.id).length} 条路由规则`, action: "navigate", variant: "ghost", attrs: 'data-view="rules"' })}</dd></div></dl></section>`).join("")}<details class="ui-card ui-fold"><summary>执行引擎接入说明</summary><div class="ui-fold-content">当前展示${s.mode === "demo" ? "示例" : "已读取的"}配置，任务由已认证的 Agent 领取并回传进度与结果。显示已配置不代表 Agent 在线，实际运行以任务记录为准。</div></details></div>`;
 }
 
 function safety(s) {
@@ -183,7 +191,7 @@ function safety(s) {
     <section class="ui-card"><header class="ui-section-header"><h2>${icon("FlaskConical", 17)}修复后验证</h2><span class="muted">${a.requiredChecks?.length || 0} 项检查</span></header><div class="ui-section-note">${(a.requiredChecks || []).map((check) => `<p class="ui-info-line">${icon("Terminal", 14)}<code>${e(check)}</code></p>`).join("") || "未配置检查命令"}</div></section>
     <section class="ui-card"><header class="ui-section-header"><h2>${icon("RotateCcw", 17)}失败回滚</h2>${uiStatus({ label: a.autoRollback?.enabled ? "配置已启用" : "未启用", tone: a.autoRollback?.enabled ? "success" : "neutral" })}</header><dl class="ui-config-grid">${property("等待 CI 结果", formatDuration(a.autoRollback?.ciTimeout))}${property("通知目标", e(a.autoRollback?.notifyOn?.join("、") || "未配置"))}</dl></section>
     <section class="ui-card"><header class="ui-section-header"><h2>${icon("ShieldAlert", 17)}连续失败保护</h2>${uiStatus({ label: a.circuitBreaker?.enabled ? "配置已启用" : "未启用", tone: a.circuitBreaker?.enabled ? "success" : "neutral" })}</header><dl class="ui-config-grid">${property("失败阈值", `${e(a.circuitBreaker?.windowMinutes ?? "—")} 分钟内 ${e(a.circuitBreaker?.failureThreshold ?? "—")} 次`)}${property("冷却时间", `${e(a.circuitBreaker?.cooldownMinutes ?? "—")} 分钟`)}</dl></section>
-    <details class="ui-card ui-fold"><summary>配置如何生效</summary><div class="ui-fold-content">${s.mode === "demo" ? "此处为演示策略。" : s.snapshot.configSource === "example" ? "此处为示例文件中的策略。" : "此处为已读取的项目策略。"}执行层尚未接入，配置启用不代表防护正在运行。每次任务的检查结果、回滚情况应以任务详情中的实际证据为准。</div></details></div>`;
+    <details class="ui-card ui-fold"><summary>配置如何生效</summary><div class="ui-fold-content">${s.mode === "demo" ? "此处为演示策略。" : s.snapshot.configSource === "example" ? "此处为示例文件中的策略。" : "此处为已读取的项目策略。"}服务端在候选方案进入审批前核对变更路径、文件数量和必需检查；回滚与执行结果以 Agent 回传的实际证据为准。</div></details></div>`;
 }
 
 export function renderTaskDetail(item, s) {
@@ -204,10 +212,11 @@ export function renderTaskDetail(item, s) {
         : empty("暂时没有代码变更", "诊断完成后会显示候选修复。")) +
       `<p class="status-caption">${s.mode === "demo" ? "虚构代码片段，仅用于预览。" : "服务端返回的变更内容。"} 行号为片段行号。</p>`;
   else if (tab === "evidence") {
-    const evidence = item.result?.evidence;
+    const evidence = item.result?.evidence || item.evidence;
+    const timings = item.result?.timings;
     body = evidence
-      ? `<section class="evidence-section"><h3>修复前</h3><p class="detail-callout">${e(evidence.beforeState?.summary || JSON.stringify(evidence.beforeState))}</p><h3>修复后</h3><p class="detail-callout">${e(evidence.afterState?.summary || JSON.stringify(evidence.afterState))}</p></section><section class="evidence-section"><h3>检查结果</h3>${(evidence.checksPass || []).map((c) => `<div class="evidence-row green">${icon("Check")}<code>${e(c)}</code></div>`).join("")}${(evidence.checksFail || []).map((c) => `<div class="evidence-row red">${icon("X")}<code>${e(c)}</code></div>`).join("")}${!(evidence.checksPass?.length || evidence.checksFail?.length) ? '<p class="muted">没有检查结果</p>' : ""}</section><section class="evidence-section"><h3>耗时</h3>${Object.entries(
-          item.result.timings.stages || {},
+      ? `${!item.result ? '<p class="status-caption">候选方案验证证据 · 执行结果尚未回传</p>' : ""}<section class="evidence-section"><h3>修复前</h3><p class="detail-callout">${e(evidence.beforeState?.summary || JSON.stringify(evidence.beforeState))}</p><h3>修复后</h3><p class="detail-callout">${e(evidence.afterState?.summary || JSON.stringify(evidence.afterState))}</p></section><section class="evidence-section"><h3>检查结果</h3>${(evidence.checksPass || []).map((c) => `<div class="evidence-row green">${icon("Check")}<code>${e(c)}</code></div>`).join("")}${(evidence.checksFail || []).map((c) => `<div class="evidence-row red">${icon("X")}<code>${e(c)}</code></div>`).join("")}${!(evidence.checksPass?.length || evidence.checksFail?.length) ? '<p class="muted">没有检查结果</p>' : ""}</section><section class="evidence-section"><h3>耗时</h3>${Object.entries(
+          timings?.stages || {},
         )
           .map(
             ([name, ms]) =>
@@ -215,18 +224,23 @@ export function renderTaskDetail(item, s) {
           )
           .join(
             "",
-          )}<div class="metric-row"><span>合计</span><span>${formatDuration(item.result.timings.durationMs)}</span></div></section>`
+          )}<div class="metric-row"><span>合计</span><span>${formatDuration(timings?.durationMs)}</span></div></section>`
       : empty("验证证据尚未生成");
   } else
     body = item.result?.logs?.length
       ? `<div class="log-lines">${e(item.result.logs.join("\n\n"))}</div>`
       : empty("暂无执行日志");
-  const can = (key) => s.mode === "demo" && s.snapshot.capabilities[key];
+  const can = (key) =>
+    s.mode === s.snapshot?.mode &&
+    s.snapshot.capabilities[key] === true &&
+    !s.pendingAction &&
+    !s.authRequired &&
+    !(key === "cancel" && item.execution?.cancelRequested);
   const buttons =
     status === "review"
       ? `<button class="ui-button btn" data-action="close-detail">稍后处理</button><button class="ui-button btn primary" data-action="select-approval" data-id="${e(item.task.id)}">${icon("GitPullRequestArrow", 15)}打开审批流</button>`
       : ["pending", "running"].includes(status)
-        ? `<button class="ui-button btn" ${action("task-action", `data-command="cancel" data-id="${e(item.task.id)}"`)} ${can("cancel") ? "" : "disabled"}>${icon("Square", 12)}取消任务</button>`
+        ? `<button class="ui-button btn" ${action("task-action", `data-command="cancel" data-id="${e(item.task.id)}"`)} ${can("cancel") ? "" : "disabled"}>${icon("Square", 12)}${item.execution?.cancelRequested ? "等待取消确认" : s.pendingAction === `task:cancel:${item.task.id}` ? "提交中…" : "取消任务"}</button>`
         : ["failed", "cancelled"].includes(status)
           ? `<button class="ui-button btn primary" ${action("task-action", `data-command="retry" data-id="${e(item.task.id)}"`)} ${can("retry") ? "" : "disabled"}>${icon("RefreshCw", 13)}重新尝试</button>`
           : `<button class="ui-button btn" ${action("close-detail")}>关闭详情</button>`;
@@ -242,20 +256,39 @@ export function renderTaskDetail(item, s) {
     )
     .join(
       "",
-    )}</div><div class="detail-content">${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : "真实操作尚未接入"}</small><div class="row">${buttons}</div></div>`;
+    )}</div><div class="detail-content">${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
 }
 
 export function renderCreate(s) {
-  return `<div class="spread"><h2 id="create-title">发起巡检</h2><button class="ui-icon-button icon-button" ${action("close-create")} aria-label="关闭巡检表单">${icon("X", 17)}</button></div><p class="intro">创建一个模拟任务，查看队列与任务详情。当前没有连接真实执行引擎。</p><form id="create-form"><div class="form-field"><label for="task-title">任务描述</label><input class="ui-input" id="task-title" name="title" required maxlength="160" placeholder="例如：检查聊天模块的类型错误" autocomplete="off" /></div><div class="form-grid"><div class="form-field"><label for="task-type">任务类型</label><select class="ui-select-input" id="task-type" name="type">${Object.entries(
+  const draft = {
+    title: "",
+    type: "type-error",
+    priority: "medium",
+    branch: s.snapshot?.project.defaultBranch || "",
+    ...s.createDraft,
+  };
+  const pending = s.pendingAction === "trigger";
+  const canCreate =
+    s.snapshot?.capabilities.trigger && !s.authRequired && !s.pendingAction;
+  return `<div class="spread"><h2 id="create-title">发起巡检</h2><button class="ui-icon-button icon-button" ${action("close-create")} aria-label="关闭巡检表单">${icon("X", 17)}</button></div><p class="intro">${s.mode === "demo" ? "创建一个模拟任务，查看队列与任务详情。当前没有连接真实执行引擎。" : "创建任务后进入服务端队列，由 Agent 领取诊断；候选方案经过审批后才能执行。"}</p><form id="create-form"><div class="form-field"><label for="task-title">任务描述</label><input class="ui-input" id="task-title" name="title" required maxlength="160" placeholder="例如：检查聊天模块的类型错误" autocomplete="off" value="${e(draft.title)}" ${pending ? "disabled" : ""} /></div><div class="form-grid"><div class="form-field"><label for="task-type">任务类型</label><select class="ui-select-input" id="task-type" name="type" ${pending ? "disabled" : ""}>${Object.entries(
     taskTypes,
   )
     .map(
       ([v, t]) =>
-        `<option value="${v}" ${v === "type-error" ? "selected" : ""}>${t}</option>`,
+        `<option value="${v}" ${v === draft.type ? "selected" : ""}>${t}</option>`,
     )
     .join(
       "",
-    )}</select></div><div class="form-field"><label for="task-priority">优先级</label><select class="ui-select-input" id="task-priority" name="priority"><option value="low">低</option><option value="medium" selected>中</option><option value="high">高</option><option value="urgent">紧急</option></select></div></div><div class="form-field"><label for="task-branch">目标分支</label><input class="ui-input" id="task-branch" name="branch" required maxlength="200" value="${e(s.snapshot.project.defaultBranch)}" /></div><p class="form-error" id="form-error" role="alert"></p><div class="form-actions"><button class="ui-button btn" type="button" ${action("close-create")}>取消</button><button class="ui-button btn primary" type="submit">创建模拟任务 ${icon("ArrowRight", 13)}</button></div></form>`;
+    )}</select></div><div class="form-field"><label for="task-priority">优先级</label><select class="ui-select-input" id="task-priority" name="priority" ${pending ? "disabled" : ""}>${Object.entries(
+    { low: "低", medium: "中", high: "高", urgent: "紧急" },
+  )
+    .map(
+      ([value, label]) =>
+        `<option value="${value}" ${draft.priority === value ? "selected" : ""}>${label}</option>`,
+    )
+    .join(
+      "",
+    )}</select></div></div><div class="form-field"><label for="task-branch">目标分支</label><input class="ui-input" id="task-branch" name="branch" required maxlength="200" value="${e(draft.branch)}" ${pending ? "disabled" : ""} /></div><p class="form-error" id="form-error" role="alert">${e(s.createError || "")}</p><div class="form-actions"><button class="ui-button btn" type="button" ${action("close-create")}>取消</button><button class="ui-button btn primary" type="submit" ${canCreate ? "" : "disabled"}>${pending ? "提交中…" : s.mode === "demo" ? "创建模拟任务" : "创建任务"} ${icon("ArrowRight", 13)}</button></div></form>`;
 }
 
 export function renderRuleDetail(rule, state = {}) {

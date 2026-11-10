@@ -28,6 +28,8 @@ const nodeNames = {
   execute: "执行与归档",
 };
 const statusNames = {
+  running: "执行中",
+  failed: "执行失败",
   completed: "已完成",
   pending: "待审批",
   blocked: "等待前序",
@@ -37,8 +39,11 @@ const statusNames = {
   approved: "已授权",
   unavailable: "未接入",
   cancelled: "已取消",
+  skipped: "已跳过",
 };
 const statusIcons = {
+  running: "Play",
+  failed: "CircleAlert",
   completed: "Check",
   pending: "Clock3",
   blocked: "LockKeyhole",
@@ -48,6 +53,7 @@ const statusIcons = {
   approved: "CheckCheck",
   unavailable: "CircleAlert",
   cancelled: "Ban",
+  skipped: "ArrowRight",
 };
 const positions = {
   plan: [23, 106],
@@ -81,11 +87,11 @@ const stateBadge = (status, text) => {
     label: text || statusNames[value],
     tone: ["completed", "approved"].includes(value)
       ? "success"
-      : value === "rejected"
+      : ["rejected", "failed"].includes(value)
         ? "error"
         : value === "pending"
           ? "warning"
-          : value === "queued"
+          : ["queued", "running"].includes(value)
             ? "info"
             : "neutral",
     icon: statusIcons[value],
@@ -177,10 +183,13 @@ function renderRequest(entry, selected) {
   const flow = getApprovalFlow(entry);
   const status = safeStatus(flow.status);
   const pending = flow.status === "pending";
+  const executionStatus = flow.nodes.find(
+    (node) => node.id === "execute",
+  )?.status;
   const current =
     flow.currentGate?.title ||
     (flow.status === "approved"
-      ? "已授权，等待执行器"
+      ? `已授权，${statusNames[safeStatus(executionStatus)]}`
       : flow.status === "rejected"
         ? "等待重新发起审批"
         : flow.status === "cancelled"
@@ -219,6 +228,20 @@ function renderHistory(flow) {
 
 function renderChanges(entry) {
   const files = filesOf(entry);
+  if (!files.length && entry.proposal?.kind === "action")
+    return uiEmpty({
+      icon: "ListChecks",
+      title: "此方案不修改代码",
+      description: entry.proposal.summary,
+      className: "af-empty",
+      action: uiButton({
+        label: "查看验证证据",
+        icon: "FlaskConical",
+        action: "open-task",
+        attrs: `data-id="${e(entry.task.id)}" data-tab="evidence"`,
+        variant: "ghost",
+      }),
+    });
   if (!files.length)
     return uiEmpty({
       icon: "FileDiff",
@@ -241,15 +264,19 @@ function renderNodeInspector(entry, flow, state) {
     selected.kind === "human" &&
     selected.status === "pending";
   const canDecide =
-    current && state.mode === "demo" && state.snapshot?.capabilities?.approve;
+    current &&
+    state.snapshot?.capabilities?.approve &&
+    !state.pendingAction &&
+    !state.authRequired;
   const canResubmit =
     flow.status === "rejected" &&
-    state.mode === "demo" &&
+    !state.pendingAction &&
+    !state.authRequired &&
     state.snapshot?.capabilities?.approve;
   const terminal = flow.status === "approved";
   const cancelled = flow.status === "cancelled";
   return `<section class="af-inspector"><div class="af-inspector-main"><div class="af-inspector-heading"><span class="af-inspector-icon af-tone-${nodeTones[selected.id] || "blue"}">${nodeIcon(selected, 22)}</span><div><p>节点详情</p><h3>${e(selected.title)}</h3></div>${stateBadge(selected.status)}</div><p class="af-node-description">${e(selected.detail || "等待服务端提供节点信息。")}</p><div class="af-facts"><div><span>${icon("UserRoundCheck", 13)}负责人</span><strong>${e(selected.actor || (selected.kind === "human" ? "未指定" : "自动检查"))}</strong></div><div><span>${icon("Clock3", 13)}处理时间</span><strong>${selected.decidedAt ? timeOf(selected.decidedAt) : current ? "等待决定" : "—"}</strong></div><div><span>${icon("FileDiff", 13)}变更范围</span><strong>${filesOf(entry).length} 个文件</strong></div></div>${selected.comment ? `<div class="af-decided-comment">${icon("MessageSquare", 14)}<p>${e(selected.comment)}</p></div>` : ""}<div class="af-evidence-links"><button type="button" class="ui-button ui-button-ghost" ${taskAction("open-task", entry.task.id, 'data-tab="diff"')}>${icon("FileDiff", 14)}代码变更${icon("ArrowRight", 12)}</button><button type="button" class="ui-button ui-button-ghost" ${taskAction("open-task", entry.task.id, 'data-tab="evidence"')}>${icon("ShieldCheck", 14)}验证证据${icon("ArrowRight", 12)}</button></div></div><div class="af-decision-panel">
-    ${current ? `<form id="approval-decision-form" data-task-id="${e(entry.task.id)}" data-node-id="${e(selected.id)}" data-round="${e(flow.round)}"><input type="hidden" name="round" value="${e(flow.round)}"><div class="af-decision-heading"><span class="af-avatar">${e(initials(selected.actor))}</span><div><strong>需要你的决定</strong><span>${e(selected.actor || "审批人")} · ${e(selected.title)}</span></div><span class="af-gate-number">${selected.id === "code-review" ? "1" : "2"} / 2</span></div><label for="approval-comment">审批意见 <span>通过可选，拒绝必填</span></label><textarea class="ui-textarea" id="approval-comment" name="comment" maxlength="500" rows="3" placeholder="补充审阅意见或需要修改的内容…" ${canDecide ? "" : "disabled"}>${e(state.approvalComment || "")}</textarea>${state.approvalError ? `<p class="af-form-error" role="alert">${icon("CircleAlert", 13)}${e(state.approvalError)}</p>` : ""}<div class="af-decision-actions"><button type="submit" name="decision" value="reject-gate" class="ui-button ui-button-danger af-button af-button-reject" ${canDecide ? "" : "disabled"}>${icon("X", 15)}拒绝方案</button><button type="submit" name="decision" value="approve-gate" class="ui-button ui-button-primary af-button af-button-primary" ${canDecide ? "" : "disabled"}>${icon("Check", 16)}${selected.id === "code-review" ? "通过，进入下一关" : "确认执行授权"}</button></div><p class="af-decision-note">${icon("LockKeyhole", 12)}${state.mode === "demo" ? (selected.id === "code-review" ? "此关通过后，仍需完成执行授权。" : "仅演示授权，不会启动真实修复。") : "真实审批写接口尚未接入。"}</p></form>` : canResubmit ? `<form id="approval-resubmit-form" data-task-id="${e(entry.task.id)}" data-round="${e(flow.round)}"><input type="hidden" name="round" value="${e(flow.round)}"><div class="af-resolved-heading"><span class="af-resolved-icon is-rejected">${icon("RotateCcw", 24)}</span><div><h3>重新发起审批</h3><p>保留本轮记录，重新开始两级审批。</p></div></div><label for="resubmit-comment">重新提交说明</label><textarea class="ui-textarea" id="resubmit-comment" name="comment" maxlength="500" rows="3" required placeholder="说明重新提交的原因…">${e(state.approvalComment || "")}</textarea>${state.approvalError ? `<p class="af-form-error" role="alert">${icon("CircleAlert", 13)}${e(state.approvalError)}</p>` : ""}<button type="submit" class="ui-button ui-button-primary af-button af-button-primary af-wide">${icon("RotateCcw", 15)}重新发起审批</button><p class="af-decision-note">沿用原候选方案与检查证据，仅重开演示审批。</p></form>` : `<div class="af-resolved"><span class="af-resolved-icon ${terminal ? "is-approved" : ""}">${icon(cancelled ? "Ban" : terminal ? "CheckCheck" : selected.status === "rejected" ? "X" : selected.status === "completed" ? "CircleCheck" : "LockKeyhole", 28)}</span><h3>${cancelled ? "任务已取消" : terminal ? "两级审批已通过" : selected.status === "rejected" ? "方案已停止" : selected.status === "completed" ? "该节点已完成" : "等待前序节点"}</h3><p>${cancelled ? "审批与执行已停止，已有的检查证据和决定记录仍可查看。" : terminal ? "候选变更已获得授权，等待执行器接入。真实修复尚未开始。" : selected.status === "rejected" ? "拒绝记录已保留，后续执行被阻止。" : selected.status === "completed" ? "可以继续检查证据，或查看当前需要决定的节点。" : "完成前序检查与人工审批后，流程才会进入这里。"}</p>${flow.currentNodeId && selected.id !== flow.currentNodeId ? `<button type="button" class="ui-button ui-button-ghost af-button af-button-soft" ${taskAction("flow-node", entry.task.id, `data-node-id="${e(flow.currentNodeId)}"`)}>前往当前审批${icon("ArrowRight", 14)}</button>` : ""}</div>`}
+    ${current ? `<form id="approval-decision-form" data-task-id="${e(entry.task.id)}" data-node-id="${e(selected.id)}" data-round="${e(flow.round)}"><input type="hidden" name="round" value="${e(flow.round)}"><div class="af-decision-heading"><span class="af-avatar">${e(initials(selected.actor))}</span><div><strong>需要你的决定</strong><span>${e(selected.actor || "审批人")} · ${e(selected.title)}</span></div><span class="af-gate-number">${selected.id === "code-review" ? "1" : "2"} / 2</span></div><label for="approval-comment">审批意见 <span>通过可选，拒绝必填</span></label><textarea class="ui-textarea" id="approval-comment" name="comment" maxlength="500" rows="3" placeholder="补充审阅意见或需要修改的内容…" ${canDecide ? "" : "disabled"}>${e(state.approvalComment || "")}</textarea>${state.approvalError ? `<p class="af-form-error" role="alert">${icon("CircleAlert", 13)}${e(state.approvalError)}</p>` : ""}<div class="af-decision-actions"><button type="submit" name="decision" value="reject-gate" class="ui-button ui-button-danger af-button af-button-reject" ${canDecide ? "" : "disabled"}>${icon("X", 15)}拒绝方案</button><button type="submit" name="decision" value="approve-gate" class="ui-button ui-button-primary af-button af-button-primary" ${canDecide ? "" : "disabled"}>${icon("Check", 16)}${selected.id === "code-review" ? "通过，进入下一关" : "确认执行授权"}</button></div><p class="af-decision-note">${icon("LockKeyhole", 12)}${state.mode === "demo" ? (selected.id === "code-review" ? "此关通过后，仍需完成执行授权。" : "仅演示授权，不会启动真实修复。") : "决定由管理服务记录；执行授权通过后，Agent 才能领取执行任务。"}</p></form>` : canResubmit ? `<form id="approval-resubmit-form" data-task-id="${e(entry.task.id)}" data-round="${e(flow.round)}"><input type="hidden" name="round" value="${e(flow.round)}"><div class="af-resolved-heading"><span class="af-resolved-icon is-rejected">${icon("RotateCcw", 24)}</span><div><h3>重新发起审批</h3><p>保留本轮记录，重新开始两级审批。</p></div></div><label for="resubmit-comment">重新提交说明</label><textarea class="ui-textarea" id="resubmit-comment" name="comment" maxlength="500" rows="3" required placeholder="说明重新提交的原因…">${e(state.approvalComment || "")}</textarea>${state.approvalError ? `<p class="af-form-error" role="alert">${icon("CircleAlert", 13)}${e(state.approvalError)}</p>` : ""}<button type="submit" class="ui-button ui-button-primary af-button af-button-primary af-wide">${icon("RotateCcw", 15)}重新发起审批</button><p class="af-decision-note">${state.mode === "demo" ? "沿用原候选方案与检查证据，仅重开演示审批。" : "服务端会重新核对候选方案和检查证据，并保留本轮决定。"}</p></form>` : `<div class="af-resolved"><span class="af-resolved-icon ${terminal ? "is-approved" : ""}">${icon(cancelled ? "Ban" : terminal ? "CheckCheck" : selected.status === "rejected" ? "X" : selected.status === "completed" ? "CircleCheck" : "LockKeyhole", 28)}</span><h3>${cancelled ? "任务已取消" : terminal ? "两级审批已通过" : selected.status === "rejected" ? "方案已停止" : selected.status === "completed" ? "该节点已完成" : "等待前序节点"}</h3><p>${cancelled ? "审批与执行已停止，已有的检查证据和决定记录仍可查看。" : terminal ? (state.mode === "demo" ? "候选变更已获得授权，等待执行器接入。真实修复尚未开始。" : e(flow.nodes.find((node) => node.id === "execute")?.detail || "授权已记录，执行状态以任务记录为准。")) : selected.status === "rejected" ? "拒绝记录已保留，后续执行被阻止。" : selected.status === "completed" ? "可以继续检查证据，或查看当前需要决定的节点。" : "完成前序检查与人工审批后，流程才会进入这里。"}</p>${flow.currentNodeId && selected.id !== flow.currentNodeId ? `<button type="button" class="ui-button ui-button-ghost af-button af-button-soft" ${taskAction("flow-node", entry.task.id, `data-node-id="${e(flow.currentNodeId)}"`)}>前往当前审批${icon("ArrowRight", 14)}</button>` : ""}</div>`}
     </div></section>`;
 }
 
@@ -279,7 +306,12 @@ export function renderApprovalPage(state) {
     : "flow";
   const stats = `<div class="af-overview" aria-label="审批概况">${[
     ["pending", "Clock3", "等待审批", "当前需要你的决定"],
-    ["approved", "CheckCheck", "已授权", "等待执行器处理"],
+    [
+      "approved",
+      "CheckCheck",
+      "已授权",
+      state.mode === "live" ? "已完成两级审批" : "等待执行器处理",
+    ],
     ["rejected", "RotateCcw", "已拒绝", "保留记录，可重新提交"],
   ]
     .map(
@@ -301,7 +333,7 @@ export function renderApprovalPage(state) {
       })
     );
   const { entry, flow } = selected;
-  return `${stats}<div class="af-workspace"><aside class="ui-card af-requests" aria-label="审批请求"><div class="af-requests-heading"><h2>${icon("GitPullRequestArrow", 16)}审批请求</h2><span>${entries.length}</span></div><div class="af-request-filter" role="group" aria-label="审批请求筛选"><button type="button" ${action("approval-filter", 'data-filter="pending"')} aria-pressed="${filter === "pending"}">待处理 <span>${counts.pending}</span></button><button type="button" ${action("approval-filter", 'data-filter="all"')} aria-pressed="${filter === "all"}">全部记录</button></div><div class="af-request-list">${filtered.length ? filtered.map((item) => renderRequest(item.entry, item.entry.task.id === entry.task.id)).join("") : uiEmpty({ icon: "CheckCheck", title: "待办已清空", description: "已处理的请求仍保留在全部记录中。", className: "af-list-empty", action: uiButton({ label: "查看全部记录", icon: "ArrowRight", action: "approval-filter", attrs: 'data-filter="all"', variant: "ghost", className: "af-text-button" }) })}</div><div class="af-requests-foot">${icon("ShieldCheck", 15)}<span>每次决定都有迹可循</span></div></aside><section class="ui-card af-review"><header class="af-review-heading"><div class="af-review-eyebrow"><span class="af-task-label">${icon("GitPullRequestArrow", 13)}${e(entry.task.id)}</span>${stateBadge(flow.status, flow.status === "pending" ? "等待人工审批" : undefined)}<span class="af-review-round">第 ${e(flow.round)} 轮</span></div><h2>${e(entry.title)}</h2><div class="af-review-meta"><span>${icon("Bot", 14)}${entry.engineId === "complex" ? "ZCode Workflow" : "Direct AI"}</span><span>${icon("FileDiff", 14)}${filesOf(entry).length} 个文件</span><span>${icon("UserRoundCheck", 14)}2 个人工关卡</span><span>${icon("LockKeyhole", 13)}${state.mode === "demo" ? "演示工作区" : "只读连接"}</span></div></header><div class="ui-tabs af-review-tabs" role="tablist" aria-label="审批内容">${[
+  return `${stats}<div class="af-workspace"><aside class="ui-card af-requests" aria-label="审批请求"><div class="af-requests-heading"><h2>${icon("GitPullRequestArrow", 16)}审批请求</h2><span>${entries.length}</span></div><div class="af-request-filter" role="group" aria-label="审批请求筛选"><button type="button" ${action("approval-filter", 'data-filter="pending"')} aria-pressed="${filter === "pending"}">待处理 <span>${counts.pending}</span></button><button type="button" ${action("approval-filter", 'data-filter="all"')} aria-pressed="${filter === "all"}">全部记录</button></div><div class="af-request-list">${filtered.length ? filtered.map((item) => renderRequest(item.entry, item.entry.task.id === entry.task.id)).join("") : uiEmpty({ icon: "CheckCheck", title: "待办已清空", description: "已处理的请求仍保留在全部记录中。", className: "af-list-empty", action: uiButton({ label: "查看全部记录", icon: "ArrowRight", action: "approval-filter", attrs: 'data-filter="all"', variant: "ghost", className: "af-text-button" }) })}</div><div class="af-requests-foot">${icon("ShieldCheck", 15)}<span>每次决定都有迹可循</span></div></aside><section class="ui-card af-review"><header class="af-review-heading"><div class="af-review-eyebrow"><span class="af-task-label">${icon("GitPullRequestArrow", 13)}${e(entry.task.id)}</span>${stateBadge(flow.status, flow.status === "pending" ? "等待人工审批" : undefined)}<span class="af-review-round">第 ${e(flow.round)} 轮</span></div><h2>${e(entry.title)}</h2><div class="af-review-meta"><span>${icon("Bot", 14)}${entry.engineId === "complex" ? "ZCode Workflow" : "Direct AI"}</span><span>${icon("FileDiff", 14)}${filesOf(entry).length} 个文件</span><span>${icon("UserRoundCheck", 14)}2 个人工关卡</span><span>${icon("LockKeyhole", 13)}${state.mode === "demo" ? "演示工作区" : state.snapshot?.capabilities.approve ? "服务端审批" : "只读审批"}</span></div></header><div class="ui-tabs af-review-tabs" role="tablist" aria-label="审批内容">${[
     ["flow", "Workflow", "审批流程"],
     ["diff", "FileDiff", "候选变更"],
     ["history", "History", "审批记录"],
@@ -330,5 +362,5 @@ export function renderApprovalTeaser(entry, state) {
     )
     .join(
       "",
-    )}</div><div class="af-teaser-person"><span class="af-avatar">${e(initials(current?.actor || "Qd99"))}</span><div><strong>${e(current?.actor || "Qd99")}</strong><span>${current ? e(current.title) : flow.status === "approved" ? "已完成审批" : "流程记录"}</span></div><span class="af-teaser-lock">${icon("LockKeyhole", 14)}</span></div><button type="button" class="ui-button ui-button-primary af-button af-button-primary af-wide" ${taskAction("select-approval", entry.task.id)}>查看审批流${icon("ArrowRight", 15)}</button><p class="af-teaser-note">${state.mode === "demo" ? "模拟审批 · 不会执行真实修复" : "查看审批证据与决策记录"}</p></section>`;
+    )}</div><div class="af-teaser-person"><span class="af-avatar">${e(initials(current?.actor || "审批人"))}</span><div><strong>${e(current?.actor || "审批人")}</strong><span>${current ? e(current.title) : flow.status === "approved" ? "已完成审批" : "流程记录"}</span></div><span class="af-teaser-lock">${icon("LockKeyhole", 14)}</span></div><button type="button" class="ui-button ui-button-primary af-button af-button-primary af-wide" ${taskAction("select-approval", entry.task.id)}>查看审批流${icon("ArrowRight", 15)}</button><p class="af-teaser-note">${state.mode === "demo" ? "模拟审批 · 不会执行真实修复" : "查看审批证据与决策记录"}</p></section>`;
 }

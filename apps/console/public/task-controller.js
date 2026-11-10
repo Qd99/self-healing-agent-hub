@@ -29,6 +29,8 @@ export function createTaskController({
   toast,
   bulkDialog,
   setSnapshot,
+  api,
+  runMutation,
 }) {
   let preferences = {};
   try {
@@ -143,7 +145,7 @@ export function createTaskController({
     )?.focus({ preventScroll: true });
   });
   function openBulk(type, ids, returnSelector = "") {
-    if (!state.snapshot) return;
+    if (!state.snapshot || state.pendingAction || state.authRequired) return;
     const plan = planBulkAction(state.snapshot, { type, ids });
     if (!plan.canExecute) {
       toast(plan.reason || plan.skipped[0]?.reason || "没有可操作的任务。");
@@ -160,7 +162,13 @@ export function createTaskController({
     bulkDialog.querySelector('[data-action="bulk-close"]')?.focus();
   }
   function confirmBulk() {
-    if (!state.snapshot || !state.bulkPlan) return;
+    if (
+      !state.snapshot ||
+      !state.bulkPlan ||
+      state.pendingAction ||
+      state.authRequired
+    )
+      return;
     const previous = state.bulkPlan;
     const latest = planBulkAction(state.snapshot, {
       type: state.bulkType,
@@ -169,7 +177,7 @@ export function createTaskController({
     const signature = (p) =>
       JSON.stringify([
         p.canExecute,
-        p.eligible.map((x) => x.id),
+        p.eligible.map((x) => [x.id, x.revision]),
         p.skipped.map((x) => [x.id, x.reason]),
       ]);
     if (signature(latest) !== signature(previous)) {
@@ -180,6 +188,31 @@ export function createTaskController({
       return;
     }
     if (!latest.canExecute) return;
+    if (state.mode === "live") {
+      if (!api || !runMutation) return;
+      const type = state.bulkType;
+      void runMutation(
+        "bulk",
+        () =>
+          api.bulkTaskAction({
+            type,
+            items: latest.requestedIds.map((id) => ({
+              id,
+              revision: state.snapshot.tasks.find((item) => item.task.id === id)
+                ?.revision,
+            })),
+          }),
+        {
+          onSuccess(result) {
+            state.bulkResult = result.report;
+            state.selectedTaskIds = [];
+            state.taskRowMenu = "";
+            closeBulk();
+          },
+        },
+      );
+      return;
+    }
     try {
       const result = applyDemoBulkAction(state.snapshot, {
         type: state.bulkType,
@@ -562,6 +595,8 @@ export function createTaskController({
     afterRender() {
       for (const el of document.querySelectorAll("input[data-indeterminate]"))
         el.indeterminate = el.dataset.indeterminate === "true";
+      if (bulkDialog.open && state.bulkPlan)
+        bulkDialog.innerHTML = renderBulkDialog(state);
     },
     reset(sourceChanged = false) {
       closeBulk();

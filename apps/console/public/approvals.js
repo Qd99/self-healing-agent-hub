@@ -35,6 +35,9 @@ const validNodeStatuses = new Set([
   "queued",
   "cancelled",
   "unknown",
+  "running",
+  "failed",
+  "skipped",
 ]);
 const gatesForRound = () =>
   HUMAN_GATES.map((gate, index) => ({
@@ -123,23 +126,46 @@ export function getApprovalFlow(entry) {
       ...(gate?.comment ? { comment: gate.comment } : {}),
     });
   }
+  const live = flow?.source === "server";
+  const executionStatus = entry?.status?.status;
+  const executed =
+    live &&
+    ["completed", "failed", "running", "cancelled", "skipped"].includes(
+      executionStatus,
+    ) &&
+    (status === "approved" ||
+      executionStatus === "cancelled" ||
+      entry?.execution?.phase === "execute");
   nodes.push({
     id: "execute",
     title: "执行与归档",
     kind: "execution",
-    status:
-      status === "cancelled"
+    status: executed
+      ? executionStatus
+      : status === "cancelled"
         ? "cancelled"
         : status === "approved"
           ? "queued"
           : flow
             ? "blocked"
             : "unknown",
-    detail:
-      status === "cancelled"
+    detail: executed
+      ? entry?.execution?.cancelRequested
+        ? "取消请求已提交，等待 Agent 确认停止。"
+        : entry?.status?.message ||
+          {
+            completed: "Agent 已回传执行结果，任务已完成。",
+            failed: "执行失败，检查任务日志和证据。",
+            running: "Agent 正在执行已授权的候选方案。",
+            cancelled: "任务已取消，已有证据与决定记录已保留。",
+            skipped: "Agent 已回传跳过结果，任务已结束。",
+          }[executionStatus]
+      : status === "cancelled"
         ? "任务已取消，流程停止；保留既有证据与决定，不执行后续步骤。"
         : status === "approved"
-          ? "已完成两级授权，等待执行器；未执行或提交真实变更。"
+          ? live
+            ? "两级授权已完成，等待 Agent 领取执行任务。"
+            : "已完成两级授权，等待执行器；未执行或提交真实变更。"
           : "需要两个审批关卡通过后才能进入队列。",
   });
   const pending =

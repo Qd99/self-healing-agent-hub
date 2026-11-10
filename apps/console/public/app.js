@@ -1,3 +1,4 @@
+import { createApiClient } from "./api-client.js";
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { createTaskController } from "./task-controller.js";
 import { createAdministrationController } from "./administration-controller.js";
@@ -14,6 +15,7 @@ import {
   renderRuleDetail,
 } from "./views.js";
 
+const api = createApiClient();
 const app = document.querySelector("#app");
 const detailDialog = document.querySelector("#detail-dialog");
 const createDialog = document.querySelector("#create-dialog");
@@ -45,6 +47,13 @@ const state = {
   snapshot: null,
   error: "",
   loading: true,
+  refreshing: false,
+  pendingAction: "",
+  authRequired: false,
+  authError: "",
+  authPending: false,
+  createDraft: null,
+  createError: "",
   overviewTab: "focus",
   days: 7,
   expandedTask: "",
@@ -71,10 +80,9 @@ const taskController = createTaskController({
   render,
   toast,
   bulkDialog,
-  setSnapshot(next) {
-    state.snapshot = next;
-    demoSnapshot = next;
-  },
+  setSnapshot,
+  api,
+  runMutation,
 });
 const administrationController = createAdministrationController({
   state,
@@ -82,15 +90,16 @@ const administrationController = createAdministrationController({
   toast,
   openRule,
   openActivity,
-  setSnapshot(next) {
-    state.snapshot = next;
-    demoSnapshot = next;
-  },
+  setSnapshot,
+  api,
+  runMutation,
 });
 const monitoringController = createMonitoringController({
   state,
   render,
   toast,
+  api,
+  runMutation,
 });
 const flowResizeObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) fitFlowCanvas(target);
@@ -105,6 +114,12 @@ function fitFlowCanvas(canvas) {
 }
 
 function render() {
+  const active = document.activeElement;
+  const focusId = active?.id;
+  const selection =
+    active && typeof active.selectionStart === "number"
+      ? [active.selectionStart, active.selectionEnd]
+      : null;
   const flowScroll =
     document.querySelector(".af-canvas-scroll")?.scrollLeft || 0;
   taskController.reconcile();
@@ -136,6 +151,14 @@ function render() {
     canvas.scrollLeft = flowScroll;
     flowResizeObserver.observe(canvas);
   }
+  if (focusId && !active?.isConnected) {
+    const replacement = document.getElementById(focusId);
+    replacement?.focus({ preventScroll: true });
+    if (selection && replacement?.setSelectionRange)
+      try {
+        replacement.setSelectionRange(...selection);
+      } catch {}
+  }
 }
 function toast(message, tone = "neutral") {
   clearTimeout(toastTimer);
@@ -156,13 +179,32 @@ function currentTask() {
   return state.snapshot?.tasks.find((t) => t.task.id === state.selectedTask);
 }
 function refreshDetail() {
+  if (!detailDialog.open) return;
   const item = currentTask();
-  if (item && detailDialog.open)
-    detailDialog.innerHTML = renderTaskDetail(item, state);
+  const rule = state.snapshot?.rules.find(
+    (entry) => entry.id === state.selectedRule,
+  );
+  const activity = state.snapshot?.activity.find(
+    (entry) => entry.id === state.selectedActivity,
+  );
+  if (item) detailDialog.innerHTML = renderTaskDetail(item, state);
+  else if (rule) detailDialog.innerHTML = renderRuleDetail(rule, state);
+  else if (activity)
+    detailDialog.innerHTML = renderActivityDetail(activity, state);
+}
+function refreshCreate() {
+  if (createDialog.open) createDialog.innerHTML = renderCreate(state);
+}
+function refreshWorkspace() {
+  render();
+  refreshDetail();
+  refreshCreate();
 }
 function closeDetail() {
   if (detailDialog.open) detailDialog.close();
   state.selectedTask = "";
+  state.selectedRule = "";
+  state.selectedActivity = "";
 }
 function closeCreate() {
   if (createDialog.open) createDialog.close();
@@ -184,6 +226,8 @@ function openTask(id, tab = "trace") {
     return;
   }
   state.selectedTask = id;
+  state.selectedRule = "";
+  state.selectedActivity = "";
   state.detailTab = ["trace", "diff", "evidence", "logs"].includes(tab)
     ? tab
     : "trace";
@@ -196,6 +240,8 @@ function openRule(id) {
   const rule = state.snapshot?.rules.find((item) => item.id === id);
   if (!rule) return;
   state.selectedTask = "";
+  state.selectedRule = id;
+  state.selectedActivity = "";
   if (!detailDialog.open) lastFocus = document.activeElement;
   detailDialog.innerHTML = renderRuleDetail(rule, state);
   if (!detailDialog.open) detailDialog.showModal();
@@ -211,17 +257,29 @@ function openActivity(id) {
     return;
   }
   state.selectedTask = "";
+  state.selectedRule = "";
+  state.selectedActivity = id;
   if (!detailDialog.open) lastFocus = document.activeElement;
   detailDialog.innerHTML = renderActivityDetail(entry, state);
   if (!detailDialog.open) detailDialog.showModal();
   detailDialog.querySelector('[data-action="close-detail"]')?.focus();
 }
 function openCreate() {
-  if (state.mode !== "demo" || !state.snapshot?.capabilities.trigger) {
-    toast("真实执行器尚未接入。");
+  if (
+    !state.snapshot?.capabilities.trigger ||
+    state.pendingAction ||
+    state.authRequired
+  ) {
+    toast("当前会话没有创建任务的权限。");
     return;
   }
   lastFocus = document.activeElement;
+  state.createDraft ||= {
+    title: "",
+    type: "type-error",
+    priority: "medium",
+    branch: state.snapshot.project.defaultBranch,
+  };
   createDialog.innerHTML = renderCreate(state);
   createDialog.showModal();
   createDialog.querySelector("#task-title").focus();
@@ -314,77 +372,158 @@ function verifySnapshot(s) {
   }
   return s;
 }
-async function loadData(mode = state.mode) {
+function setSnapshot(next) {
+  if (!next || next.mode !== state.mode) return false;
+  if (next.mode === "live") {
+    verifySnapshot(next);
+    if (
+      state.snapshot?.mode === "live" &&
+      state.snapshot.project.id === next.project.id &&
+      Number.isSafeInteger(state.snapshot.revision) &&
+      Number.isSafeInteger(next.revision) &&
+      next.revision < state.snapshot.revision
+    )
+      return false;
+    api.setSnapshot(next);
+    state.authRequired = false;
+    state.authError = "";
+  } else demoSnapshot = next;
+  const projectChanged =
+    state.snapshot && state.snapshot.project.id !== next.project.id;
+  if (projectChanged) {
+    taskController.reset(true);
+    administrationController.reset();
+    closeDetail();
+    closeCreate();
+    state.createDraft = null;
+    state.approvalComment = "";
+  }
+  state.snapshot = next;
+  state.error = "";
+  return true;
+}
+function requireAuthentication(error) {
+  state.authRequired = true;
+  state.authError = error?.message || "登录已过期，请重新输入管理令牌。";
+  state.resumeCreate = createDialog.open || state.resumeCreate;
+  if (detailDialog.open) detailDialog.close();
+  closeCreate();
+  if (bulkDialog.open) bulkDialog.close();
+}
+async function loadData(mode = state.mode, { background = false } = {}) {
+  if (state.authPending) return;
+  if (state.pendingAction && mode !== state.mode) return;
   const seq = ++loadSequence;
   abortController?.abort();
-  abortController = new AbortController();
-  closeDetail();
-  closeCreate();
-  taskController.reset(mode !== state.mode);
-  if (mode !== state.mode) administrationController.reset();
+  const controller = new AbortController();
+  abortController = controller;
+  const changed = mode !== state.mode;
+  if (changed) {
+    closeDetail();
+    closeCreate();
+    taskController.reset(true);
+    administrationController.reset();
+    state.snapshot = null;
+    state.authRequired = false;
+    state.approvalComment = "";
+    state.createDraft = null;
+  }
   state.mode = mode;
-  state.error = "";
-  state.loading = true;
-  state.snapshot = null;
-  render();
+  state.loading = !state.snapshot;
+  state.refreshing = Boolean(state.snapshot);
+  if (!background) state.error = "";
+  if (!background) render();
   if (mode === "demo") {
     demoSnapshot ||= createDemoSnapshot();
-    state.snapshot = demoSnapshot;
+    setSnapshot(demoSnapshot);
     state.loading = false;
-    state.expandedTask =
-      state.snapshot.tasks.find((t) => t.reviewState === "pending")?.task.id ||
-      "";
-    render();
+    state.refreshing = false;
+    refreshWorkspace();
     return;
   }
-  const timeout = setTimeout(() => abortController?.abort(), 10000);
   try {
-    const response = await fetch("/api/healing/snapshot", {
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-      credentials: "same-origin",
-      signal: abortController.signal,
-    });
-    const isJson = response.headers
-      .get("content-type")
-      ?.includes("application/json");
-    if (!isJson)
-      throw new Error(
-        "当前站点尚未提供管理接口，请启动管理服务后，从服务地址打开工作台。",
-      );
-    const data = await response.json();
-    if (!response.ok)
-      throw new Error(
-        data?.error?.message || `管理服务返回 ${response.status}`,
-      );
-    const snapshot = verifySnapshot(data);
+    const snapshot = await api.getSnapshot({ signal: controller.signal });
     if (seq !== loadSequence) return;
-    state.snapshot = snapshot;
-    state.expandedTask = "";
+    setSnapshot(snapshot);
   } catch (error) {
-    if (seq !== loadSequence) return;
-    state.error =
-      error.name === "AbortError"
-        ? "连接超过 10 秒，请检查管理服务是否可访问。"
-        : error.message;
+    if (seq !== loadSequence || error.name === "AbortError") return;
+    state.error = error.message;
+    if (error.status === 401) requireAuthentication(error);
   } finally {
-    clearTimeout(timeout);
     if (seq === loadSequence) {
       state.loading = false;
-      render();
+      state.refreshing = false;
+      refreshWorkspace();
     }
+  }
+}
+async function runMutation(key, request, { onSuccess, onError } = {}) {
+  if (state.pendingAction || state.authRequired || state.mode !== "live")
+    return null;
+  const mode = state.mode;
+  const projectId = state.snapshot?.project.id;
+  state.pendingAction = key;
+  state.error = "";
+  refreshWorkspace();
+  try {
+    const result = await request();
+    if (state.mode !== mode || state.snapshot?.project.id !== projectId)
+      return null;
+    if (result.snapshot) setSnapshot(result.snapshot);
+    onSuccess?.(result);
+    if (result.message) toast(result.message, "success");
+    return result;
+  } catch (error) {
+    onError?.(error);
+    if (error.status === 401) requireAuthentication(error);
+    if (error.status === 409) await loadData(state.mode, { background: true });
+    toast(error.message, "error");
+    return null;
+  } finally {
+    state.pendingAction = "";
+    refreshWorkspace();
+  }
+}
+async function authenticate(form) {
+  if (state.authPending) return;
+  const token = String(new FormData(form).get("token") || "").trim();
+  if (!token) return;
+  loadSequence += 1;
+  abortController?.abort();
+  abortController = null;
+  state.loading = false;
+  state.refreshing = false;
+  state.authPending = true;
+  state.authError = "";
+  render();
+  try {
+    const result = await api.createSession(token);
+    setSnapshot(result.snapshot);
+    state.loading = false;
+    if (state.resumeCreate) {
+      state.resumeCreate = false;
+      openCreate();
+    }
+    toast(result.message || "已连接管理服务", "success");
+  } catch (error) {
+    state.authRequired = true;
+    state.authError = error.message;
+  } finally {
+    state.authPending = false;
+    refreshWorkspace();
+    if (state.authRequired) document.getElementById("session-token")?.focus();
   }
 }
 
 function runDemoAction(command, id, payload) {
   try {
-    if (state.mode !== "demo") throw new Error("真实写操作尚未接入。");
-    state.snapshot = applyDemoAction(state.snapshot, {
+    if (state.mode !== "demo") throw new Error("演示操作只能在演示模式运行。");
+    const next = applyDemoAction(state.snapshot, {
       type: command,
       id,
       payload,
     });
-    demoSnapshot = state.snapshot;
+    setSnapshot(next);
     render();
     refreshDetail();
     if (detailDialog.open)
@@ -555,16 +694,52 @@ document.addEventListener("click", (event) => {
           ? `刷新失败：${state.error}`
           : state.mode === "demo"
             ? "已刷新演示工作空间"
-            : "已刷新管理服务配置",
+            : "已刷新任务与管理服务数据",
         state.error ? "error" : "success",
       );
       document
         .querySelector('[data-action="refresh"]')
         ?.focus({ preventScroll: true });
     });
+  } else if (action === "session-logout") {
+    void runMutation("session-logout", () => api.deleteSession(), {
+      onSuccess() {
+        loadSequence += 1;
+        abortController?.abort();
+        state.snapshot = null;
+        state.authRequired = true;
+        state.authError = "";
+        state.createDraft = null;
+        state.approvalComment = "";
+        state.monitoringDirty = false;
+        closeDetail();
+        closeCreate();
+        taskController.reset(true);
+      },
+    });
   } else if (action === "task-action") {
-    const next = runDemoAction(command, id);
-    if (next && command === "retry") openTask(next.tasks[0].task.id);
+    if (
+      state.pendingAction ||
+      state.authRequired ||
+      !state.snapshot?.capabilities[command]
+    )
+      return;
+    const entry = state.snapshot.tasks.find((item) => item.task.id === id);
+    if (!entry || !["retry", "cancel"].includes(command)) return;
+    if (state.mode === "live") {
+      void runMutation(
+        `task:${command}:${id}`,
+        () => api.taskAction(id, command, { expectedRevision: entry.revision }),
+        {
+          onSuccess(result) {
+            if (command === "retry" && result.taskId) openTask(result.taskId);
+          },
+        },
+      );
+    } else {
+      const next = runDemoAction(command, id);
+      if (next && command === "retry") openTask(next.tasks[0].task.id);
+    }
   } else if (action === "search") {
     go("tasks");
     requestAnimationFrame(() =>
@@ -574,6 +749,12 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("input", (event) => {
+  if (event.target.closest?.("#create-form") && event.target.name) {
+    if (state.pendingAction === "trigger") return;
+    state.createDraft ||= {};
+    state.createDraft[event.target.name] = event.target.value;
+    return;
+  }
   if (administrationController.handleInput(event)) return;
   if (monitoringController.handleInput(event)) return;
   if (["approval-comment", "resubmit-comment"].includes(event.target.id)) {
@@ -587,6 +768,12 @@ document.addEventListener("compositionend", (event) => {
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if (event.target.closest?.("#create-form") && event.target.name) {
+    if (state.pendingAction === "trigger") return;
+    state.createDraft ||= {};
+    state.createDraft[event.target.name] = event.target.value;
+    return;
+  }
   if (administrationController.handleChange(event)) return;
   if (monitoringController.handleChange(event)) return;
   if (taskController.handleChange(event)) return;
@@ -600,6 +787,11 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.id === "session-form") {
+    event.preventDefault();
+    void authenticate(event.target);
+    return;
+  }
   if (monitoringController.handleSubmit(event)) return;
   if (
     ["approval-decision-form", "approval-resubmit-form"].includes(
@@ -616,9 +808,64 @@ document.addEventListener("submit", (event) => {
     if (!["approve-gate", "reject-gate", "resubmit-approval"].includes(command))
       return;
     state.approvalComment = String(values.comment || "");
+    if (
+      state.pendingAction ||
+      state.authRequired ||
+      !state.snapshot?.capabilities.approve
+    )
+      return;
+    if (state.mode === "live") {
+      const id = form.dataset.taskId;
+      const entry = state.snapshot.tasks.find((item) => item.task.id === id);
+      if (!entry) return;
+      state.approvalError = "";
+      const decision = {
+        "approve-gate": "approve",
+        "reject-gate": "reject",
+        "resubmit-approval": "resubmit",
+      }[command];
+      const comment = state.approvalComment.trim();
+      if (
+        (decision !== "approve" && !comment) ||
+        Array.from(comment).length > 500
+      ) {
+        state.approvalError = "请填写 1–500 字的原因或说明";
+        render();
+        return;
+      }
+      void runMutation(
+        `approval:${id}`,
+        () =>
+          api.decideApproval(id, {
+            decision,
+            nodeId: form.dataset.nodeId,
+            round: Number(values.round || form.dataset.round),
+            comment,
+            expectedRevision: entry.revision,
+          }),
+        {
+          onSuccess() {
+            const flow = getApprovalFlow(
+              state.snapshot.tasks.find((item) => item.task.id === id),
+            );
+            state.approvalTaskId = id;
+            state.approvalNodeId =
+              flow.currentNodeId ||
+              (decision === "reject" ? form.dataset.nodeId : "execute");
+            if (flow.status !== "pending") state.approvalFilter = "all";
+            state.approvalComment = "";
+            state.approvalError = "";
+          },
+          onError(error) {
+            state.approvalError = error.message;
+          },
+        },
+      );
+      return;
+    }
     try {
       if (state.mode !== "demo" || !state.snapshot?.capabilities.approve)
-        throw new Error("真实审批写接口尚未接入。");
+        throw new Error("当前没有演示审批权限。");
       const next = applyDemoAction(state.snapshot, {
         type: command,
         id: form.dataset.taskId,
@@ -628,8 +875,7 @@ document.addEventListener("submit", (event) => {
           comment: state.approvalComment,
         },
       });
-      state.snapshot = next;
-      demoSnapshot = next;
+      setSnapshot(next);
       state.approvalTaskId = form.dataset.taskId;
       const flow = getApprovalFlow(
         next.tasks.find((t) => t.task.id === state.approvalTaskId),
@@ -657,8 +903,31 @@ document.addEventListener("submit", (event) => {
   if (event.target.id !== "create-form") return;
   event.preventDefault();
   const payload = Object.fromEntries(new FormData(event.target));
+  state.createDraft = payload;
+  if (
+    state.pendingAction ||
+    state.authRequired ||
+    !state.snapshot?.capabilities.trigger
+  )
+    return;
+  state.createError = "";
+  if (state.mode === "live") {
+    void runMutation("trigger", () => api.triggerTask(payload), {
+      onSuccess(result) {
+        state.createDraft = null;
+        closeCreate();
+        go("tasks");
+        if (result.taskId) openTask(result.taskId);
+      },
+      onError(error) {
+        state.createError = error.message;
+      },
+    });
+    return;
+  }
   const next = runDemoAction("trigger", undefined, payload);
   if (next) {
+    state.createDraft = null;
     closeCreate();
     state.overviewTab = "running";
     go("overview");
@@ -759,3 +1028,21 @@ mobileViewport.addEventListener("change", () => {
 });
 render();
 loadData();
+// Poll only when it cannot interrupt input or a confirmation workflow.
+setInterval(() => {
+  const active = document.activeElement;
+  if (
+    state.mode !== "live" ||
+    document.hidden ||
+    state.authRequired ||
+    state.loading ||
+    state.refreshing ||
+    state.pendingAction ||
+    state.monitoringDirty ||
+    state.approvalComment ||
+    document.querySelector("dialog[open]") ||
+    active?.matches("input,textarea,select")
+  )
+    return;
+  void loadData("live", { background: true });
+}, 15000);
