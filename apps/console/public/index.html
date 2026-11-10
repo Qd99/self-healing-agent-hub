@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="console-default-mode" content="live" />
+    <meta
+      name="description"
+      content="Self-Healing Agent Hub 管理台：审阅任务、检查修复过程、管理引擎与安全配置。"
+    />
+    <title>heal — 自愈工作台</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./studio.css" />
+    <link rel="stylesheet" href="./approval.css" />
+    <link rel="stylesheet" href="./navigation.css" />
+    <link rel="stylesheet" href="./tasks.css" />
+    <link rel="stylesheet" href="./settings.css" />
+    <link rel="stylesheet" href="./administration.css" />
+    <link rel="stylesheet" href="./monitoring.css" />
+    <link rel="stylesheet" href="./ui.css" />
+    <link rel="stylesheet" href="./dashboard.css" />
+    <script src="./app.js" type="module"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳至主要内容</a>
+    <div id="app"></div>
+    <dialog
+      id="detail-dialog"
+      class="detail-dialog"
+      aria-labelledby="detail-title"
+    ></dialog>
+    <dialog
+      id="create-dialog"
+      class="create-dialog"
+      aria-labelledby="create-title"
+    ></dialog>
+    <dialog
+      id="bulk-dialog"
+      class="tl-bulk-dialog"
+      aria-labelledby="bulk-dialog-title"
+      aria-describedby="bulk-dialog-description"
+    ></dialog>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <noscript>请启用 JavaScript 以使用自愈工作台。</noscript>
+  </body>
+</html>

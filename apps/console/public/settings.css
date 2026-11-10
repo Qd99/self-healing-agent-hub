@@ -1,0 +1,394 @@
+/* Service settings share the surface, controls and spacing of task workspaces. */
+.connection-settings {
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+}
+.cs-connections {
+  overflow: hidden;
+}
+.cs-list-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 142px 112px;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 26px 13px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.cs-list-heading h2 {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cs-service {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 142px 112px;
+  align-items: center;
+  gap: 20px;
+  min-height: 102px;
+  margin: 0 26px;
+  padding: 22px 0;
+}
+.cs-service + .cs-service,
+.cs-connection-details + .cs-service {
+  border-top: 1px solid var(--line-soft);
+}
+.cs-service-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 12px;
+  color: var(--muted);
+  background: var(--subtle);
+}
+.cs-icon-hub {
+  color: var(--blue);
+  background: var(--blue-soft);
+}
+.cs-icon-grafana {
+  color: var(--amber);
+  background: var(--amber-bg);
+}
+.cs-icon-prometheus {
+  color: var(--green);
+  background: var(--green-bg);
+}
+.cs-service-copy {
+  min-width: 0;
+}
+.cs-service-copy h3 {
+  margin: 0 0 5px;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.5;
+}
+.cs-service-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.cs-service-status {
+  display: grid;
+  gap: 5px;
+}
+.cs-service-status .ui-status {
+  font-size: 12px;
+}
+.cs-service-status small {
+  padding-left: 13px;
+  color: var(--faint);
+  font-size: 10px;
+}
+.cs-service > .ui-button {
+  justify-self: end;
+}
+.cs-meta-separator {
+  padding: 0 8px;
+  color: var(--faint);
+}
+.cs-datasource-uid {
+  font-variant-numeric: tabular-nums;
+}
+.cs-connection-details {
+  margin: -10px 26px 0 88px;
+}
+.cs-connection-details summary,
+.cs-guide summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  border-radius: var(--ui-radius);
+}
+.cs-connection-details summary {
+  width: fit-content;
+  min-height: 32px;
+  margin: 0 0 14px -7px;
+  padding: 5px 7px;
+}
+.cs-connection-details summary > span,
+.cs-guide summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cs-connection-details summary::-webkit-details-marker,
+.cs-guide summary::-webkit-details-marker {
+  display: none;
+}
+.cs-connection-details summary:hover,
+.cs-guide summary:hover {
+  color: var(--ink);
+  background: var(--subtle);
+}
+.cs-connection-details summary > svg,
+.cs-guide summary > svg {
+  transition: transform 0.16s ease;
+}
+.cs-connection-details[open] summary > svg,
+.cs-guide[open] summary > svg {
+  transform: rotate(180deg);
+}
+.cs-detail-content {
+  padding: 0 0 22px;
+}
+.cs-info-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 30px;
+  padding: 18px 20px;
+  margin: 0 0 5px;
+  border-radius: 10px;
+  background: var(--subtle);
+}
+.cs-info-grid > div,
+.cs-technical > div {
+  min-width: 0;
+}
+.cs-info-grid dt,
+.cs-technical dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+.cs-info-grid dd,
+.cs-technical dd {
+  margin: 6px 0 0;
+  color: var(--ink);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.cs-info-grid code,
+.cs-technical code {
+  font-size: 11px;
+}
+.cs-connection-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.cs-connection-message svg {
+  flex: none;
+  margin-top: 2px;
+}
+.cs-scope-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  padding: 15px 26px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+.cs-scope-row > div {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+}
+.cs-scope-row > p {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+.cs-namespace {
+  background: var(--subtle);
+  color: var(--muted);
+  padding: 3px 7px;
+  border-radius: 5px;
+  overflow-wrap: anywhere;
+}
+.cs-scope-action.ui-button {
+  font-size: 11px;
+}
+.cs-guide {
+  margin-top: 14px;
+}
+.cs-guide summary {
+  min-height: 42px;
+  padding: 10px 13px;
+  width: fit-content;
+  gap: 14px;
+}
+.cs-guide-content {
+  padding: 12px 24px 24px;
+}
+.cs-guide-start h3 {
+  font-size: 13px;
+  font-weight: 550;
+  margin-bottom: 8px;
+}
+.cs-guide-start p,
+.cs-contract-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.cs-guide-start pre {
+  width: fit-content;
+  min-width: 230px;
+  margin: 10px 0;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-radius: var(--ui-radius);
+  font-size: 12px;
+}
+.cs-technical {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 45px;
+  margin: 22px 0;
+}
+.cs-contract-note {
+  margin: 10px 0 0;
+}
+.connection-settings summary:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.connection-unavailable {
+  min-height: 360px;
+  display: grid;
+  place-content: center;
+}
+.connection-unavailable .ui-empty {
+  padding: 42px 24px;
+}
+@media (max-width: 900px) {
+  .cs-list-heading {
+    grid-template-columns: minmax(0, 1fr) 118px 105px;
+  }
+  .cs-service {
+    grid-template-columns: 38px minmax(0, 1fr) 118px 105px;
+    gap: 14px;
+  }
+  .cs-service-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .cs-connection-details {
+    margin-left: 78px;
+  }
+}
+@media (max-width: 650px) {
+  .cs-list-heading {
+    display: block;
+    padding: 18px 18px 7px;
+  }
+  .cs-list-heading > span {
+    display: none;
+  }
+  .cs-service {
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    gap: 9px 12px;
+    margin-inline: 18px;
+    padding: 20px 0;
+  }
+  .cs-service-icon {
+    width: 36px;
+    height: 36px;
+    grid-row: span 2;
+    align-self: start;
+    border-radius: 10px;
+  }
+  .cs-service-icon svg {
+    width: 19px;
+    height: 19px;
+  }
+  .cs-service-copy {
+    grid-column: 2 / -1;
+    padding-right: 4px;
+  }
+  .cs-service-copy h3 {
+    font-size: 13px;
+    margin-bottom: 3px;
+  }
+  .cs-service-copy p {
+    font-size: 11px;
+  }
+  .cs-service-status {
+    grid-column: 2;
+  }
+  .cs-service-status .ui-status {
+    font-size: 11px;
+  }
+  .cs-service > .ui-button {
+    grid-column: 3;
+    font-size: 11px;
+    min-height: 32px;
+    padding-inline: 9px;
+  }
+  .cs-connection-details {
+    margin: -10px 18px 0 66px;
+  }
+  .cs-info-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 15px;
+    padding: 15px;
+  }
+  .cs-scope-row {
+    grid-template-columns: 1fr auto;
+    gap: 8px 12px;
+    padding: 14px 18px;
+  }
+  .cs-scope-row > p {
+    grid-column: 1;
+    font-size: 10px;
+    padding-left: 24px;
+  }
+  .cs-scope-action {
+    grid-column: 2;
+    grid-row: 1 / 3;
+  }
+  .cs-guide-content {
+    padding: 12px 18px 22px;
+  }
+  .cs-technical {
+    display: grid;
+    gap: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-connection-details summary > svg,
+  .cs-guide summary > svg {
+    transition: none;
+  }
+}
+
+.cs-session {
+  max-width: 480px;
+  padding: 28px;
+  margin: 24px auto;
+}
+.cs-session h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 17px;
+  margin: 0 0 12px;
+}
+.cs-session > p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.cs-session form {
+  margin-top: 20px;
+}
+.cs-session .form-actions {
+  margin-top: 16px;
+}

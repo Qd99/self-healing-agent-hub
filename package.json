@@ -15,12 +15,16 @@
   ],
   "scripts": {
     "dev": "node apps/healing-hub/src/index.mjs",
-    "build": "tsc -b",
-    "test": "vitest",
+    "build": "npm run typecheck && npm run build:console",
+    "build:console": "node scripts/build-console.mjs",
+    "build:demo": "node scripts/build-console.mjs --demo",
+    "test": "node --test tests/*.test.mjs",
+    "test:watch": "node --test --watch tests/*.test.mjs",
+    "start": "node apps/healing-hub/src/index.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --project tsconfig.json"
   },
   "keywords": [
     "agent",

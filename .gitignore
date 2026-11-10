@@ -10,6 +10,8 @@ build/
 # Environment
 .env
 .env.local
+configs/healing-config.json
+configs/healing-rules.json
 *.key
 *.pem
 
