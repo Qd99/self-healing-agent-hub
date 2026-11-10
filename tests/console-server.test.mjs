@@ -64,6 +64,8 @@ const rules = {
 };
 
 const capabilities = {
+  importCi: false,
+  verifyResult: false,
   trigger: true,
   cancel: true,
   retry: true,

@@ -160,6 +160,10 @@ export function createApiClient({
       return result;
     },
     triggerTask: (body) => idempotentRequest("/api/healing/trigger", body),
+    importCiBuild: (body) =>
+      idempotentRequest("/api/healing/integrations/jenkins/builds", body),
+    verifyTask: (id, body) =>
+      request(`${taskPath(id)}/verification`, { method: "POST", body }),
     taskAction(id, action, body) {
       if (!["cancel", "retry"].includes(action))
         return Promise.reject(

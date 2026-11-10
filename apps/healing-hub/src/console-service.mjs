@@ -1,3 +1,9 @@
+import { hashCandidateV2 } from "../../../packages/framework/src/candidate.mjs";
+import { loadHealingIntegrations } from "./healing-integrations.mjs";
+import {
+  normalizeVerificationPolicy,
+  verificationTarget,
+} from "./github-verification.mjs";
 import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -317,6 +323,49 @@ function candidateHash(diff, evidence) {
     .update(JSON.stringify({ diff, evidence }))
     .digest("hex");
 }
+function entryCandidateHash(entry) {
+  return entry.proposal?.version === 2
+    ? hashCandidateV2({
+        task: entry.task,
+        action: entry.routingRule.processor.action,
+        summary: entry.proposal.summary,
+        candidate: entry.proposal.candidate,
+        diff: entry.diff,
+        evidence: entry.evidence,
+      })
+    : candidateHash(entry.diff, entry.evidence);
+}
+function readCandidate(value, entry) {
+  const c = object(value),
+    context = entry.task.payload.context;
+  if (
+    c.version !== 2 ||
+    context.source?.kind !== "jenkins" ||
+    entry.routingRule.processor.action !== "create-pr" ||
+    c.baseCommitSha !== context.commitSha ||
+    !/^[a-f0-9]{40}$/.test(c.baseCommitSha) ||
+    !/^[a-f0-9]{40}$/.test(c.treeSha) ||
+    !/^[a-f0-9]{64}$/.test(c.patchSha256) ||
+    c.artifactId !== c.patchSha256
+  )
+    fail(422, "CANDIDATE_MISMATCH", "候选必须绑定固定来源提交与完整产物。");
+  return {
+    version: 2,
+    baseCommitSha: c.baseCommitSha,
+    patchSha256: c.patchSha256,
+    treeSha: c.treeSha,
+    artifactId: c.artifactId,
+  };
+}
+function validateCompletionBinding(entry, body, lease) {
+  if (
+    entry.proposal?.version === 2 &&
+    lease.phase === "execute" &&
+    (body.proposalId !== entry.proposal.id ||
+      body.contentHash !== entry.proposal.contentHash)
+  )
+    fail(422, "CANDIDATE_MISMATCH", "完成回执与已批准候选不匹配。");
+}
 function commandFingerprint(command, body) {
   const normalize = (value) => {
     if (Array.isArray(value)) return value.map(normalize);
@@ -444,7 +493,10 @@ function validateSuccessfulResult(result, entry, lease) {
   }
   if (
     (action === "committed" && !changes?.commit) ||
-    (action === "pr-created" && !changes?.pr) ||
+    (action === "pr-created" &&
+      (!changes?.pr ||
+        (entry.proposal?.version === 2 &&
+          !/^[a-f0-9]{40}$/.test(changes?.commit ?? "")))) ||
     (action === "issue-created" && !changes?.issue)
   )
     invalid();
@@ -512,6 +564,32 @@ function validateStoredState(state) {
     text(entry.task.payload.repo, 200);
     branchName(entry.task.payload.branch);
     integer(entry.task.payload.context?.retryCount, 10000);
+    const source = entry.task.payload.context.source;
+    if (source) {
+      object(source);
+      if (
+        source.kind !== "jenkins" ||
+        source.result !== "FAILURE" ||
+        source.repo !== entry.task.payload.repo ||
+        source.branch !== entry.task.payload.branch ||
+        source.commitSha !== entry.task.payload.context.commitSha ||
+        source.buildUrl !== entry.task.payload.context.ciJobUrl ||
+        !/^[a-f0-9]{40}$/.test(source.commitSha) ||
+        !/^[a-f0-9]{64}$/.test(source.eventId) ||
+        !Number.isFinite(Date.parse(source.observedAt))
+      )
+        invalid();
+      for (const key of ["sourceId", "generation", "jobName", "buildUrl"])
+        text(source[key], 2000);
+      integer(source.buildNumber);
+      if (source.buildNumber < 1) invalid();
+    }
+    if (
+      entry.verificationPolicy &&
+      normalizeVerificationPolicy(entry.verificationPolicy)?.policyHash !==
+        entry.verificationPolicy.policyHash
+    )
+      invalid();
     object(entry.task.metadata);
     if (!Number.isFinite(Date.parse(entry.task.metadata.createdAt))) invalid();
     if (!Array.isArray(entry.trace) || !Array.isArray(entry.diff)) invalid();
@@ -609,9 +687,11 @@ function validateStoredState(state) {
         !UUID.test(entry.proposal.id) ||
         (entry.proposal.kind !== undefined &&
           entry.proposal.kind !== proposalKind(entry)) ||
-        entry.proposal.contentHash !== candidateHash(entry.diff, entry.evidence)
+        entry.proposal.contentHash !== entryCandidateHash(entry)
       )
         invalid();
+      if (entry.proposal.version === 2)
+        readCandidate(entry.proposal.candidate, entry);
       validateProposal(entry);
     }
   });
@@ -663,6 +743,13 @@ function publicTask(entry) {
         errorDetails: { message: task.payload.errorDetails.message },
         context: {
           retryCount: task.payload.context.retryCount,
+          ...(task.payload.context.source
+            ? {
+                source: copy(task.payload.context.source),
+                commitSha: task.payload.context.commitSha,
+                ciJobUrl: task.payload.context.ciJobUrl,
+              }
+            : {}),
           ...(task.payload.context.retryOf
             ? { retryOf: task.payload.context.retryOf }
             : {}),
@@ -700,6 +787,7 @@ function publicTask(entry) {
     ...(entry.proposal
       ? { proposal: { ...copy(entry.proposal), kind: proposalKind(entry) } }
       : {}),
+    ...(entry.verification ? { verification: copy(entry.verification) } : {}),
     ...(entry.result ? { result: copy(entry.result) } : {}),
     ...(entry.reconciliation
       ? { reconciliation: copy(entry.reconciliation) }
@@ -723,8 +811,19 @@ export function createHealingService({
   clock = () => new Date(),
   leaseMs = 60000,
   maxBytes,
+  integrationsConfig,
+  integrationsFetch = globalThis.fetch,
+  integrationsEnv = process.env,
 } = {}) {
   const root = resolve(rootDir);
+  const integrations = () =>
+    loadHealingIntegrations({
+      rootDir: root,
+      config: integrationsConfig,
+      fetchImpl: integrationsFetch,
+      env: integrationsEnv,
+      clock,
+    });
   if (!Number.isSafeInteger(leaseMs) || leaseMs < 1 || leaseMs > 3600000)
     throw new TypeError(
       "leaseMs must be a positive duration of at most one hour.",
@@ -945,7 +1044,11 @@ export function createHealingService({
       project: copy(config.project),
       safety: copy(config.safety),
       triggers: copy(config.triggers),
+      integrations: copy(config.integrations.snapshot),
       capabilities: {
+        importCi: writable && config.integrations.snapshot.jenkins.configured,
+        verifyResult:
+          writable && config.integrations.snapshot.verification.configured,
         trigger: writable && config.triggers.manual?.enabled !== false,
         cancel: writable,
         retry: writable,
@@ -1088,6 +1191,7 @@ export function createHealingService({
   async function mutate(actor, operation, includeSnapshot = true) {
     const identity = actorIdentity(actor);
     const config = await loadConsoleConfiguration(root);
+    config.integrations = await integrations();
     const time = now();
     await expire(time);
     const outcome = await store.transact((state) =>
@@ -1159,7 +1263,7 @@ export function createHealingService({
       fail(422, "INVALID_ROUTE", "匹配规则使用了不支持的引擎或操作。");
     return rule;
   }
-  function newTask(state, config, input, actor, at, retryOf) {
+  function newTask(state, config, input, actor, at, retryOf, trustedSource) {
     if (state.tasks.length >= MAX_TASKS)
       fail(503, "STORE_FULL", "任务记录已达到存储上限。");
     object(input);
@@ -1180,13 +1284,29 @@ export function createHealingService({
         type,
         priority,
         payload: {
-          repo: config.project.repo,
+          repo:
+            retryOf?.task.payload.repo ??
+            trustedSource?.repo ??
+            config.project.repo,
           branch,
           files: [],
           errorDetails: { message: description },
           context: {
             retryCount,
             ...(retryOf ? { retryOf: retryOf.task.id } : {}),
+            ...((retryOf?.task.payload.context.source ?? trustedSource)
+              ? {
+                  source: copy(
+                    retryOf?.task.payload.context.source ?? trustedSource,
+                  ),
+                  commitSha: (
+                    retryOf?.task.payload.context.source ?? trustedSource
+                  ).commitSha,
+                  ciJobUrl: (
+                    retryOf?.task.payload.context.source ?? trustedSource
+                  ).buildUrl,
+                }
+              : {}),
           },
         },
         metadata: {
@@ -1217,6 +1337,11 @@ export function createHealingService({
       diff: [],
       routingRule: copy(rule),
       safety: copy(config.safety),
+      ...(retryOf?.verificationPolicy
+        ? { verificationPolicy: copy(retryOf.verificationPolicy) }
+        : trustedSource && config.integrations.policy
+          ? { verificationPolicy: copy(config.integrations.policy) }
+          : {}),
       executionPhase: "diagnose",
       cancellationRequested: false,
     };
@@ -1388,6 +1513,13 @@ export function createHealingService({
     response,
     at,
   ) {
+    if (entry.verification)
+      entry.verification = {
+        ...entry.verification,
+        status: "stale",
+        message: "收到新执行回执，请重新核验。",
+      };
+    delete entry.verificationAttempt;
     entry.terminalLease = copy(lease);
     (entry.receipts ??= []).push({
       kind,
@@ -1398,8 +1530,195 @@ export function createHealingService({
     });
   }
   return {
+    async importJenkinsBuild(body, actor) {
+      object(body);
+      if (
+        Object.keys(body).some(
+          (key) => !["sourceId", "buildNumber", "requestId"].includes(key),
+        )
+      )
+        invalid();
+      const integration = await integrations();
+      const read = await integration.jenkins.readBuild(body);
+      return mutate(actor, (state, config, identity, time) => {
+        if (read.outcome === "ignored")
+          return {
+            changed: false,
+            value: {
+              outcome: "ignored",
+              message: "构建已完成且不是失败，无需导入。",
+            },
+          };
+        const source = read.source;
+        const existing = state.tasks.find(
+          (item) =>
+            !item.task.payload.context.retryOf &&
+            item.task.payload.context.source?.eventId === source.eventId,
+        );
+        if (existing) {
+          const original = existing.task.payload.context.source;
+          if (
+            ["repo", "branch", "commitSha", "sourceId"].some(
+              (k) => original[k] !== source[k],
+            )
+          )
+            fail(409, "SOURCE_CONFLICT", "同一构建事件的来源发生冲突。");
+          return {
+            changed: false,
+            value: {
+              taskId: existing.task.id,
+              outcome: "duplicate",
+              message: "此失败构建已导入。",
+            },
+          };
+        }
+        if (
+          source.repo !== config.project.repo ||
+          source.branch !== config.project.defaultBranch
+        )
+          fail(422, "SOURCE_MISMATCH", "Jenkins 来源与项目仓库或分支不一致。");
+        const entry = newTask(
+          state,
+          config,
+          {
+            title: `Jenkins ${source.jobName} #${source.buildNumber} 失败`,
+            type: "ci-failure",
+            priority: "high",
+            branch: source.branch,
+          },
+          identity,
+          time.toISOString(),
+          undefined,
+          source,
+        );
+        if (entry.routingRule.processor.action !== "create-pr")
+          fail(
+            422,
+            "INVALID_ROUTE",
+            "Jenkins 修复来源需要明确的 create-pr 路由。",
+          );
+        return {
+          changed: true,
+          value: {
+            taskId: entry.task.id,
+            outcome: "created",
+            message: "已导入固定失败提交，等待执行器诊断。",
+          },
+        };
+      });
+    },
+    async verifyResult(id, body, actor) {
+      object(body);
+      if (Object.keys(body).some((key) => key !== "expectedRevision"))
+        invalid();
+      const attemptId = randomUUID();
+      let input, fingerprint;
+      await mutate(
+        actor,
+        (state, config, identity, time) => {
+          if (!config.integrations.snapshot.verification.configured)
+            fail(422, "VERIFICATION_UNAVAILABLE", "独立核验未配置或不可用。");
+          const entry = taskFor(state, id);
+          checkRevision(body.expectedRevision, entry.revision);
+          if (
+            entry.proposal?.version !== 2 ||
+            !entry.verificationPolicy ||
+            !entry.result?.changes?.pr ||
+            !entry.result?.changes?.commit
+          )
+            fail(
+              422,
+              "VERIFICATION_UNAVAILABLE",
+              "任务尚无可独立核验的 v2 PR 回执。",
+            );
+          input = copy({
+            task: entry.task,
+            proposal: entry.proposal,
+            diff: entry.diff,
+            result: entry.result,
+            policy: entry.verificationPolicy,
+          });
+          fingerprint = commandFingerprint(
+            "verification",
+            verificationTarget(input),
+          );
+          entry.revision += 1;
+          entry.verificationAttempt = {
+            id: attemptId,
+            fingerprint,
+            revision: entry.revision,
+          };
+          if (entry.verification)
+            entry.verification = {
+              ...entry.verification,
+              status: "stale",
+              message: "新的独立核验正在进行。",
+            };
+          audit(
+            state,
+            "verification-start",
+            "已开始独立只读核验。",
+            identity,
+            time.toISOString(),
+            id,
+          );
+          return { changed: true, value: {} };
+        },
+        false,
+      );
+      // Every remote read is outside the serialized persistent transaction.
+      const integration = await integrations();
+      let verification = await integration.verifier.verify(input);
+      return mutate(actor, (state, config, identity, time) => {
+        const entry = taskFor(state, id),
+          attempt = entry.verificationAttempt;
+        if (
+          attempt?.id !== attemptId ||
+          attempt.fingerprint !== fingerprint ||
+          attempt.revision !== entry.revision ||
+          commandFingerprint(
+            "verification",
+            verificationTarget({
+              task: entry.task,
+              proposal: entry.proposal,
+              result: entry.result,
+              policy: entry.verificationPolicy,
+            }),
+          ) !== fingerprint
+        )
+          return {
+            changed: false,
+            value: { message: "核验目标已更新，此次过期结果未保存。" },
+          };
+        if (!config.integrations.snapshot.verification.configured)
+          verification = {
+            ...verification,
+            status: "error",
+            message: "独立核验配置在查询期间已禁用。",
+          };
+        entry.verification = verification;
+        delete entry.verificationAttempt;
+        entry.revision += 1;
+        audit(
+          state,
+          "verification",
+          verification.message,
+          identity,
+          time.toISOString(),
+          id,
+        );
+        return {
+          changed: true,
+          value: {
+            verification: copy(verification),
+            message: verification.message,
+          },
+        };
+      });
+    },
     async snapshot() {
       const config = await loadConsoleConfiguration(root);
+      config.integrations = await integrations();
       const time = now();
       let outcome;
       try {
@@ -1712,6 +2031,29 @@ export function createHealingService({
             fail(403, "WORKER_ID_MISMATCH", "执行器标识与认证身份不匹配。");
           if (!config.engines.some((engine) => engine.id === engineId))
             fail(422, "ENGINE_UNAVAILABLE", "指定引擎尚未配置。");
+          const filters = {};
+          for (const key of [
+            "actions",
+            "sourceKinds",
+            "candidateVersions",
+            "phases",
+          ])
+            if (body[key] !== undefined) {
+              if (
+                !Array.isArray(body[key]) ||
+                !body[key].length ||
+                body[key].length > 20
+              )
+                invalid();
+              filters[key] = body[key];
+            }
+          if (
+            filters.actions?.some((v) => !ROUTE_ACTIONS.has(v)) ||
+            filters.sourceKinds?.some((v) => v !== "jenkins") ||
+            filters.candidateVersions?.some((v) => ![1, 2].includes(v)) ||
+            filters.phases?.some((v) => !["diagnose", "execute"].includes(v))
+          )
+            invalid();
           const at = time.toISOString();
           const registered = state.workers.find(
             (item) =>
@@ -1742,6 +2084,28 @@ export function createHealingService({
             .find(
               (task) =>
                 task.engineId === engineId &&
+                (!filters.actions ||
+                  filters.actions.includes(
+                    task.routingRule.processor.action,
+                  )) &&
+                (!filters.sourceKinds ||
+                  filters.sourceKinds.includes(
+                    task.task.payload.context.source?.kind,
+                  )) &&
+                (!filters.candidateVersions ||
+                  filters.candidateVersions.includes(
+                    task.task.payload.context.source?.kind === "jenkins"
+                      ? 2
+                      : 1,
+                  )) &&
+                (!filters.phases ||
+                  filters.phases.includes(task.executionPhase)) &&
+                (task.task.payload.context.source?.kind !== "jenkins" ||
+                  filters.candidateVersions?.includes(2)) &&
+                (task.proposal?.version !== 2 ||
+                  task.executionPhase !== "execute" ||
+                  (task.proposalSubmission?.workerId === workerId &&
+                    task.proposalSubmission?.actorId === identity.id)) &&
                 task.status.status === "pending" &&
                 !task.lease &&
                 !task.cancellationRequested &&
@@ -1827,7 +2191,42 @@ export function createHealingService({
     },
     proposal(id, body, actor) {
       return workerMutation(actor, (state, config, identity, time) => {
+        object(body);
+        const existing = taskFor(state, id);
+        if (body.submissionId !== undefined && existing.proposalSubmission) {
+          const previous = existing.proposalSubmission;
+          if (
+            previous.submissionId === body.submissionId &&
+            previous.actorId === identity.id &&
+            (body.workerId === undefined ||
+              previous.workerId === body.workerId) &&
+            (!identity.workerId || identity.workerId === previous.workerId) &&
+            previous.leaseId === body.leaseId
+          ) {
+            if (previous.fingerprint !== commandFingerprint("proposal", body))
+              fail(
+                409,
+                "IDEMPOTENCY_CONFLICT",
+                "此候选提交标识已用于不同内容。",
+              );
+            return { changed: false, value: copy(previous.response) };
+          }
+        }
         const entry = activeLease(state, id, body, identity, "diagnose");
+        const candidate =
+          body.candidate === undefined
+            ? undefined
+            : readCandidate(body.candidate, entry);
+        if (entry.task.payload.context.source?.kind === "jenkins" && !candidate)
+          fail(422, "CANDIDATE_MISMATCH", "Jenkins 来源需要 v2 候选。");
+        if (candidate) {
+          text(body.submissionId, 128);
+          if (
+            body.workerId !== undefined &&
+            body.workerId !== entry.lease.workerId
+          )
+            fail(403, "WORKER_ID_MISMATCH", "候选提交的执行器与租约不一致。");
+        }
         const summary = text(body.summary, 4000);
         const kind = proposalKind(entry);
         const diff =
@@ -1849,7 +2248,32 @@ export function createHealingService({
           summary,
           submittedAt: at,
           contentHash: candidateHash(diff, evidence),
+          ...(candidate ? { version: 2, candidate } : {}),
         };
+        entry.proposal.contentHash = entryCandidateHash(entry);
+        const response = {
+          message: "已收到候选方案，等待代码审阅。",
+          taskId: id,
+          ...(candidate
+            ? {
+                proposal: {
+                  id: entry.proposal.id,
+                  version: 2,
+                  contentHash: entry.proposal.contentHash,
+                  candidate: copy(candidate),
+                },
+              }
+            : {}),
+        };
+        if (candidate)
+          entry.proposalSubmission = {
+            submissionId: body.submissionId,
+            actorId: identity.id,
+            workerId: entry.lease.workerId,
+            leaseId: entry.lease.id,
+            fingerprint: commandFingerprint("proposal", body),
+            response: copy(response),
+          };
         entry.trace.push(...trace, {
           id: randomUUID(),
           title: "候选方案已校验",
@@ -1914,7 +2338,7 @@ export function createHealingService({
         );
         return {
           changed: true,
-          value: { message: entry.status.message, taskId: id },
+          value: response,
         };
       });
     },
@@ -1923,6 +2347,7 @@ export function createHealingService({
         const context = receiptContext(state, id, body, identity, "complete");
         if (context.replay) return context.replay;
         const { entry, lease, fingerprint, late } = context;
+        validateCompletionBinding(entry, body, lease);
         const at = time.toISOString();
         const result = readResult(body.result, entry, lease, at);
         const interrupted = late || entry.cancellationRequested;
@@ -2003,6 +2428,8 @@ export function createHealingService({
         const context = receiptContext(state, id, body, identity, "cancelled");
         if (context.replay) return context.replay;
         const { entry, lease, fingerprint, late } = context;
+        if (body.result !== undefined)
+          validateCompletionBinding(entry, body, lease);
         if (!entry.cancellationRequested) conflict("此任务尚未请求取消。");
         const at = time.toISOString();
         const result =

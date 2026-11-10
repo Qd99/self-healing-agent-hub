@@ -17,6 +17,11 @@ import {
 import { filterActivities } from "./administration-model.js";
 import { uiButton, uiStatus, uiEmpty, uiSelect } from "./ui.js";
 import { renderTaskFeedback, renderReconciliation } from "./task-feedback.js";
+import {
+  renderCiImport,
+  renderTaskSource,
+  renderTaskVerification,
+} from "./ci-views.js";
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
@@ -120,7 +125,7 @@ function renderPage(s) {
   const activityCount = s.snapshot
     ? filterActivities(s.snapshot.activity, s.activityFilters).length
     : 0;
-  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading || s.refreshing, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger || Boolean(s.pendingAction) || s.authRequired, title: !s.snapshot?.capabilities.trigger ? "当前服务未开放创建任务" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : s.snapshot.capabilities.approve ? "服务端审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
+  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading || s.refreshing, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${s.view === "tasks" ? uiButton({ label: "导入 CI", icon: "Download", action: "ci-import-open", disabled: !s.snapshot || Boolean(s.pendingAction) || s.authRequired, title: s.snapshot?.integrations?.jenkins?.configured ? "导入 Jenkins 失败构建" : "查看 CI 来源接入状态" }) : ""}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger || Boolean(s.pendingAction) || s.authRequired, title: !s.snapshot?.capabilities.trigger ? "当前服务未开放创建任务" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : s.snapshot.capabilities.approve ? "服务端审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
   if (s.authRequired) return header + renderSessionForm(s);
   if (s.loading && s.view !== "settings")
     return (
@@ -239,10 +244,11 @@ export function renderTaskDetail(item, s) {
     )
     .join(
       "",
-    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderReconciliation(item, s)}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
+    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderTaskVerification(item, s)}${renderReconciliation(item, s)}${tab === "trace" ? renderTaskSource(item) : ""}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
 }
 
 export function renderCreate(s) {
+  if (s.createMode === "ci") return renderCiImport(s);
   const draft = {
     title: "",
     type: "type-error",

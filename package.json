@@ -24,7 +24,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "tsc --project tsconfig.json",
+    "worker": "node apps/healing-worker/src/index.mjs"
   },
   "keywords": [
     "agent",
@@ -49,6 +50,6 @@
     "mysql2": "^3.11.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.3.0"
   }
 }

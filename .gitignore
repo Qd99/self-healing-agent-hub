@@ -12,6 +12,8 @@ build/
 .env.local
 configs/healing-config.json
 configs/healing-rules.json
+configs/healing-integrations.json
+configs/healing-worker.json
 *.key
 *.pem
 
@@ -23,6 +25,7 @@ pnpm-debug.log*
 
 # Runtime
 .healing/
+.healing-worker/
 audit.jsonl
 decisions.json
 metrics.json
