@@ -1,5 +1,6 @@
 import { icon } from "./icons.js";
 import { renderStudioDashboard } from "./dashboard.js";
+import { renderConnectionSettings } from "./connection-views.js";
 import { renderApprovalPage } from "./approval-views.js";
 import { escapeHtml as e, formatDuration } from "./model.js";
 import { renderTaskPage } from "./task-views.js";
@@ -134,13 +135,13 @@ function renderPage(s) {
   const activityCount = s.snapshot
     ? filterActivities(s.snapshot.activity, s.activityFilters).length
     : 0;
-  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger, title: !s.snapshot?.capabilities.trigger ? "执行引擎尚未接入" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" ? uiStatus({ label: s.mode === "demo" ? "演示审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
-  if (s.loading)
+  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger, title: !s.snapshot?.capabilities.trigger ? "执行引擎尚未接入" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
+  if (s.loading && s.view !== "settings")
     return (
       header +
       `<div role="status" aria-label="正在读取配置" class="skeleton-block">${Array.from({ length: 4 }, () => `<div class="loading-row"><div class="loading-line"></div><div class="loading-line"></div></div>`).join("")}</div>`
     );
-  if (!s.snapshot && !["settings", "monitoring"].includes(s.view))
+  if (!s.snapshot && !["settings", "monitoring", "activity"].includes(s.view))
     return header + connectionError(s);
   const views = {
     overview: renderStudioDashboard,
@@ -151,12 +152,23 @@ function renderPage(s) {
     safety,
     activity: renderActivityPage,
     monitoring: renderMonitoringPage,
-    settings,
+    settings: renderConnectionSettings,
   };
   return header + views[s.view](s);
 }
-function connectionError(s) {
-  return `<div class="inline-notice error"><strong>无法连接管理服务</strong><p>${e(s.error || "请确认管理服务已经启动。")}</p><div class="row"><button class="ui-button btn compact" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button><button class="ui-button btn compact" ${action("mode", 'data-mode="demo"')}>查看演示</button></div></div>`;
+function connectionError() {
+  return `<section class="ui-card connection-unavailable">${uiEmpty({
+    icon: "Plug",
+    title: "尚未连接管理服务",
+    description: "连接后，任务和运行数据会显示在这里。",
+    action: uiButton({
+      label: "连接设置",
+      icon: "ArrowUpRight",
+      action: "navigate",
+      variant: "primary",
+      attrs: 'data-view="settings"',
+    }),
+  })}</section>`;
 }
 
 function engines(s) {
@@ -172,61 +184,6 @@ function safety(s) {
     <section class="ui-card"><header class="ui-section-header"><h2>${icon("RotateCcw", 17)}失败回滚</h2>${uiStatus({ label: a.autoRollback?.enabled ? "配置已启用" : "未启用", tone: a.autoRollback?.enabled ? "success" : "neutral" })}</header><dl class="ui-config-grid">${property("等待 CI 结果", formatDuration(a.autoRollback?.ciTimeout))}${property("通知目标", e(a.autoRollback?.notifyOn?.join("、") || "未配置"))}</dl></section>
     <section class="ui-card"><header class="ui-section-header"><h2>${icon("ShieldAlert", 17)}连续失败保护</h2>${uiStatus({ label: a.circuitBreaker?.enabled ? "配置已启用" : "未启用", tone: a.circuitBreaker?.enabled ? "success" : "neutral" })}</header><dl class="ui-config-grid">${property("失败阈值", `${e(a.circuitBreaker?.windowMinutes ?? "—")} 分钟内 ${e(a.circuitBreaker?.failureThreshold ?? "—")} 次`)}${property("冷却时间", `${e(a.circuitBreaker?.cooldownMinutes ?? "—")} 分钟`)}</dl></section>
     <details class="ui-card ui-fold"><summary>配置如何生效</summary><div class="ui-fold-content">${s.mode === "demo" ? "此处为演示策略。" : s.snapshot.configSource === "example" ? "此处为示例文件中的策略。" : "此处为已读取的项目策略。"}执行层尚未接入，配置启用不代表防护正在运行。每次任务的检查结果、回滚情况应以任务详情中的实际证据为准。</div></details></div>`;
-}
-
-function settings(s) {
-  const snap = s.snapshot;
-  const demo = s.mode === "demo";
-  const unavailable = Boolean(s.error) || !snap;
-  const tone = unavailable ? "error" : demo ? "demo" : "connected";
-  const status = unavailable ? "未连接" : demo ? "演示可用" : "已连接 · 只读";
-  const sourceFile = (kind) => {
-    if (!snap) return "未读取";
-    if (demo) return "演示模板";
-    const source = kind === "config" ? snap.configSource : snap.rulesSource;
-    if (source === "configured") return `healing-${kind}.json`;
-    if (source === "example") return `healing-${kind}.example.json`;
-    return "未提供";
-  };
-  const demoActions =
-    !unavailable &&
-    ["trigger", "cancel", "retry", "approve"].some(
-      (key) => snap?.capabilities?.[key] === true,
-    );
-  const readAt = snap?.generatedAt;
-  return `<section class="connection-settings" aria-label="工作空间连接">
-    <div class="cs-card ui-card">
-      <header class="cs-header"><h2>数据来源</h2>${!unavailable ? `<button type="button" class="cs-refresh ui-button ui-button-ghost" ${action("refresh")} aria-label="刷新连接状态">${icon("RefreshCw", 14)}刷新</button>` : ""}</header>
-      <div class="cs-sources" role="group" aria-label="选择数据来源">
-        <button type="button" class="cs-source ${demo ? "is-active" : ""}" ${action("mode", 'data-mode="demo"')} aria-pressed="${demo}">${icon("FlaskConical", 19)}<span><strong>交互演示</strong><small>会话内模拟</small></span></button>
-        <button type="button" class="cs-source ${!demo ? "is-active" : ""}" ${action("mode", 'data-mode="live"')} aria-pressed="${!demo}">${icon("Plug", 19)}<span><strong>管理服务</strong><small>同源只读配置</small></span></button>
-      </div>
-      ${unavailable ? `<div class="cs-error" role="alert">${icon("WifiOff", 18)}<div><strong>${demo ? "演示数据暂不可用" : "无法连接管理服务"}</strong><p>${e(s.error || "请启动管理服务后重新连接。")}</p></div><button type="button" class="cs-reconnect ui-button" ${action("refresh")}>${icon("RefreshCw", 13)}重新连接</button></div>` : ""}
-      <dl class="cs-properties">
-        <div><dt>项目</dt><dd class="cs-project">${e(snap?.project?.repo || "—")}</dd></div>
-        <div><dt>分支</dt><dd><code>${e(snap?.project?.defaultBranch || "—")}</code></dd></div>
-        <div><dt>连接状态</dt><dd>${uiStatus({ label: status, tone: unavailable ? "error" : demo ? "info" : "success", className: "cs-status" })}</dd></div>
-        <div><dt>最近读取</dt><dd>${readAt ? `<time datetime="${e(readAt)}">${dateTime(readAt)}<span class="cs-timezone">UTC+8</span></time>` : "—"}</dd></div>
-      </dl>
-      <dl class="cs-capabilities" aria-label="可用能力">
-        <div><dt>${demo ? "演示操作" : "配置读取"}</dt><dd class="${(!demo && !unavailable) || demoActions ? "is-available" : ""}">${unavailable ? "未连接" : demo && !demoActions ? "未开放" : "可用"}</dd></div>
-        <div><dt>真实执行</dt><dd>未接入</dd></div>
-      </dl>
-      <details class="cs-details">
-        <summary><span>${icon("Terminal", 15)}接入与接口信息</span>${icon("ChevronDown", 14)}</summary>
-        <div class="cs-details-content">
-          <div class="cs-setup"><h3>本地启动</h3><p>在仓库根目录运行：</p><pre><code>npm run dev</code></pre><p>默认地址 <code>http://127.0.0.1:8787</code></p></div>
-          <dl class="cs-technical">
-            <div><dt>管理接口</dt><dd><code>GET /api/healing/snapshot</code></dd></div>
-            <div><dt>项目配置</dt><dd><code>${e(sourceFile("config"))}</code></dd></div>
-            <div><dt>路由规则</dt><dd><code>${e(sourceFile("rules"))}</code></dd></div>
-          </dl>
-          <p class="cs-contract-note">真实执行、审批与回滚尚未接入，任务写入接口返回 501。</p>
-        </div>
-      </details>
-    </div>
-    <div class="ui-card ui-settings-link-card"><button type="button" class="ui-settings-link" data-action="monitoring-configure">${icon("ChartNoAxesCombined", 19)}<span class="grow"><strong>监控面板</strong><small>Grafana · Prometheus 数据源 · 命名空间</small></span>${icon("ChevronRight", 15)}</button></div>
-  </section>`;
 }
 
 export function renderTaskDetail(item, s) {

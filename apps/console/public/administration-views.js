@@ -3,9 +3,9 @@ import { escapeHtml as e } from "./model.js";
 import { uiButton, uiSearch, uiSelect, uiStatus, uiEmpty } from "./ui.js";
 import {
   ACTIVITY_CATEGORIES,
+  ACTIVITY_LEVELS,
   DEFAULT_ACTIVITY_FILTERS,
   DEFAULT_RULE_FILTERS,
-  activityDateKey,
   administrationEngineName,
   canUpdateRules,
   describeActivity,
@@ -13,11 +13,14 @@ import {
   describeRuleProcessor,
   filterActivities,
   filterRules,
-  groupActivities,
+  getActivityPage,
 } from "./administration-model.js";
 
 const timeFormatter = new Intl.DateTimeFormat("zh-CN", {
   timeZone: "Asia/Shanghai",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
@@ -27,12 +30,17 @@ const dateFormatter = new Intl.DateTimeFormat("zh-CN", {
   year: "numeric",
   month: "long",
   day: "numeric",
-  weekday: "long",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
 });
-const timeOf = (at) =>
-  Number.isFinite(Date.parse(at || ""))
-    ? timeFormatter.format(new Date(at))
-    : "时间未提供";
+const timeOf = (at, full = false) =>
+  typeof at === "string" && Number.isFinite(Date.parse(at))
+    ? (full ? dateFormatter : timeFormatter).format(new Date(at))
+    : typeof at === "string" && at.trim()
+      ? "时间无效"
+      : "时间未提供";
 const sourceOf = (s) =>
   s.mode === "demo"
     ? "演示模板"
@@ -53,46 +61,43 @@ const taskButton = (id, label, tab = "trace") =>
 const resetButton = (action) =>
   uiButton({ label: "重置筛选", action, variant: "ghost" });
 
-function renderOperation(entry, tasks) {
+function renderOperation(entry) {
   const description = describeActivity(entry);
-  const relatedTask =
-    entry.taskId && tasks.find((item) => item.task.id === entry.taskId);
-  const tone =
-    entry.level === "error"
-      ? "error"
-      : entry.level === "warning"
-        ? "warning"
-        : "neutral";
-  const category =
-    ACTIVITY_CATEGORIES.find((item) => item.value === description.category)
-      ?.label || "其他操作";
-  return `<li class="adm-operation adm-operation-${tone}">
-    <span class="adm-operation-icon" aria-hidden="true" title="${e(category)}">${icon(description.icon, 16)}</span>
-    <div class="adm-operation-body">
-      <div class="adm-operation-heading"><p><strong>${e(description.label)}</strong><span class="adm-operation-category sr-only">${e(category)}</span><span class="adm-operation-actor">${icon("Fingerprint", 12)}${e(description.actor)}</span></p><time datetime="${e(entry.at || "")}" title="${e(entry.at || "时间未提供")}">${e(timeOf(entry.at))}</time></div>
-      <div class="adm-operation-detail">
-        ${description.message ? `<p class="adm-operation-message">${e(description.message)}</p>` : ""}
-        ${entry.taskId ? `<div class="adm-operation-meta"><div class="adm-operation-target">${relatedTask ? `${taskButton(entry.taskId, entry.taskId)}${taskButton(entry.taskId, "执行日志", "logs")}` : `<span class="adm-operation-task-id">${icon("ListChecks", 12)}${e(entry.taskId)}</span><span>关联任务未提供</span>`}</div></div>` : entry.ruleId ? `<div class="adm-operation-meta"><span class="adm-operation-rule-id">${icon("Workflow", 12)}${e(entry.ruleId)}</span></div>` : ""}
-      </div>
-    </div>
-  </li>`;
+  const id = typeof entry.id === "string" ? entry.id : "";
+  const target =
+    typeof entry.taskId === "string" && entry.taskId.trim()
+      ? entry.taskId
+      : typeof entry.ruleId === "string" && entry.ruleId.trim()
+        ? entry.ruleId
+        : "—";
+  const timestamp = typeof entry.at === "string" ? entry.at : "";
+  const actionLabel = `查看${description.label}；${target === "—" ? "未关联对象" : target}；${description.actor}；${timeOf(timestamp)}；${description.level.label}`;
+  return `<tr class="adm-activity-row" ${id ? `data-action="activity-detail" data-id="${e(id)}"` : ""}>
+    <td class="adm-activity-action-cell">${uiButton({ label: description.label, icon: description.icon, action: id ? "activity-detail" : undefined, variant: "ghost", className: "adm-activity-action", disabled: !id, title: description.label, attrs: `data-id="${e(id)}" aria-label="${e(actionLabel)}"` })}${!id && description.message ? `<span class="sr-only">${e(description.message)}</span>` : ""}</td>
+    <td class="adm-activity-object"><span title="${e(target)}">${e(target)}</span></td>
+    <td class="adm-activity-actor"><span title="${e(description.actor)}">${e(description.actor)}</span></td>
+    <td class="adm-activity-time">${Number.isFinite(Date.parse(timestamp)) ? `<time datetime="${e(timestamp)}" title="${e(timestamp)}">${e(timeOf(timestamp))}</time>` : `<span title="${e(timestamp)}">${e(timeOf(timestamp))}</span>`}</td>
+    <td class="adm-activity-level">${uiStatus({ label: description.level.label, tone: description.level.tone, title: description.level.raw })}</td>
+  </tr>`;
 }
 
 export function renderActivityPage(s) {
+  if (!s.snapshot)
+    return `<section class="ui-card adm-workspace adm-activity" aria-label="操作记录">${uiEmpty({ icon: "History", title: "尚未读取操作记录", description: "管理服务连接后，任务操作、审批与规则变更的记录会显示在这里。", action: uiButton({ label: "连接设置", icon: "Plug", action: "navigate", attrs: 'data-view="settings"' }) })}</section>`;
   const filters = { ...DEFAULT_ACTIVITY_FILTERS, ...s.activityFilters };
-  const all = s.snapshot?.activity || [];
-  const filtered = filterActivities(all, filters);
+  const all = filterActivities(s.snapshot.activity);
+  const page = getActivityPage(all, { filters, page: s.activityPage });
   const active = Boolean(
-    filters.query.trim() ||
+    String(filters.query || "").trim() ||
     filters.category !== "all" ||
+    filters.level !== "all" ||
     Number(filters.days) > 0,
   );
-  const today = activityDateKey(new Date().toISOString());
-  const groups = groupActivities(filtered);
   return `<section class="ui-card adm-workspace adm-activity" aria-label="操作记录">
     <div class="ui-toolbar adm-toolbar">
-      ${uiSearch({ id: "activity-search", value: filters.query, label: "搜索操作记录", placeholder: "搜索操作、操作者或任务…", className: "adm-search" })}
+      ${uiSearch({ id: "activity-search", value: filters.query, label: "搜索操作记录", placeholder: "搜索操作、对象或操作者…", className: "adm-search" })}
       ${uiSelect({ id: "activity-category", value: filters.category, options: ACTIVITY_CATEGORIES, label: "操作类型" })}
+      ${uiSelect({ id: "activity-level", value: filters.level, options: ACTIVITY_LEVELS, label: "记录级别" })}
       ${uiSelect({
         id: "activity-days",
         value: String(filters.days),
@@ -107,7 +112,7 @@ export function renderActivityPage(s) {
       })}
       ${active ? resetButton("activity-reset") : ""}
     </div>
-    <div class="adm-list-summary"><span role="status" aria-live="polite">${icon("History", 14)}${active ? `筛选出 ${filtered.length} 条，共 ${all.length} 条` : `${all.length} 条操作记录`}</span><span>${icon("Clock3", 13)}北京时间</span></div>
+    <div class="adm-list-summary"><span role="status" aria-live="polite">${active ? `筛选出 ${page.total} 条，共 ${all.length} 条` : `${all.length} 条操作记录`}</span><span>北京时间</span></div>
     ${
       !all.length
         ? uiEmpty({
@@ -115,26 +120,46 @@ export function renderActivityPage(s) {
             title: "还没有操作记录",
             description: "任务操作、审批与规则变更的记录会显示在这里。",
           })
-        : !filtered.length
+        : !page.total
           ? uiEmpty({
               icon: "Search",
               title: "没有匹配的操作记录",
               description: "试试其他关键词或扩大时间范围。",
               action: resetButton("activity-reset"),
             })
-          : `<div class="adm-operation-groups">${groups
-              .map((group) => {
-                const date =
-                  group.date === "unknown"
-                    ? "时间未提供"
-                    : dateFormatter.format(
-                        new Date(`${group.date}T12:00:00+08:00`),
-                      );
-                return `<section class="adm-operation-group"><h2>${icon("CalendarDays", 14)}${group.date === today ? `<span>今天</span><span class="adm-date-label">${e(date)}</span>` : e(date)}<span class="adm-date-count">${group.items.length} 条</span></h2><ol>${group.items.map((entry) => renderOperation(entry, s.snapshot?.tasks || [])).join("")}</ol></section>`;
-              })
-              .join("")}</div>`
+          : `<div class="adm-activity-table-wrap"><table class="ui-table adm-activity-table"><caption class="sr-only">操作记录，最新记录在前</caption><thead><tr><th scope="col">操作</th><th scope="col">关联对象</th><th scope="col">操作者</th><th scope="col">时间</th><th scope="col">记录级别</th></tr></thead><tbody>${page.items.map(renderOperation).join("")}</tbody></table></div>
+          <div class="adm-pagination"><span>显示 ${page.start}–${page.end} 条，共 ${page.total} 条</span><nav aria-label="操作记录分页">${uiButton({ label: "上一页", icon: "ChevronLeft", action: "activity-page", variant: "ghost", disabled: page.page <= 1, attrs: `id="activity-page-prev" data-page="${page.page - 1}"` })}<span aria-live="polite">${page.page} / ${page.pageCount}</span>${uiButton({ label: "下一页", icon: "ChevronRight", action: "activity-page", variant: "ghost", disabled: page.page >= page.pageCount, attrs: `id="activity-page-next" data-page="${page.page + 1}"` })}</nav></div>`
     }
   </section>`;
+}
+
+export function renderActivityDetail(entry = {}, s = {}) {
+  const record = entry && typeof entry === "object" ? entry : {};
+  const description = describeActivity(record);
+  const taskId = typeof record.taskId === "string" ? record.taskId : "";
+  const ruleId = typeof record.ruleId === "string" ? record.ruleId : "";
+  const tasks = Array.isArray(s.snapshot?.tasks) ? s.snapshot.tasks : [];
+  const rules = Array.isArray(s.snapshot?.rules) ? s.snapshot.rules : [];
+  const relatedTask = taskId && tasks.some((item) => item?.task?.id === taskId);
+  const relatedRule = ruleId && rules.some((rule) => rule?.id === ruleId);
+  const timestamp = typeof record.at === "string" ? record.at : "";
+  const validTime = Number.isFinite(Date.parse(timestamp));
+  const category = ACTIVITY_CATEGORIES.find(
+    (item) => item.value === description.category,
+  )?.label;
+  return `<div class="detail-top adm-activity-detail-top"><span title="${e(typeof record.id === "string" ? record.id : "")}">操作记录 / <span class="mono">${e(typeof record.id === "string" && record.id ? record.id : "标识未提供")}</span></span>${uiButton({ label: "", icon: "X", action: "close-detail", variant: "ghost", className: "ui-icon-button", attrs: 'aria-label="关闭操作详情"' })}</div>
+    <div class="detail-heading adm-activity-detail-heading"><span>${icon(description.icon, 15)}${e(category)}</span><h2 id="detail-title">${e(description.label)}</h2></div>
+    <div class="detail-content adm-activity-detail">
+      <dl class="adm-activity-properties">
+        <div><dt>操作者</dt><dd>${e(description.actor)}</dd></div>
+        <div><dt>发生时间</dt><dd>${validTime ? `<time datetime="${e(timestamp)}">${e(timeOf(timestamp, true))}</time><small>北京时间</small>` : e(timeOf(timestamp))}${timestamp ? `<code>${e(timestamp)}</code>` : ""}</dd></div>
+        <div><dt>记录级别</dt><dd>${uiStatus({ label: description.level.label, tone: description.level.tone })}${description.level.raw ? `<code>${e(description.level.raw)}</code>` : ""}</dd></div>
+        ${taskId ? `<div><dt>关联任务</dt><dd>${e(taskId)}${!relatedTask ? "<small>当前记录中未提供该任务</small>" : ""}</dd></div>` : ""}
+        ${ruleId ? `<div><dt>关联规则</dt><dd>${e(ruleId)}${!relatedRule ? "<small>当前记录中未提供该规则</small>" : ""}</dd></div>` : ""}
+      </dl>
+      <section class="adm-activity-message"><h3>记录内容</h3><p>${e(description.message || "未提供消息")}</p></section>
+    </div>
+    <div class="detail-bottom adm-activity-detail-bottom"><div class="adm-detail-actions">${relatedTask ? `${taskButton(taskId, "查看任务")}${taskButton(taskId, "执行日志", "logs")}` : ""}${relatedRule ? uiButton({ label: "查看规则", icon: "Workflow", action: "rule-detail", variant: "ghost", attrs: `data-id="${e(ruleId)}"` }) : ""}</div>${uiButton({ label: "关闭", action: "close-detail" })}</div>`;
 }
 
 function ruleToggle(rule, s) {

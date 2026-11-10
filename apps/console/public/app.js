@@ -1,6 +1,7 @@
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { createTaskController } from "./task-controller.js";
 import { createAdministrationController } from "./administration-controller.js";
+import { renderActivityDetail } from "./administration-views.js";
 import { createMonitoringController } from "./monitoring-controller.js";
 import { installInteractionFeedback } from "./interaction.js";
 import { uiStatus } from "./ui.js";
@@ -80,6 +81,7 @@ const administrationController = createAdministrationController({
   render,
   toast,
   openRule,
+  openActivity,
   setSnapshot(next) {
     state.snapshot = next;
     demoSnapshot = next;
@@ -196,6 +198,21 @@ function openRule(id) {
   state.selectedTask = "";
   if (!detailDialog.open) lastFocus = document.activeElement;
   detailDialog.innerHTML = renderRuleDetail(rule, state);
+  if (!detailDialog.open) detailDialog.showModal();
+  detailDialog.querySelector('[data-action="close-detail"]')?.focus();
+}
+function openActivity(id) {
+  const entries = state.snapshot?.activity;
+  const entry = Array.isArray(entries)
+    ? entries.find((item) => item?.id === id)
+    : null;
+  if (!entry) {
+    toast("这条操作记录已不存在。");
+    return;
+  }
+  state.selectedTask = "";
+  if (!detailDialog.open) lastFocus = document.activeElement;
+  detailDialog.innerHTML = renderActivityDetail(entry, state);
   if (!detailDialog.open) detailDialog.showModal();
   detailDialog.querySelector('[data-action="close-detail"]')?.focus();
 }
@@ -333,7 +350,7 @@ async function loadData(mode = state.mode) {
       ?.includes("application/json");
     if (!isJson)
       throw new Error(
-        "此地址没有提供管理 API。请在仓库运行 npm run dev，或选择交互演示。",
+        "当前站点尚未提供管理接口，请启动管理服务后，从服务地址打开工作台。",
       );
     const data = await response.json();
     if (!response.ok)
@@ -438,8 +455,17 @@ document.addEventListener("click", (event) => {
       })
     )
       go("tasks");
-  } else if (action === "monitoring-configure") go("monitoring");
-  else if (action === "select-approval") selectApproval(id);
+  } else if (action === "monitoring-configure") {
+    go("monitoring");
+    const field = [
+      "monitor-baseUrl",
+      "monitor-datasourceUid",
+      "monitor-namespaces",
+    ].includes(button.dataset.field)
+      ? button.dataset.field
+      : "monitor-baseUrl";
+    document.getElementById(field)?.focus({ preventScroll: true });
+  } else if (action === "select-approval") selectApproval(id);
   else if (action === "flow-node") {
     const nodeId = button.dataset.nodeId;
     if (state.view !== "approvals" || state.approvalTaskId !== id)

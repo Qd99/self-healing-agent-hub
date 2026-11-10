@@ -3,9 +3,11 @@ import {
   DEFAULT_ACTIVITY_FILTERS,
   DEFAULT_RULE_FILTERS,
   ACTIVITY_CATEGORIES,
+  ACTIVITY_LEVELS,
   canUpdateRules,
   exportActivitiesJSON,
   filterActivities,
+  getActivityPage,
 } from "./administration-model.js";
 
 const searchFields = {
@@ -18,6 +20,7 @@ export function createAdministrationController({
   render,
   toast,
   openRule,
+  openActivity,
   setSnapshot,
 }) {
   function reconcile() {
@@ -25,6 +28,10 @@ export function createAdministrationController({
       ...DEFAULT_ACTIVITY_FILTERS,
       ...state.activityFilters,
     };
+    state.activityPage = getActivityPage(state.snapshot?.activity, {
+      filters: state.activityFilters,
+      page: state.activityPage,
+    }).page;
     state.ruleFilters = { ...DEFAULT_RULE_FILTERS, ...state.ruleFilters };
   }
   reconcile();
@@ -54,6 +61,7 @@ export function createAdministrationController({
   function handleInput(event) {
     const key = searchFields[event.target?.id];
     if (!key || !Object.hasOwn(searchFields, event.target.id)) return false;
+    if (key === "activityFilters") state.activityPage = 1;
     state[key].query = String(event.target.value || "");
     if (!event.isComposing) redraw(event.target.id);
     return true;
@@ -72,6 +80,12 @@ export function createAdministrationController({
       state.activityFilters.days = [0, 1, 7, 30, 90].includes(Number(value))
         ? Number(value)
         : 0;
+    } else if (id === "activity-level") {
+      state.activityFilters.level = ACTIVITY_LEVELS.some(
+        (item) => item.value === value,
+      )
+        ? value
+        : "all";
     } else if (id === "rules-status") {
       state.ruleFilters.status = ["all", "enabled", "disabled"].includes(value)
         ? value
@@ -83,6 +97,8 @@ export function createAdministrationController({
           ? value
           : "all";
     } else return false;
+    if (["activity-category", "activity-days", "activity-level"].includes(id))
+      state.activityPage = 1;
     redraw(id);
     return true;
   }
@@ -90,7 +106,34 @@ export function createAdministrationController({
   function handleClick(event, button) {
     if (!button || button.disabled) return false;
     const { action, id } = button.dataset || {};
-    if (action === "rule-detail") {
+    if (action === "activity-detail") {
+      const exists =
+        typeof id === "string" &&
+        Array.isArray(state.snapshot?.activity) &&
+        state.snapshot.activity.some((entry) => entry?.id === id);
+      if (exists) {
+        // Row clicks use the same focusable action as keyboard activation.
+        button.querySelector?.('[data-action="activity-detail"]')?.focus({
+          preventScroll: true,
+        });
+        openActivity?.(id);
+      } else toast("这条操作记录已不存在。");
+    } else if (action === "activity-page") {
+      state.activityPage = getActivityPage(state.snapshot?.activity, {
+        filters: state.activityFilters,
+        page: button.dataset.page,
+      }).page;
+      redraw(button.id);
+      if (typeof document !== "undefined") {
+        const current = document.getElementById(button.id);
+        if (current?.disabled)
+          document
+            .querySelector(
+              '.adm-pagination [data-action="activity-page"]:not(:disabled)',
+            )
+            ?.focus({ preventScroll: true });
+      }
+    } else if (action === "rule-detail") {
       if (state.snapshot?.rules.some((rule) => rule.id === id)) openRule(id);
       else toast("这条路由规则已不存在。");
     } else if (action === "toggle-rule") {
@@ -121,6 +164,7 @@ export function createAdministrationController({
       }
     } else if (action === "activity-reset") {
       state.activityFilters = { ...DEFAULT_ACTIVITY_FILTERS };
+      state.activityPage = 1;
       redraw("activity-search");
     } else if (action === "rules-reset") {
       state.ruleFilters = { ...DEFAULT_RULE_FILTERS };
@@ -157,6 +201,7 @@ export function createAdministrationController({
 
   function reset() {
     state.activityFilters = { ...DEFAULT_ACTIVITY_FILTERS };
+    state.activityPage = 1;
     state.ruleFilters = { ...DEFAULT_RULE_FILTERS };
   }
 

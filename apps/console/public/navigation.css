@@ -189,45 +189,6 @@ body::before {
 .project-name {
   max-width: 430px;
 }
-.topbar-actions {
-  gap: 14px;
-}
-.topbar .search-trigger.ui-icon-button {
-  width: 154px;
-  height: 30px;
-  min-height: 30px;
-  border: 1px solid transparent;
-  border-radius: var(--ui-radius);
-  padding: 0 10px;
-  justify-content: flex-start;
-  gap: 8px;
-  background: color-mix(in srgb, var(--surface) 74%, transparent);
-  font-size: 11px;
-}
-.topbar .search-trigger:hover {
-  background: var(--hover);
-}
-.topbar .mode-badge {
-  background: transparent;
-  border: 0;
-  padding: 4px 0 4px 8px;
-  font-size: 11px;
-  color: var(--muted);
-  box-shadow: none;
-}
-.mode-badge.connection-loading::before {
-  background: var(--amber);
-  animation: nav-pulse 1.5s ease-in-out infinite;
-}
-.mode-badge.connection-error {
-  color: var(--red);
-}
-.mode-badge.connection-error::before {
-  background: var(--red);
-}
-.mode-badge.connection-readonly::before {
-  background: var(--green);
-}
 .content {
   padding: 28px 32px 36px;
   max-width: 1480px;

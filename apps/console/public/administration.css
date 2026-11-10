@@ -1,4 +1,4 @@
-/* Bordered administration workspaces with explicit, local action targets. */
+/* Administration layouts compose the shared surface, control, and status tokens. */
 .adm-workspace {
   min-width: 0;
 }
@@ -52,188 +52,196 @@
   flex: none;
   color: var(--faint);
 }
-.adm-operation-groups {
-  border-radius: 0 0 var(--ui-card-radius) var(--ui-card-radius);
+.adm-activity .adm-toolbar {
+  padding-bottom: 12px;
 }
-.adm-operation-group h2 {
+.adm-activity .adm-list-summary {
+  padding-top: 0;
+  padding-bottom: 12px;
+  border: 0;
+  background: transparent;
+}
+.adm-activity-table-wrap {
+  min-width: 0;
+  overflow: hidden;
+}
+.adm-activity-table {
+  table-layout: fixed;
+}
+.adm-activity-table th {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.adm-activity-table td {
+  height: 56px;
+  padding: 8px 16px;
+  border-bottom-color: var(--line-soft);
+}
+.adm-activity-table.ui-table th,
+.adm-activity-table.ui-table td {
+  border-bottom-color: var(--line-soft);
+}
+.adm-activity-table th:first-child,
+.adm-activity-table td:first-child {
+  padding-left: 20px;
+}
+.adm-activity-table th:last-child,
+.adm-activity-table td:last-child {
+  padding-right: 20px;
+}
+.adm-activity-table th:nth-child(1) {
+  width: 28%;
+}
+.adm-activity-table th:nth-child(2) {
+  width: 19%;
+}
+.adm-activity-table th:nth-child(3) {
+  width: 15%;
+}
+.adm-activity-table th:nth-child(4) {
+  width: 25%;
+}
+.adm-activity-table th:nth-child(5) {
+  width: 13%;
+}
+.adm-activity-row[data-action] {
+  cursor: pointer;
+}
+.adm-activity-row:focus-within {
+  background: color-mix(in srgb, var(--subtle) 65%, var(--surface));
+}
+.adm-activity-table .adm-activity-action.ui-button {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  padding-inline: 0;
+  gap: 10px;
+  background: transparent;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+}
+.adm-activity-action > span,
+.adm-activity-object > span,
+.adm-activity-actor > span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-activity-action > svg {
+  flex: none;
+  color: var(--faint);
+}
+.adm-activity-object {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.adm-activity-object,
+.adm-activity-actor,
+.adm-activity-time {
+  color: var(--muted);
+}
+.adm-activity-table .adm-activity-time {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.adm-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.adm-pagination nav {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0;
-  min-height: 38px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 550;
-}
-.adm-operation-group + .adm-operation-group h2 {
-  border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--subtle) 55%, var(--surface));
-}
-.adm-operation-group h2 > svg {
-  flex: none;
-  color: var(--faint);
-}
-.adm-date-label,
-.adm-date-count {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 400;
-}
-.adm-date-count {
-  flex: none;
   margin-left: auto;
-  font-variant-numeric: tabular-nums;
 }
-.adm-operation-group ol {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.adm-pagination nav > span {
+  min-width: 34px;
+  text-align: center;
 }
-.adm-operation {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  align-items: start;
-  min-height: 84px;
-  gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--line);
-  transition: background 0.16s;
-}
-.adm-operation:last-child {
-  border-bottom: 0;
-}
-.adm-operation:hover,
-.adm-operation:focus-within {
-  background: color-mix(in srgb, var(--subtle) 70%, var(--surface));
-}
-.adm-operation-icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--subtle);
-  color: var(--muted);
-}
-.adm-operation-warning .adm-operation-icon {
-  color: var(--amber);
-  border-color: color-mix(in srgb, var(--amber) 18%, var(--line));
-  background: var(--amber-bg);
-}
-.adm-operation-error .adm-operation-icon {
-  color: var(--red);
-  border-color: color-mix(in srgb, var(--red) 18%, var(--line));
-  background: var(--red-bg);
-}
-.adm-operation-body {
-  min-width: 0;
-}
-.adm-operation-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 14px;
-}
-.adm-operation-heading p {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.adm-operation-heading strong {
-  font-weight: 550;
-}
-.adm-operation-category {
-  color: var(--faint);
+.adm-pagination .ui-button {
+  padding-inline: 8px;
   font-size: 11px;
-  font-weight: 400;
 }
-.adm-operation-heading time {
-  flex-shrink: 0;
-  color: var(--faint);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.adm-operation-detail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px 16px;
-  margin-top: 6px;
-}
-.adm-operation-message {
-  grid-column: 1;
+.adm-activity-detail-top > span {
   min-width: 0;
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.adm-operation-meta {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px 10px;
-  min-width: 0;
+.adm-activity-detail-top > button {
+  flex: none;
 }
-.adm-operation-actor,
-.adm-operation-rule-id,
-.adm-operation-task-id {
+.adm-activity-detail-heading > span {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  color: var(--faint);
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.adm-operation-actor {
-  max-width: 100%;
+  gap: 8px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 400;
 }
-.adm-operation-actor svg,
-.adm-operation-rule-id svg,
-.adm-operation-task-id svg {
-  flex: none;
+.adm-activity-detail-heading h2 {
+  overflow-wrap: anywhere;
 }
-.adm-operation-target {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
+.adm-activity-properties {
+  display: grid;
+  gap: 19px;
+  margin: 0;
+}
+.adm-activity-properties > div {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 14px;
+}
+.adm-activity-properties dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.adm-activity-properties dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.adm-activity-properties small,
+.adm-activity-properties code {
+  display: block;
+  margin-top: 4px;
   color: var(--faint);
   font-size: 11px;
 }
-.adm-operation-target .ui-button.adm-task-link {
-  padding: 3px 5px;
-  min-height: 28px;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  gap: 5px;
+.adm-activity-message {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line-soft);
 }
-.adm-operation-target .ui-button.adm-task-link > svg {
-  width: 12px;
-  height: 12px;
+.adm-activity-message h3 {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 550;
 }
-.adm-operation-target .ui-button.adm-task-link:hover {
-  color: var(--blue);
-  border-color: color-mix(in srgb, var(--blue) 30%, var(--line));
-  background: var(--surface);
+.adm-activity-message p {
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--ui-radius);
+  background: var(--subtle);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.adm-activity-detail-bottom .adm-detail-actions {
+  flex-wrap: wrap;
 }
 .adm-rules-table {
   overflow-x: auto;
@@ -451,13 +459,6 @@
   .adm-caption-row {
     align-items: flex-start;
   }
-  .adm-operation-detail {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 6px;
-  }
-  .adm-operation-meta {
-    grid-column: 1;
-  }
 }
 @media (max-width: 650px) {
   .adm-rules-table {
@@ -543,45 +544,78 @@
   .adm-list-summary > span:last-child {
     text-align: right;
   }
-  .adm-operation {
-    grid-template-columns: 28px minmax(0, 1fr);
-    padding: 14px;
-    gap: 10px;
+  .adm-activity .adm-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .adm-operation-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 7px;
+  .adm-activity .adm-search {
+    grid-column: 1 / -1;
   }
-  .adm-operation-icon svg {
-    width: 15px;
-    height: 15px;
+  .adm-activity .ui-select {
+    min-width: 0;
   }
-  .adm-operation-heading {
-    gap: 8px;
+  .adm-activity .adm-list-summary {
+    padding: 0 14px 12px;
   }
-  .adm-operation-heading p {
-    font-size: 13px;
-    gap: 4px 7px;
+  .adm-activity-table,
+  .adm-activity-table tbody {
+    display: block;
   }
-  .adm-operation-category {
-    font-size: 10px;
+  .adm-activity-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
-  .adm-operation-meta {
+  .adm-activity-table .adm-activity-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .adm-activity-table .adm-activity-row:last-child {
+    border-bottom: 0;
+  }
+  .adm-activity-table .adm-activity-row > td {
+    min-width: 0;
+    height: auto;
+    padding: 0;
+    border: 0;
+  }
+  .adm-activity-action-cell {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .adm-activity-level {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    justify-self: end;
+  }
+  .adm-activity-object {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .adm-activity-actor {
+    grid-column: 2;
+    grid-row: 2;
+    max-width: 115px;
+    text-align: right;
+  }
+  .adm-activity-time {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+  .adm-pagination {
+    padding: 12px 14px;
+  }
+  .adm-activity-detail-bottom {
     align-items: flex-start;
-    gap: 8px;
   }
-  .adm-operation-target .ui-button.adm-task-link {
-    min-height: 32px;
-    padding: 5px 8px;
-  }
-  .adm-operation-group h2 {
-    flex-wrap: wrap;
-    gap: 7px;
-    padding: 10px 14px;
-  }
-  .adm-date-label {
-    font-size: 10px;
+  .adm-activity-detail-bottom > .ui-button {
+    flex: none;
   }
   .adm-routing-flow {
     grid-template-columns: 1fr;
@@ -599,5 +633,16 @@
   }
   .adm-rule-detail .adm-routing-section h3 {
     margin-bottom: 15px;
+  }
+}
+
+@media (max-width: 420px) {
+  .adm-pagination > span {
+    flex-basis: 100%;
+  }
+  .adm-pagination nav {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
   }
 }

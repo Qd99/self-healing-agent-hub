@@ -1,36 +1,6 @@
 import { icon } from "./icons.js";
 import { escapeHtml as e } from "./model.js";
 
-export function connectionState(s) {
-  if (s.loading)
-    return {
-      tone: "loading",
-      title: "正在连接",
-      detail: "读取工作空间配置",
-      icon: "LoaderCircle",
-    };
-  if (s.mode === "demo")
-    return {
-      tone: "demo",
-      title: "演示工作空间",
-      detail: "本次会话内模拟操作",
-      icon: "FlaskConical",
-    };
-  if (s.error || !s.snapshot)
-    return {
-      tone: "error",
-      title: "连接异常",
-      detail: "查看连接设置",
-      icon: "WifiOff",
-    };
-  return {
-    tone: "readonly",
-    title: "配置已连接",
-    detail: "只读模式 · 执行器未接入",
-    icon: "ShieldCheck",
-  };
-}
-
 export function renderSidebar(s, pages) {
   const review =
     s.snapshot?.tasks.filter((t) => t.reviewState === "pending").length || 0;
@@ -49,6 +19,5 @@ export function renderSidebar(s, pages) {
 export function renderTopbar(s, pages) {
   const project =
     s.snapshot?.project?.repo?.split("/").at(-1) || "self-healing-agent-hub";
-  const connection = connectionState(s);
-  return `<header class="topbar"><div class="row grow"><button class="ui-icon-button icon-button mobile-menu" data-action="open-nav" aria-label="打开导航" aria-expanded="${s.mobileNav}" aria-controls="primary-navigation">${icon("Menu", 19)}</button><div class="breadcrumb"><span class="project-glyph" aria-hidden="true">${icon("Box", 15)}</span><span class="project-name truncate">${e(project)}</span><span class="breadcrumb-current">${pages[s.view].title}</span></div></div><div class="topbar-actions">${s.view !== "tasks" ? `<button class="ui-icon-button icon-button search-trigger" data-action="search" aria-label="搜索任务" title="搜索任务 · ⌘K / Ctrl K">${icon("Search", 15)}<span class="search-trigger-copy">搜索任务…</span></button>` : ""}<button class="mode-badge connection-${connection.tone}" data-action="navigate" data-view="settings" title="${e(connection.detail)}" aria-label="${e(connection.title)}，${e(connection.detail)}。打开连接设置">${connection.tone === "loading" ? "连接中" : connection.tone === "demo" ? "演示" : connection.tone === "readonly" ? "只读" : "连接异常"}</button></div></header>`;
+  return `<header class="topbar"><div class="row grow"><button class="ui-icon-button icon-button mobile-menu" data-action="open-nav" aria-label="打开导航" aria-expanded="${s.mobileNav}" aria-controls="primary-navigation">${icon("Menu", 19)}</button><div class="breadcrumb"><span class="project-glyph" aria-hidden="true">${icon("Box", 15)}</span><span class="project-name truncate">${e(project)}</span><span class="breadcrumb-current">${pages[s.view].title}</span></div></div></header>`;
 }

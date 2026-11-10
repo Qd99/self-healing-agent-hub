@@ -4,7 +4,7 @@
 
 ## Web 工作台
 
-当前已实现 Web 工作台、只读配置 API 和浏览器内存中的交互演示。v9 统一静态面板和导航表面：取消重复整圈描边与侧栏分组线，用底色、留白和轻阴影建立层次；表单、表格、审批节点和键盘焦点仍保留必要边界。首页继续提供四项指标、四类报表和四条紧凑最近任务，分类可带着当前时间范围进入全部任务。现有筛选、分页、跨页选择、批量操作、两级审批、监控配置和导出能力保留；本轮只修改样式，没有改变 JavaScript、数据契约或依赖。
+当前已实现 Web 工作台和只读配置 API。v10 默认读取同源管理服务，启动时不填充虚构任务或操作记录；未连接服务时保留明确的未连接状态。顶部保留项目与页面导航，任务搜索留在任务页。连接设置以管理服务、Grafana 和 Prometheus 三项列表集中呈现状态，详细信息按需展开；操作记录改为紧凑表格，支持详情、组合筛选、每页 15 条和全部匹配记录导出。首页报表、任务筛选与分页、审批流程展示及监控配置继续保留，具体变更与验证状态见 v10 记录。
 
 在仓库根目录运行，要求 Node.js 18 或更新版本：
 
@@ -13,15 +13,17 @@ npm run dev
 ```
 
 - [打开本地工作台](http://127.0.0.1:8787/)：读取配置，当前管理接口只读。
-- [打开交互演示](http://127.0.0.1:8787/?demo=1)：体验 48 条虚构任务，以及模拟创建、取消、重试和审批。
 - [工作台使用与设计说明](docs/console-guide.md) · [API 与框架对接](docs/console-api.md)
+- [v10 连接设置与操作记录](docs/design/console-v10.md)
 - [v9 表面与侧栏精修](docs/design/console-v9.md) · [v8 报表首页与验收](docs/design/console-v8-review.md)
 - [v7 界面细化与交付记录](docs/design/console-v7.md)
 - [v6 界面与交互验收](docs/design/console-v6.md) · [v5 功能记录](docs/design/console-v5.md)
 - [Grafana 接入说明](docs/monitoring-integration.md)
-- [v4 任务工作区与验收](docs/design/task-workspace-v4.md) · [v3 审批验收](docs/design/validation.md) · [交互预览（演示）](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
+- [v4 任务工作区与验收](docs/design/task-workspace-v4.md) · [v3 审批验收](docs/design/validation.md) · [在线工作台](https://heal-agent-console-qd99.hearty-trail-0210.chatgpt.site)
 
-工作台本身不需要 Redis、MySQL 或 GitHub App 凭据。未创建实际配置时，服务读取仓库中的示例配置，并明确显示来源。任务、审批与规则的演示操作只保存在当前页面内存，重新加载页面会重置。监控接入配置可保存为按模式、项目隔离的本机草稿，导出后由用户合并到服务端配置；本机保存不会修改 Agent 的监听范围。
+工作台本身不需要 Redis、MySQL 或 GitHub App 凭据。未创建实际配置时，管理服务读取仓库中的示例配置，并明确显示来源；这不会生成任务、审批或操作记录。标准构建使用 `npm run build`，产物默认请求同源 `GET /api/healing/snapshot`。静态托管本身不提供该 API，未接入时显示未连接状态，不自动载入测试数据。
+
+监控接入配置可保存为按模式、项目隔离的本机草稿，导出后由用户合并到服务端配置；本机保存不会修改 Agent 的监听范围，也不代表 Grafana 或 Prometheus 的连接已验证。开发者如需检查有数据的列表与模拟交互，可显式使用 `?demo=1` 或 `npm run build:demo` 启用虚构测试样本；这不是默认用户入口，模拟操作仅保存在当前页面内存。
 
 **当前边界：**Grafana 当前提供配置、外部打开与仪表盘模板，尚未验证远程连接、嵌入面板或查询真实指标。具体 Agent 执行器、EventHub/任务队列、Webhook 与定时任务调度、GitHub 写入、真实审批及回滚尚未接入。真实任务写接口返回 `501`；配置中的模型、检查命令或安全开关不代表相关能力已经运行。下方原有架构、功能清单及路线图保留为设计背景，当前交付状态以本节和工作台指南为准。
 

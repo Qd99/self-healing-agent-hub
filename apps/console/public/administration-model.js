@@ -5,6 +5,7 @@ const SHANGHAI_OFFSET = 8 * 60 * 60 * 1000;
 export const DEFAULT_ACTIVITY_FILTERS = Object.freeze({
   query: "",
   category: "all",
+  level: "all",
   days: 0,
 });
 export const DEFAULT_RULE_FILTERS = Object.freeze({
@@ -19,6 +20,15 @@ export const ACTIVITY_CATEGORIES = Object.freeze([
   { value: "rules", label: "规则变更" },
   { value: "other", label: "其他操作" },
 ]);
+export const ACTIVITY_LEVELS = Object.freeze([
+  { value: "all", label: "全部级别" },
+  { value: "info", label: "信息" },
+  { value: "success", label: "成功" },
+  { value: "warning", label: "警告" },
+  { value: "error", label: "错误" },
+  { value: "unknown", label: "未知级别" },
+]);
+const ACTIVITY_PAGE_SIZE = 15;
 
 const activityActions = {
   trigger: ["发起巡检", "tasks", "Plus"],
@@ -97,6 +107,31 @@ export function describeActivity(entry = {}) {
         ? entry.actor
         : "未提供操作者",
     message: typeof entry.message === "string" ? entry.message : "",
+    level: describeActivityLevel(entry.level),
+  };
+}
+
+/** A log level describes evidence severity, not whether an operation succeeded. */
+export function describeActivityLevel(value) {
+  const labels = {
+    info: "信息",
+    success: "成功",
+    warning: "警告",
+    error: "错误",
+  };
+  if (typeof value === "string" && Object.hasOwn(labels, value))
+    return {
+      value,
+      label: labels[value],
+      tone: value === "info" ? "neutral" : value,
+      raw: value,
+    };
+  const raw = typeof value === "string" ? value : "";
+  return {
+    value: "unknown",
+    label: raw.trim() ? "未识别" : "未提供",
+    tone: "neutral",
+    raw,
   };
 }
 
@@ -110,7 +145,13 @@ export function activityDateKey(value) {
 /** All dates retains undated evidence; recent ranges require valid, non-future timestamps. */
 export function filterActivities(
   entries = [],
-  { query = "", category = "all", days = 0, now = Date.now() } = {},
+  {
+    query = "",
+    category = "all",
+    level = "all",
+    days = 0,
+    now = Date.now(),
+  } = {},
 ) {
   const needle = String(query).trim().toLowerCase();
   const timestamp = new Date(now).getTime();
@@ -121,11 +162,13 @@ export function filterActivities(
       1) *
       DAY_MS -
     SHANGHAI_OFFSET;
-  return entries
+  return (Array.isArray(entries) ? entries : [])
     .filter((entry) => {
-      if (!entry || typeof entry !== "object") return false;
+      if (!entry || typeof entry !== "object" || Array.isArray(entry))
+        return false;
       const description = describeActivity(entry);
       if (category !== "all" && category !== description.category) return false;
+      if (level !== "all" && level !== description.level.value) return false;
       const at = Date.parse(entry.at || "");
       if (
         dayCount > 0 &&
@@ -155,6 +198,31 @@ export function filterActivities(
     });
 }
 
+/** Keep the full filtered result separate from the 15 records currently displayed. */
+export function getActivityPage(
+  entries = [],
+  { filters = {}, page = 1, now = Date.now() } = {},
+) {
+  const filtered = filterActivities(entries, { ...filters, now });
+  const total = filtered.length;
+  const pageCount = Math.max(1, Math.ceil(total / ACTIVITY_PAGE_SIZE));
+  const requested = Number(page);
+  const current = Math.min(
+    pageCount,
+    Number.isInteger(requested) && requested > 0 ? requested : 1,
+  );
+  const offset = (current - 1) * ACTIVITY_PAGE_SIZE;
+  return {
+    items: filtered.slice(offset, offset + ACTIVITY_PAGE_SIZE),
+    total,
+    page: current,
+    pageCount,
+    pageSize: ACTIVITY_PAGE_SIZE,
+    start: total ? offset + 1 : 0,
+    end: Math.min(offset + ACTIVITY_PAGE_SIZE, total),
+  };
+}
+
 export function groupActivities(entries = []) {
   const groups = new Map();
   for (const entry of entries) {
@@ -165,7 +233,7 @@ export function groupActivities(entries = []) {
   return [...groups.values()];
 }
 
-/** Export the visible operation records, never tasks, credentials, or the whole snapshot. */
+/** Export all filtered records, never the current page, tasks, or the whole snapshot. */
 export function exportActivitiesJSON(
   snapshot,
   filters = {},
