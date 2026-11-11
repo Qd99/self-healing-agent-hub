@@ -132,6 +132,8 @@ test("restart recovery reads facts only and freezes an identical outbox across l
     state: "executing",
     claim: s.c,
     known: { intent: "commit" },
+    resourceVersion: 1,
+    resources: null,
   });
   const bodies = [];
   s.client.complete = async (id, b) => {

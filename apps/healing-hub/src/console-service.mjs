@@ -1,4 +1,8 @@
-import { hashCandidateV2 } from "../../../packages/framework/src/candidate.mjs";
+import {
+  hashCandidateV2,
+  normalizeCandidateV2,
+  validateCandidatePathV2,
+} from "../../../packages/framework/src/candidate.mjs";
 import { loadHealingIntegrations } from "./healing-integrations.mjs";
 import {
   normalizeVerificationPolicy,
@@ -2227,13 +2231,28 @@ export function createHealingService({
           )
             fail(403, "WORKER_ID_MISMATCH", "候选提交的执行器与租约不一致。");
         }
-        const summary = text(body.summary, 4000);
         const kind = proposalKind(entry);
-        const diff =
-          kind === "code-change"
-            ? readDiff(body.diff, entry.safety)
-            : actionDiff(body.diff);
-        const evidence = readEvidence(body.evidence);
+        let summary, diff, evidence;
+        if (candidate) {
+          try {
+            ({ summary, diff, evidence } = normalizeCandidateV2(body));
+            for (const item of diff) validateCandidatePathV2(item.path);
+          } catch {
+            invalid();
+          }
+          validatePaths(
+            diff.map((item) => item.path),
+            entry.safety,
+          );
+        } else {
+          // v1 keeps its existing normalization and protocol behavior.
+          summary = text(body.summary, 4000);
+          diff =
+            kind === "code-change"
+              ? readDiff(body.diff, entry.safety)
+              : actionDiff(body.diff);
+          evidence = readEvidence(body.evidence);
+        }
         if (kind === "code-change") requiredEvidence(evidence, entry.safety);
         else diagnosticEvidence(evidence);
         const trace = readTrace(body.trace);

@@ -222,6 +222,12 @@ Hub 返回 `{taskId, proposal:{id,version:2,contentHash,candidate}, message}`。
 
 `packages/framework/src/candidate.mjs` 的 `hashCandidateV2()` 使用稳定对象键排序、保留数组顺序的 canonical JSON，绑定任务 ID、repo/branch/完整可信来源/失败 SHA、路由 action、summary、candidate、完整展示 diff 和规范化 evidence。缺省 states 为 null、检查列表为 []。审批、执行和回执必须保持同一身份。
 
+共享 `normalizeCandidateV2()` 定义摘要、证据和完整候选的规范表示；Worker 在保存 artifact / 首次 proposal 前应用相同规则。summary 和证据文本去除首尾空白，diff 行内容和文件路径不改写。新 v2 提交的路径使用 `validateCandidatePathV2()` 严格校验，拒绝首尾空白、控制字符和非法路径形式；合法内部空格及 Unicode 精确保留。旧 Hub 已接受快照的哈希仍按原始路径身份核验，不因输入规则收紧而重写历史内容。
+
+已发送的 `proposal-pending` 不能改写 body/submissionId。历史仅文本规范化差异可在校验 body 与 artifact 的规范 hash 相同后原样重放；ACK 仍必须完全匹配预期 hash、version、manifest 和非空 proposal ID。无法安全对应的历史路径/产物保留 `candidate-blocked`，不继续执行。
+
+取消确认以实际资源停止证明为前提。独立 Worker 在检查启动前将工作区、唯一运行标识和完整容器 ID 写入 journal；重启先核对并清理自有资源，再重放 outbox / 提交原租约的终止事实。Docker 清理不确定保持 `cleanup-pending`，阻止 complete/cancelled、工作区删除及新 claim。此本地门禁不延长旧租约，也不改变 Hub 的失联与人工核对语义。
+
 v2 execute 的 complete 及携带 result 的 cancelled 请求在顶层加入 `proposalId` 和 `contentHash`。成功 `pr-created` 必须包含实际 40 位 commit、PR 编号和与批准 diff 精确一致的 files。已批准内容只能从保存的 patch 重放，不能重新调用模型或换基线。
 
 ```js

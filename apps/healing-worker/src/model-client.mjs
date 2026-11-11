@@ -1,3 +1,7 @@
+import {
+  normalizeCandidateSummaryV2,
+  validateCandidatePathV2,
+} from "../../../packages/framework/src/candidate.mjs";
 export const MAX_MODEL_BYTES = 256 * 1024;
 export function validateGeneration(value) {
   if (
@@ -13,7 +17,7 @@ export function validateGeneration(value) {
     value.changes.length > 100
   )
     throw new Error("Invalid structured model response");
-  for (const change of value.changes)
+  for (const change of value.changes) {
     if (
       !change ||
       Object.keys(change).sort().join(",") !== "content,path" ||
@@ -21,9 +25,11 @@ export function validateGeneration(value) {
       (change.content !== null && typeof change.content !== "string")
     )
       throw new Error("Invalid structured model change");
+    validateCandidatePathV2(change.path);
+  }
   if (Buffer.byteLength(JSON.stringify(value)) > MAX_MODEL_BYTES)
     throw new Error("Model response exceeded limit");
-  return value;
+  return { ...value, summary: normalizeCandidateSummaryV2(value.summary) };
 }
 export function createModelClient(config) {
   return async (input, { signal } = {}) => {

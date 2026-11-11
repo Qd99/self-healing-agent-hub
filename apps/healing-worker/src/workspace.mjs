@@ -1,5 +1,4 @@
 import {
-  mkdtemp,
   mkdir,
   readFile,
   writeFile,
@@ -8,8 +7,8 @@ import {
   readdir,
   readlink,
 } from "node:fs/promises";
-import { join, dirname, isAbsolute } from "node:path";
-import { createHash } from "node:crypto";
+import { join, dirname, basename, isAbsolute, resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { TextDecoder } from "node:util";
 import {
   runCommand as defaultRunCommand,
@@ -17,6 +16,7 @@ import {
 } from "./process-runner.mjs";
 import { createModelClient, validateGeneration } from "./model-client.mjs";
 import { createCheckRunner } from "./check-runner.mjs";
+import { validateCandidatePathV2 } from "../../../packages/framework/src/candidate.mjs";
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 const MAX_PATCH = 512 * 1024;
 // Mandatory, case-insensitive path exclusions apply to every path component.
@@ -110,18 +110,11 @@ function protectedPath(path, patterns) {
   });
 }
 function safePath(path, safety = {}) {
-  if (
-    typeof path !== "string" ||
-    !path ||
-    path.length > 512 ||
-    path.startsWith("/") ||
-    path.includes("\\") ||
-    [...path].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127) ||
-    path
-      .split("/")
-      .some((p) => !p || p === "." || p === ".." || p.toLowerCase() === ".git")
-  )
+  try {
+    validateCandidatePathV2(path);
+  } catch {
     throw new Error("Unsafe file path");
+  }
   const lowerPath = path.toLowerCase();
   if (
     protectedPath(lowerPath, CREDENTIAL_PATHS) ||
@@ -245,13 +238,73 @@ export function createWorkspaceEngine(
     await options.assertActive?.();
     options.signal?.throwIfAborted();
   }
+  function validateResources(resources) {
+    if (
+      !resources ||
+      typeof resources !== "object" ||
+      Array.isArray(resources) ||
+      resources.version !== 1 ||
+      !Object.hasOwn(resources, "check") ||
+      (resources.check !== null &&
+        (typeof resources.check !== "object" ||
+          Array.isArray(resources.check))) ||
+      typeof resources.workspace !== "string" ||
+      !isAbsolute(config.dataDir) ||
+      dirname(resources.workspace) !== resolve(config.dataDir) ||
+      resources.workspace !== resolve(resources.workspace) ||
+      !/^workspace-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(
+        basename(resources.workspace),
+      ) ||
+      (resources.check !== null && resources.check.cwd !== resources.workspace)
+    )
+      throw new Error("Unrecognized owned workspace resources");
+  }
+  async function removeWorkspace(resources) {
+    validateResources(resources);
+    try {
+      const stat = await lstat(resources.workspace);
+      if (stat.isSymbolicLink() || !stat.isDirectory())
+        throw new Error("Owned workspace is not a private directory");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    await rm(resources.workspace, { recursive: true, force: true });
+  }
+  function cleanupUncertain() {
+    return Object.assign(new Error("Docker cleanup could not be confirmed"), {
+      code: "CHECK_CLEANUP_UNCERTAIN",
+    });
+  }
+  function resourceSession(options) {
+    return {
+      current: null,
+      async set(resources) {
+        // The awaited callback commits the intent before any external side effect.
+        await options.onResources?.(resources);
+        this.current = resources;
+      },
+      async cleanup() {
+        if (!this.current) return;
+        // Do not even inspect a checkout that an unconfirmed container can mutate.
+        if (this.current.check) throw cleanupUncertain();
+        await removeWorkspace(this.current);
+        await this.set(null);
+      },
+    };
+  }
   async function checkout(base, options) {
     await active(options);
     if (!isAbsolute(config.dataDir) || !isAbsolute(config.repository.localPath))
       throw new Error("Workspace paths must be absolute");
     await mkdir(config.dataDir, { recursive: true, mode: 0o700 });
-    const cwd = await mkdtemp(join(config.dataDir, "workspace-"));
+    const cwd = join(config.dataDir, `workspace-${randomUUID()}`);
+    await options.resourceSession.set({
+      version: 1,
+      workspace: cwd,
+      check: null,
+    });
     try {
+      await mkdir(cwd, { mode: 0o700 });
       await git(cwd, ["init", "--quiet", "--template="], options.signal);
       await git(
         cwd,
@@ -283,7 +336,7 @@ export function createWorkspaceEngine(
       }
       return cwd;
     } catch (error) {
-      await rm(cwd, { recursive: true, force: true });
+      await options.resourceSession.cleanup();
       throw error;
     }
   }
@@ -302,11 +355,21 @@ export function createWorkspaceEngine(
             image: config.checks.image,
             timeoutMs: config.checks.timeoutMs ?? 120000,
           },
-          { signal: options.signal },
+          {
+            signal: options.signal,
+            assertActive: options.assertActive,
+            onResource: async (check) => {
+              await options.resourceSession.set({
+                ...options.resourceSession.current,
+                check,
+              });
+            },
+          },
         );
       } catch (e) {
         error = e;
       }
+      if (options.resourceSession.current?.check) throw cleanupUncertain();
       if (before !== (await snapshot(cwd)))
         throw new Error("Check modified workspace files or Git metadata");
       if (error) throw error;
@@ -548,7 +611,19 @@ export function createWorkspaceEngine(
     };
   }
   return {
+    async recoverResources(resources, { onResources } = {}) {
+      validateResources(resources);
+      if (resources.check) {
+        if (typeof runCheck.recover !== "function") throw cleanupUncertain();
+        await runCheck.recover(resources.check);
+        resources = { ...resources, check: null };
+        await onResources?.(resources);
+      }
+      await removeWorkspace(resources);
+      await onResources?.(null);
+    },
     async diagnose(claim, options = {}) {
+      options = { ...options, resourceSession: resourceSession(options) };
       const { task, safety, checks: ids } = claimInfo(claim);
       const cwd = await checkout(task.commitSha, options);
       try {
@@ -609,10 +684,11 @@ export function createWorkspaceEngine(
           throw new Error("Candidate request exceeds limit");
         return { ...result, artifact };
       } finally {
-        await rm(cwd, { recursive: true, force: true });
+        await options.resourceSession.cleanup();
       }
     },
     async prepareExecution(claim, artifact, options = {}) {
+      options = { ...options, resourceSession: resourceSession(options) };
       const { task, safety, checks: ids } = claimInfo(claim);
       validateManifest(claim.task.proposal?.candidate, task.commitSha);
       validateManifest(artifact?.candidate, task.commitSha);
@@ -661,10 +737,10 @@ export function createWorkspaceEngine(
           candidate: after.candidate,
           files: after.files,
           evidence: evidence([], records),
-          cleanup: async () => rm(cwd, { recursive: true, force: true }),
+          cleanup: () => options.resourceSession.cleanup(),
         };
       } catch (error) {
-        await rm(cwd, { recursive: true, force: true });
+        await options.resourceSession.cleanup();
         throw error;
       }
     },

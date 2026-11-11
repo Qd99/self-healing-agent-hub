@@ -37,7 +37,17 @@ export function candidate() {
 export const result = () => {
   const data = {
     summary: "Repair test",
-    diff: [{ path: "a.js", before: "bad", after: "good" }],
+    diff: [
+      {
+        path: "a.js",
+        additions: 1,
+        deletions: 1,
+        lines: [
+          { type: "remove", content: "bad" },
+          { type: "add", content: "good" },
+        ],
+      },
+    ],
     evidence: { testsRun: ["test"], checksPass: ["test"], checksFail: [] },
     candidate: candidate(),
   };

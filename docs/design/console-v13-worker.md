@@ -32,6 +32,8 @@
 
 最终执行命令为 `npm test`、`npm run lint`、`npm run build`，另对本次更改执行格式与 diff 检查。每个实现任务及整条分支另经独立代码审查；最终数量与提交见 Draft PR。
 
+PR #2 初次最终复核发现的候选规范化、容器停止证明及崩溃恢复三项阻塞，后续修复与回归记录见 [2026-11-11 修复记录](worker-recovery-fixes-2026-11-11.md)。该轮另运行真实 Worker 子进程 `SIGKILL`、journal 重开和实际 runtime/workspace/check-runner 的恢复测试；Docker 命令传输仍为受控夹具，不等于真实 daemon 验收。
+
 ## 尚未完成的生产验收
 
 此开发环境没有 Docker 可执行文件，未运行真实容器隔离验收。没有用户部署的 Jenkins/模型/GitHub 运行凭据和目标失败构建，未进行真实业务闭环。发布功能保持配置默认关闭，连接真实部署前按 [运行指南](../healing-worker-guide.md) 验收。

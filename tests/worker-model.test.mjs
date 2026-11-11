@@ -86,3 +86,40 @@ test("rejects oversized response, unknown model fields, redirects and times out"
     );
   }
 });
+
+test("model output canonicalizes summary before returning any changes", async () => {
+  const { validateGeneration } =
+    await import("../apps/healing-worker/src/model-client.mjs");
+  const value = {
+    summary: "\nFix value\n",
+    changes: [{ path: "src/value with space.js", content: " exact text\n" }],
+  };
+  assert.deepEqual(validateGeneration(value), {
+    summary: "Fix value",
+    changes: [{ path: "src/value with space.js", content: " exact text\n" }],
+  });
+  assert.equal(value.summary, "\nFix value\n");
+});
+
+test("model output rejects every noncanonical path before applying a change", async () => {
+  const { validateGeneration } =
+    await import("../apps/healing-worker/src/model-client.mjs");
+  for (const path of [
+    " value.js",
+    "value.js ",
+    "src/value:copy.js",
+    "src/a\tb.js",
+    "a".repeat(501),
+  ])
+    assert.throws(
+      () =>
+        validateGeneration({
+          summary: "Fix value",
+          changes: [
+            { path: "value.js", content: "fixed\n" },
+            { path, content: "other\n" },
+          ],
+        }),
+      /path/i,
+    );
+});

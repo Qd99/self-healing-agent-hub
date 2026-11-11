@@ -63,6 +63,10 @@ Jenkins 构建必须已经结束且失败。适配器要求唯一 Git BuildData�
 
 候选还校验待发布文件的原始字节与暂存 Git blob 完全一致。若仓库的 CRLF、`working-tree-encoding` 等属性造成被检查的字节与批准的 tree 不同，会明确拒绝该候选；不会静默转换发布内容。普通 UTF-8 BOM、无末尾换行和既有 executable 位会保留。
 
+候选摘要及证据文本在保存 artifact 和首次提交前使用 Hub/Worker 共享规则规范化，首尾空白不再造成 ACK hash 失配。文件路径是精确身份：合法内部空格和 Unicode 保持原样；新候选拒绝首尾空白、控制字符、冒号、反斜杠、路径逃逸、大小写变体 `.git` 和超过 500 字符的路径，不会静默改名。
+
+每次检查按「持久保存工作区与容器创建意图 → `docker create` → 保存完整容器 ID → `docker start --attach`」启动。新容器使用 `--restart=no`，保留执行元数据直到核验检查确实运行并退出，然后显式清理，不使用 `--rm` 自动删除该证据。恢复清理也支持容器已经不存在的情况。容器带有唯一运行标识和所有者 label，journal 保存相同身份；删除目标始终是经核验的完整容器 ID。
+
 ## 4. 启动与操作
 
 在环境中提供配置引用的令牌后执行：
@@ -102,8 +106,22 @@ npm run worker -- --config configs/healing-worker.json
 | 外部结果不确定               | `PUBLICATION_UNCERTAIN`，禁止自动重试，由管理者核对实际分支/PR/CI               |
 | journal/身份/锁异常          | 进程停止；先确认没有另一个存活 Worker，保留数据并人工检查，再恢复               |
 
+### 容器清理与异常重启
+
+`docker rm` 返回成功或已经尝试清理，都不等于证明任务已停止。Worker 使用有界 Docker 全状态查询核验身份与清理结果；只有确认原容器 ID 不存在后才清除资源记录、删除工作区、发送终止回执。停止状态本身不作为最终证明，避免延迟的旧启动请求重新启动同一个容器。
+
+若 daemon 不可用、查询失败/超时、容器仍存在或归属不符，journal 保持 `cleanup-pending` 和资源身份。此时不发送 complete/cancelled，不删除可能仍挂载的工作区，也不领取新任务。Docker 恢复后，下一次轮询或 `--once` 先恢复清理，再补录原租约的失败/取消事实；不会恢复旧检查、重新调用模型或继续旧租约发布。已存在的 outbox 也必须先通过资源清理门禁。
+
+升级前遗留的 `claimed` / `executing` 记录若没有 `resourceVersion:1` 及可恢复资源身份，会保持 `cleanup-pending`，标记 `LEGACY_RESOURCE_IDENTITY_MISSING`。旧版本随机容器名没有持久保存，无法自动证明其归属；不得靠容器名前缀批量删除或直接重置 journal。先停止该 Worker，由部署者保留并核对原 journal、Docker 容器与挂载、Hub 租约及已有远端产物，确认旧工作确已停止并完成必要核对后再安排迁移。不得用改写旧租约或旧候选来恢复执行。
+
+### 已接受但未确认的历史提案
+
+历史 `proposal-pending` 若仅摘要/证据首尾空白不同，Worker 先验证保存的 body 与 artifact 对应同一规范候选，保留原 `submissionId` 和请求 body，按原请求重放，严格验证 Hub ACK hash/manifest 后保存规范 artifact。改写已发送的 body 会破坏 Hub 的幂等指纹，不能用于修复。
+
+历史路径不规范或保存的 body/artifact 不一致时，记录进入 `candidate-blocked`（`CANDIDATE_RECONCILIATION_REQUIRED`），不会重放、重新生成、确认另一份候选或继续领取。保留记录，在 Hub 核对原提案/审批/外部结果后由部署者处理，不通过放宽 hash 校验绕过。
+
 不要删除 journal 来跳过候选、审批或外部结果核对。远端 GitHub 与本地文件不构成分布式事务；提案被明确拒绝时会转为失败或取消回执；仍无法确认的提案请求、无法获得确认的终态回执会阻塞后续领取，需要保留记录人工排查。单进程文件存储适用于当前首版；高可用、多副本、队列归档仍属后续工作。
 
 ## 验收范围
 
-开发联调详见 [第二阶段验收记录](design/console-v13-worker.md)。生产首次运行还需对真实 Jenkins BuildData、精确失败 SHA、可信镜像、模型响应格式、两个审批节点、PR 写权限和 CI context/creator 做一次受控闭环。开发测试夹具不能代替这次验收。
+开发联调详见 [第二阶段验收记录](design/console-v13-worker.md) 和 [候选及资源恢复修复记录](design/worker-recovery-fixes-2026-11-11.md)。生产首次运行还需对真实 Jenkins BuildData、精确失败 SHA、可信镜像、模型响应格式、两个审批节点、PR 写权限和 CI context/creator 做一次受控闭环。开发测试夹具不能代替这次验收。

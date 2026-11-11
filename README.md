@@ -91,6 +91,8 @@ npm run worker -- --config configs/healing-worker.json --once
 
 示例 `publish.enabled` 默认为 `false`：Worker 只领取诊断阶段。启用后仍须通过两级审批，执行保存的同一 patch/tree，并确认基线未变化。候选、发布意图与待确认回执持久化；重启恢复期间先核对既有事实，避免重复创建 PR。
 
+候选使用共享规范表示，已发送请求保持原样重放。检查启动前保存工作区及容器身份；取消或重启先确认自有容器已清理，再释放工作区和回传停止事实。清理无法确认时保持 `cleanup-pending`，阻止新任务；无法安全对应的历史候选保持 `candidate-blocked`。详见 [恢复与故障处理](docs/healing-worker-guide.md#5-中断恢复与故障处理)。
+
 检查仅使用预先拉取、固定 digest 的 Docker 镜像。镜像需备齐依赖，检查必须保持工作区不变；缺少 Docker 时停止。`--check-config` 仅检查配置与引用凭据是否存在，远端连通性、镜像及业务闭环需另行验收。
 
 ## Grafana

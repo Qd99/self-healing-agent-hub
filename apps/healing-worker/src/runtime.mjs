@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import { isDefinitiveProposalRejection } from "./hub-client.mjs";
 import { setTimeout as delay } from "node:timers/promises";
 import { isDeepStrictEqual as same } from "node:util";
-import { hashCandidateV2 } from "../../../packages/framework/src/candidate.mjs";
+import {
+  hashCandidateV2,
+  normalizeCandidateV2,
+  validateCandidatePathV2,
+} from "../../../packages/framework/src/candidate.mjs";
 const FAILURE_REASONS = new Map([
   [
     "Proposal rejected",
@@ -163,6 +167,7 @@ export function createWorkerRuntime(
     if (!existing) await journal.put("__identity__", expected);
   }
   async function flush(id, record) {
+    if (record.resources) return false;
     try {
       await client[record.outbox.method](id, record.outbox.body);
       await journal.put(id, { ...record, state: "done", outbox: undefined });
@@ -172,19 +177,51 @@ export function createWorkerRuntime(
     }
   }
   async function receipt(id, record, method, result) {
+    if (record.resources) throw Error("Resource cleanup is not confirmed");
     const outbox = { method, body: { ...identity(record.claim), result } };
     const next = { ...record, state: "outbox", outbox };
     await journal.put(id, next);
     return flush(id, next);
   }
   async function replayProposal(id, record, { signal } = {}) {
+    let expected, artifact;
+    try {
+      const body = normalizeCandidateV2(record.proposalBody);
+      artifact = {
+        ...record.artifact,
+        ...normalizeCandidateV2(record.artifact),
+      };
+      for (const file of [
+        ...body.diff,
+        ...artifact.diff,
+        ...(artifact.files ?? []),
+      ])
+        validateCandidatePathV2(file.path);
+      const hash = (payload) =>
+        hashCandidateV2({
+          task: record.claim.task.task,
+          action: "create-pr",
+          ...payload,
+        });
+      expected = hash(body);
+      if (hash(artifact) !== expected)
+        throw Error("Saved candidate identity mismatch");
+    } catch {
+      // Legacy path aliases or damaged artifacts cannot be reconciled by changing
+      // a request whose original bytes may already be accepted by the Hub.
+      await journal.put(id, {
+        ...record,
+        state: "candidate-blocked",
+        candidateError: "CANDIDATE_RECONCILIATION_REQUIRED",
+      });
+      return { status: "blocked" };
+    }
+    if (!same(record.artifact, artifact)) {
+      record = { ...record, artifact };
+      await journal.put(id, record);
+    }
     try {
       const ack = await client.proposal(id, record.proposalBody, { signal });
-      const expected = hashCandidateV2({
-        task: record.claim.task.task,
-        action: "create-pr",
-        ...record.proposalBody,
-      });
       if (
         typeof ack?.proposal?.id !== "string" ||
         !ack.proposal.id ||
@@ -210,6 +247,8 @@ export function createWorkerRuntime(
   }
   async function finishProposal(id, record, outcome, cancelRequested) {
     if (outcome.status === "accepted") return { diagnosed: true };
+    if (outcome.status === "blocked") return { pending: true };
+    record = journal.get(id) ?? record;
     if (outcome.status === "ambiguous") {
       if (cancelRequested && !record.cancelRequested)
         await journal.put(id, { ...record, cancelRequested: true });
@@ -228,8 +267,61 @@ export function createWorkerRuntime(
     return { stopped: true };
   }
   async function recoverPending(signal) {
+    let cleaned = false;
+    // Reconcile resources before *any* outbox or terminal ACK. A stopped Docker
+    // client is not evidence that its detached container has stopped.
+    for (let record of journal.list()) {
+      const { id } = record;
+      if (
+        ["claimed", "executing", "cleanup-pending"].includes(record.state) &&
+        (record.resourceVersion !== 1 || record.resources === undefined)
+      ) {
+        await journal.put(id, {
+          ...record,
+          state: "cleanup-pending",
+          cleanupError:
+            record.resourceVersion !== 1
+              ? "LEGACY_RESOURCE_IDENTITY_MISSING"
+              : "RESOURCE_STATE_INVALID",
+        });
+        return true;
+      }
+      if (!record.resources && record.state !== "cleanup-pending") continue;
+      const resumeState = record.recoveryState ?? record.state;
+      try {
+        if (record.resources) {
+          if (typeof engine.recoverResources !== "function")
+            throw Error("Resource recovery unavailable");
+          await engine.recoverResources(record.resources, {
+            onResources: async (resources) => {
+              const next = { ...record, resources };
+              await journal.put(id, next);
+              record = next;
+            },
+          });
+          if (record.resources) throw Error("Resource recovery incomplete");
+        }
+        record = {
+          ...record,
+          state: resumeState === "cleanup-pending" ? "claimed" : resumeState,
+          recoveryState: undefined,
+          cleanupError: undefined,
+        };
+        await journal.put(id, record);
+        cleaned = true;
+      } catch {
+        await journal.put(id, {
+          ...record,
+          state: "cleanup-pending",
+          recoveryState: resumeState,
+          cleanupError: "RESOURCE_STOP_UNCONFIRMED",
+        });
+        return true;
+      }
+    }
     for (const record of journal.list()) {
       const { id } = record;
+      if (record.state === "candidate-blocked") return true;
       if (record.state === "outbox") {
         await flush(id, record);
         return true;
@@ -257,11 +349,20 @@ export function createWorkerRuntime(
             known = { ...known, uncertain: true };
           }
         }
-        await receipt(id, { ...record, known }, "complete", failure(known));
+        await receipt(
+          id,
+          { ...record, known },
+          record.cancelRequested ? "cancelled" : "complete",
+          failure(
+            known,
+            record.artifact?.evidence,
+            Error(record.stopReason ?? "Worker stopped"),
+          ),
+        );
         return true;
       }
     }
-    return false;
+    return cleaned;
   }
   function validateClaim(claim) {
     const task = claim?.task?.task,
@@ -308,8 +409,17 @@ export function createWorkerRuntime(
         claim,
         state: "claimed",
         known: {},
+        resourceVersion: 1,
+        resources: null,
+        recoveryState: undefined,
+        cleanupError: undefined,
       };
       await journal.put(id, record);
+      const onResources = async (resources) => {
+        const next = { ...record, resources };
+        await journal.put(id, next);
+        record = next;
+      };
       const controller = new AbortController();
       activeController = controller;
       const externalAbort = () => controller.abort();
@@ -386,21 +496,39 @@ export function createWorkerRuntime(
           const output = await engine.diagnose(claim, {
             signal: controller.signal,
             assertActive,
+            onResources,
           });
           assertActive();
+          if (record.resources)
+            throw Error("Resource cleanup is not confirmed");
+          const canonical = normalizeCandidateV2(output);
+          const artifact = {
+            ...output.artifact,
+            ...normalizeCandidateV2(output.artifact),
+          };
+          if (
+            hashCandidateV2({
+              task: claim.task.task,
+              action: "create-pr",
+              ...canonical,
+            }) !==
+            hashCandidateV2({
+              task: claim.task.task,
+              action: "create-pr",
+              ...artifact,
+            })
+          )
+            throw Error("Artifact identity mismatch");
           const proposalBody = {
             ...identity(claim),
             submissionId: randomUUID(),
-            summary: output.summary,
-            diff: output.diff,
-            evidence: output.evidence,
-            candidate: output.candidate,
+            ...canonical,
             ...(output.trace ? { trace: output.trace } : {}),
           };
           record = {
             ...record,
             state: "proposal-pending",
-            artifact: output.artifact,
+            artifact,
             proposalBody,
           };
           await journal.put(id, record);
@@ -443,6 +571,7 @@ export function createWorkerRuntime(
         prepared = await engine.prepareExecution(claim, artifact, {
           signal: controller.signal,
           assertActive,
+          onResources,
         });
         assertActive();
         if (!same(prepared.candidate, proposal.candidate))
@@ -503,6 +632,19 @@ export function createWorkerRuntime(
           : controller.signal.aborted
             ? Error("Lease is no longer active")
             : error;
+        if (record.resources) {
+          await journal.put(id, {
+            ...record,
+            state: "cleanup-pending",
+            recoveryState: record.state,
+            cancelRequested: cancellation || record.cancelRequested === true,
+            stopReason: FAILURE_REASONS.has(reason.message)
+              ? reason.message
+              : "Worker stopped",
+            cleanupError: "RESOURCE_STOP_UNCONFIRMED",
+          });
+          return { cleanupPending: true };
+        }
         await receipt(
           id,
           record,
