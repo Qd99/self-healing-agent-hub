@@ -2021,3 +2021,137 @@ dialog::backdrop {
     visibility: visible;
   }
 }
+
+/* Compact CI details share existing tokens and a flat, responsive layout. */
+.ci-source-summary,
+.ci-source-title,
+.task-ci-verification header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ci-source-summary {
+  padding: 12px 0 18px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.ci-source-summary > svg,
+.ci-source-title > svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.ci-source-summary > div {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ci-source-summary strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+.ci-source-summary span,
+.ci-checked-at {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ci-import-result {
+  margin-top: 14px;
+  font-size: 12px;
+}
+.task-ci-source,
+.task-ci-verification {
+  margin-bottom: 20px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.task-ci-source a {
+  color: var(--blue);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ci-source-commit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+.ci-source-commit > span,
+.ci-candidate dt {
+  color: var(--muted);
+}
+.ci-source-commit a,
+.ci-source-commit > span + span {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  word-break: break-all;
+  min-width: 0;
+}
+.ci-candidate,
+.ci-contexts {
+  margin-top: 12px;
+}
+.ci-candidate summary,
+.ci-contexts summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+.ci-candidate dl {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 0;
+}
+.ci-candidate dd {
+  margin: 3px 0 0;
+  font-size: 10px;
+}
+.task-ci-verification h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 550;
+}
+.task-ci-verification header > button {
+  margin-left: auto;
+}
+.ci-check-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 0 0;
+}
+.ci-check-grid > div {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.ci-check-grid > div > span:first-child {
+  color: var(--muted);
+  font-size: 11px;
+}
+.ci-contexts > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding-top: 10px;
+}
+.ci-contexts > div > span {
+  flex-shrink: 0;
+}
+@media (max-width: 480px) {
+  .ci-check-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .task-ci-verification header > button {
+    margin-left: 0;
+  }
+}

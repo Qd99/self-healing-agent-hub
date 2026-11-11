@@ -4,21 +4,21 @@
  */
 
 export type TaskType =
-  | 'lint-error'
-  | 'format-error'
-  | 'type-error'
-  | 'unit-test-failure'
-  | 'e2e-test-failure'
-  | 'architecture-violation'
-  | 'security-issue'
-  | 'ci-failure'
-  | 'doc-outdated'
-  | 'dependency-issue'
-  | 'performance-regression';
+  | "lint-error"
+  | "format-error"
+  | "type-error"
+  | "unit-test-failure"
+  | "e2e-test-failure"
+  | "architecture-violation"
+  | "security-issue"
+  | "ci-failure"
+  | "doc-outdated"
+  | "dependency-issue"
+  | "performance-regression";
 
-export type Priority = 'urgent' | 'high' | 'medium' | 'low';
+export type Priority = "urgent" | "high" | "medium" | "low";
 
-export type TriggerSource = 'webhook' | 'cron' | 'manual';
+export type TriggerSource = "webhook" | "cron" | "manual";
 
 export interface Task {
   /** 唯一任务 ID */
@@ -54,7 +54,23 @@ export interface TaskPayload {
   context: TaskContext;
 }
 
+export interface JenkinsSource {
+  kind: "jenkins";
+  sourceId: string;
+  eventId: string;
+  generation: string;
+  jobName: string;
+  buildNumber: number;
+  buildUrl: string;
+  repo: string;
+  branch: string;
+  commitSha: string;
+  result: "FAILURE";
+  observedAt: string;
+}
+
 export interface TaskContext {
+  source?: JenkinsSource;
   /** Commit SHA */
   commitSha?: string;
 
@@ -92,12 +108,7 @@ export interface TaskMetadata {
  * 任务状态
  */
 export type TaskStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled'
-  | 'skipped';
+  "pending" | "running" | "completed" | "failed" | "cancelled" | "skipped";
 
 /**
  * 任务状态信息

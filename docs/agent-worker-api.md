@@ -1,6 +1,6 @@
 # Agent 接入协议
 
-工作台管理服务提供真实的拉取式 Worker 协议。任何语言的 Agent 都可以通过 HTTP 领取任务、提交候选和回传结果。仓库的 `WorkflowEngine` 是抽象接口；当前没有预装的 AI 执行器。接入时把已有 Agent 的诊断与写入动作拆成下面两个阶段，不能在诊断阶段直接提交仓库或创建 PR。
+工作台管理服务提供真实的拉取式 Worker 协议。任何语言的 Agent 都可以通过 HTTP 领取任务、提交候选和回传结果。仓库保留 `WorkflowEngine` 抽象接口，并提供受限的 Jenkins `create-pr` Worker，见 [运行指南](healing-worker-guide.md)。接入时把诊断与写入动作拆成下面两个阶段，不能在诊断阶段直接提交仓库或创建 PR。
 
 ## 凭据和请求
 
@@ -173,8 +173,65 @@ POST /api/healing/tasks/:id/reconcile
 
 `tests/console-live-api.test.mjs` 使用真实 Node HTTP 请求完成管理认证、创建、诊断提案、两级审批、执行结果和重启持久化。`tests/console-service.test.mjs` 覆盖并发领取、迟到回调、租约失效、取消、错误证据与结果边界。
 
-测试 Worker 的结果是隔离联调数据，不能当作生产代码已经修复的证据。生产接入还需要部署运行中的 Agent 适配器及其自己的仓库/模型/CI 权限。
+测试 Worker 的结果是隔离联调数据，不能当作生产代码已经修复的证据。生产接入还需要部署运行中的 Worker、可信检查镜像及对应仓库/模型/CI 权限。
 
 迟到证据使来源任务重新进入待核对时，服务沿完整 `retryOf` 链阻止后续重试和领取。已经创建但未执行的后代任务被取消；持有租约的后代任务收到取消请求，随后提交成功结果也只作为中断证据保存。审批决定与原有结果保留，不会在来源任务核对后自动恢复。管理员必须核对所有仍待核对的祖先及当前任务，再手动创建新的重试。
 
 这些后代任务公开 `execution.blockedByReconciliation = { taskId, reason, at }`，记录导致停止的来源任务、原因和时间。这是历史停止原因，来源任务核对后仍保留；实际重试权限以完整祖先链当前的核对状态为准。租约中断标记及回执指纹保持私有。
+
+## 7. 第二阶段 v2 固定候选协议
+
+v1 请求与原 `SHA256(JSON.stringify({diff,evidence}))` 哈希保持兼容。v2 仅用于经 Hub Jenkins 导入、固定来源 SHA 的 `create-pr` 任务。普通手工 trigger 不能伪造可信来源。
+
+新 Worker 领取时声明能力和阶段：
+
+```json
+{
+  "engineId": "fast",
+  "workerId": "jenkins-worker-1",
+  "actions": ["create-pr"],
+  "sourceKinds": ["jenkins"],
+  "candidateVersions": [2],
+  "phases": ["diagnose"]
+}
+```
+
+发布开启才加入 `execute`。不声明 v2 的旧 Worker 不会领到 Jenkins 诊断或 v2 执行任务。原始任务在 `claim.task.task`，repo/branch 在 `payload`，commitSha/source 在 `payload.context`。执行租约只会交给生成候选的同一 workerId 和认证身份。
+
+v2 proposal 在原字段上增加稳定 `submissionId` 和 manifest：
+
+```js
+const proposalBody = {
+  leaseId,
+  workerId,
+  submissionId, // 首次 POST 前生成并持久化；重放保持完全相同
+  summary,
+  diff,
+  evidence,
+  candidate: {
+    version: 2,
+    baseCommitSha, // 40 位十六进制，等于可信来源 SHA
+    patchSha256, // 完整 Git patch 字节 SHA256，64 位十六进制
+    treeSha, // 40 位 Git tree SHA
+    artifactId, // 等于 patchSha256
+  },
+};
+```
+
+Hub 返回 `{taskId, proposal:{id,version:2,contentHash,candidate}, message}`。ACK 不含管理快照。Worker 应校验并持久化 ACK；响应丢失时可使用相同认证身份、租约、submissionId 和内容重放，即使该诊断租约已被成功提交释放。内容冲突会拒绝。
+
+`packages/framework/src/candidate.mjs` 的 `hashCandidateV2()` 使用稳定对象键排序、保留数组顺序的 canonical JSON，绑定任务 ID、repo/branch/完整可信来源/失败 SHA、路由 action、summary、candidate、完整展示 diff 和规范化 evidence。缺省 states 为 null、检查列表为 []。审批、执行和回执必须保持同一身份。
+
+共享 `normalizeCandidateV2()` 定义摘要、证据和完整候选的规范表示；Worker 在保存 artifact / 首次 proposal 前应用相同规则。summary 和证据文本去除首尾空白，diff 行内容和文件路径不改写。新 v2 提交的路径使用 `validateCandidatePathV2()` 严格校验，拒绝首尾空白、控制字符和非法路径形式；合法内部空格及 Unicode 精确保留。旧 Hub 已接受快照的哈希仍按原始路径身份核验，不因输入规则收紧而重写历史内容。
+
+已发送的 `proposal-pending` 不能改写 body/submissionId。历史仅文本规范化差异可在校验 body 与 artifact 的规范 hash 相同后原样重放；ACK 仍必须完全匹配预期 hash、version、manifest 和非空 proposal ID。无法安全对应的历史路径/产物保留 `candidate-blocked`，不继续执行。
+
+取消确认以实际资源停止证明为前提。独立 Worker 在检查启动前将工作区、唯一运行标识和完整容器 ID 写入 journal；重启先核对并清理自有资源，再重放 outbox / 提交原租约的终止事实。Docker 清理不确定保持 `cleanup-pending`，阻止 complete/cancelled、工作区删除及新 claim。此本地门禁不延长旧租约，也不改变 Hub 的失联与人工核对语义。
+
+v2 execute 的 complete 及携带 result 的 cancelled 请求在顶层加入 `proposalId` 和 `contentHash`。成功 `pr-created` 必须包含实际 40 位 commit、PR 编号和与批准 diff 精确一致的 files。已批准内容只能从保存的 patch 重放，不能重新调用模型或换基线。
+
+```js
+const body = { leaseId, workerId, proposalId, contentHash, result };
+```
+
+独立核验由管理接口 `POST /tasks/:id/verification` 发起，请求体只允许 `{expectedRevision}`。Hub 从已接受结果和批准候选构造目标，Worker 不能提交“验证通过”，调用者不能指定 URL/SHA。核验检查 PR/base/head/ref、唯一父节点、tree、完整文件分页以及冻结的可信 Commit Status policy；状态为 pending/passed/failed/mismatch/error/stale。它保留原 result，并与人工 reconciliation 分开。

@@ -25,6 +25,8 @@ export default [
   {
     files: [
       "apps/healing-hub/**/*.{js,mjs,cjs}",
+      "apps/healing-worker/**/*.{js,mjs,cjs}",
+      "packages/framework/**/*.mjs",
       "scripts/**/*.{js,mjs,cjs}",
       "tests/**/*.{js,mjs,cjs}",
       "*.config.{js,mjs,cjs}",

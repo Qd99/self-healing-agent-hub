@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "hub": { "url": "http://127.0.0.1:8787", "tokenEnv": "HEALING_WORKER_TOKEN" },
+  "workerId": "jenkins-worker-1",
+  "engineId": "fast",
+  "dataDir": "../data/healing-worker",
+  "repository": {
+    "fullName": "example/project",
+    "branch": "main",
+    "localPath": "../repositories/project"
+  },
+  "model": {
+    "endpoint": "https://model.example.com/v1/chat/completions",
+    "model": "deployment-model-name",
+    "tokenEnv": "HEALING_MODEL_TOKEN",
+    "contextPaths": ["src/index.js", "package.json"],
+    "timeoutMs": 120000
+  },
+  "checks": {
+    "image": "node@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "commands": { "npm run test": ["npm", "run", "test"] },
+    "timeoutMs": 120000
+  },
+  "github": { "tokenEnv": "HEALING_GITHUB_WRITE_TOKEN" },
+  "publish": { "enabled": false },
+  "pollIntervalMs": 5000,
+  "heartbeatIntervalMs": 15000
+}

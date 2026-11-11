@@ -75,7 +75,8 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 - `project`、`rules`、`rulesVersion`、`safety`、`triggers`、`monitoring`。
 - `configSource`、`rulesSource`：分别为 `configured` 或 `example`。
 - `rulesOverridden`、`monitoringSource`：持久覆盖来源。
-- `capabilities`：`trigger/cancel/retry/approve/updateRules/updateMonitoring/reconcile`；存储只读降级时全部写能力为 false。
+- `capabilities`：`trigger/cancel/retry/approve/updateRules/updateMonitoring/reconcile/importCi/verifyResult`；存储只读降级时全部写能力为 false。
+- `integrations.jenkins` 与 `.verification`：已配置状态、公开来源/必需 context 和中文说明；不包含凭据，configured 不代表连通性已验收。
 - `auth: { required, actor }` 与当前会话 `csrfToken`。
 - `tasks`、`activity` 与基于最近 Worker 通信的 `engines`。
 
@@ -114,17 +115,31 @@ Worker 路由只接受 `HEALING_WORKER_TOKEN`，管理令牌不能领取任务�
 
 成功响应统一为 `{ snapshot, message, taskId?, report? }`。前端使用响应快照更新界面，不能把点击或请求发出当作保存成功。
 
-| 方法与路径（前缀 `/api/healing`） | 请求体                                                                                                   |
-| --------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| POST `/trigger`                   | `{ title, type, priority, description?, branch?, requestId? }`                                           |
-| POST `/tasks/:id/cancel`          | `{ expectedRevision, requestId? }`                                                                       |
-| POST `/tasks/:id/retry`           | `{ expectedRevision, requestId? }`                                                                       |
-| POST `/tasks/:id/reconcile`       | `{ expectedRevision, requestId?, outcome, note }`；outcome 为 `no-changes` 或 `changes-recorded`         |
-| POST `/tasks/bulk`                | `{ type, items: [{ id, revision }], requestId? }`；type 为 `cancel` 或 `retry`                           |
-| POST `/approvals/:id/decision`    | `{ decision, nodeId?, round, comment, expectedRevision }`；decision 为 `approve`、`reject` 或 `resubmit` |
-| PATCH `/rules/:id`                | `{ enabled: boolean, expectedConfigRevision }`；兼容旧 `expectedRevision`                                |
-| PUT `/monitoring`                 | `{ monitoring: { grafana, datasource, namespaces }, expectedConfigRevision }`；兼容旧 `expectedRevision` |
-| POST `/monitoring/check`          | `{}`；返回 `{ check, monitoring, revision }`，无保存副作用                                               |
+| 方法与路径（前缀 `/api/healing`）   | 请求体                                                                                                   |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| POST `/trigger`                     | `{ title, type, priority, description?, branch?, requestId? }`                                           |
+| POST `/tasks/:id/cancel`            | `{ expectedRevision, requestId? }`                                                                       |
+| POST `/tasks/:id/retry`             | `{ expectedRevision, requestId? }`                                                                       |
+| POST `/tasks/:id/reconcile`         | `{ expectedRevision, requestId?, outcome, note }`；outcome 为 `no-changes` 或 `changes-recorded`         |
+| POST `/tasks/bulk`                  | `{ type, items: [{ id, revision }], requestId? }`；type 为 `cancel` 或 `retry`                           |
+| POST `/approvals/:id/decision`      | `{ decision, nodeId?, round, comment, expectedRevision }`；decision 为 `approve`、`reject` 或 `resubmit` |
+| PATCH `/rules/:id`                  | `{ enabled: boolean, expectedConfigRevision }`；兼容旧 `expectedRevision`                                |
+| PUT `/monitoring`                   | `{ monitoring: { grafana, datasource, namespaces }, expectedConfigRevision }`；兼容旧 `expectedRevision` |
+| POST `/monitoring/check`            | `{}`；返回 `{ check, monitoring, revision }`，无保存副作用                                               |
+| POST `/integrations/jenkins/builds` | `{ sourceId, buildNumber, requestId? }`；返回 `{snapshot,taskId?,outcome,message}`                       |
+| POST `/tasks/:id/verification`      | `{ expectedRevision }`；返回 `{snapshot,verification?,message}`                                          |
+
+### Jenkins 来源和独立核验
+
+以上两个新接口均要求管理身份和浏览器 CSRF，Worker 令牌无权调用。导入 URL 由配置构造，buildNumber 必须是正整数；同一来源代次/构建编号按事件原子去重，结果 outcome 为 created、duplicate 或 ignored。运行中构建返回冲突，SCM 来源不支持返回 `SCM_PROVENANCE_UNSUPPORTED`。手动 trigger 无法注入 trustedSource。
+
+可信来源在 `task.payload.context.source` 保存 `kind/sourceId/eventId/generation/jobName/buildNumber/buildUrl/repo/branch/commitSha/result/observedAt`。重试保留原 repo、branch、来源与冻结 CI policy。v2 proposal 公开 version、candidate manifest 和稳定 contentHash，字段约束见 [Agent 协议](agent-worker-api.md)。
+
+核验只接受任务 expectedRevision。服务从已接受的 PR/commit 回执与批准候选读取目标，不能传入 URL、替代 SHA 或成功标志。公开 `verification` 包含 schemaVersion/provider/status/checkedAt/message、target、四项 checks 和所需 context 的状态摘要；不暴露原始上游响应。HTTP 请求成功仅表示完成本次查询，CI pending/failed/mismatch/error 均不能显示成功提示。
+
+核验先用短事务保留私有 attempt，再在事务外访问 GitHub，最后用 attempt/目标/版本条件保存。新回执使已有或在途核验失效；乱序查询不能覆盖较新结果。原 result、审批和人工核对结论保持各自语义。每次读取限制为总计 10 秒、最多 8 个请求、单 JSON 256 KiB、总响应 1 MiB；已知未读完的分页会拒绝证明通过。
+
+可选集成配置和部署步骤见 [Worker 运行指南](healing-worker-guide.md)。
 
 ### 任务与批量操作
 

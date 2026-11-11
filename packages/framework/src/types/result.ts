@@ -4,12 +4,12 @@
  */
 
 export type ActionType =
-  | 'committed'        // 直接提交到仓库
-  | 'pr-created'       // 创建 Pull Request
-  | 'issue-created'    // 创建 Issue
-  | 'retry'            // 重试（用于 CI 失败等）
-  | 'failed'           // 执行失败
-  | 'skipped';         // 跳过（熔断等）
+  | "committed" // 直接提交到仓库
+  | "pr-created" // 创建 Pull Request
+  | "issue-created" // 创建 Issue
+  | "retry" // 重试（用于 CI 失败等）
+  | "failed" // 执行失败
+  | "skipped"; // 跳过（熔断等）
 
 export interface Result {
   /** 任务 ID */

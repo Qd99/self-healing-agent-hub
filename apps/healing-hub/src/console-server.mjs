@@ -264,6 +264,9 @@ export function createConsoleServer({
   grafanaFetch = globalThis.fetch,
   clock = Date.now,
   leaseMs,
+  integrationsConfig,
+  integrationsFetch = globalThis.fetch,
+  integrationsEnv = process.env,
 } = {}) {
   const assetRoot = resolve(publicDir);
   const storageRoot = resolve(dataDir);
@@ -273,6 +276,9 @@ export function createConsoleServer({
     rootDir: resolve(rootDir),
     dataDir: storageRoot,
     clock,
+    integrationsConfig,
+    integrationsFetch,
+    integrationsEnv,
     ...(leaseMs === undefined ? {} : { leaseMs }),
   });
   const auth = createConsoleAuth({
@@ -367,11 +373,13 @@ export function createConsoleServer({
         return;
       }
       const taskAction = /^\/tasks\/([^/]+)\/(cancel|retry)$/.exec(route);
+      const verification = /^\/tasks\/([^/]+)\/verification$/.exec(route);
       const reconciliation = /^\/tasks\/([^/]+)\/reconcile$/.exec(route);
       const decision = /^\/approvals\/([^/]+)\/decision$/.exec(route);
       const rule = /^\/rules\/([^/]+)$/.exec(route);
       if (
         ![
+          "/integrations/jenkins/builds",
           "/trigger",
           "/tasks/bulk",
           "/monitoring",
@@ -379,6 +387,7 @@ export function createConsoleServer({
         ].includes(route) &&
         !taskAction &&
         !reconciliation &&
+        !verification &&
         !decision &&
         !rule
       )
@@ -406,7 +415,15 @@ export function createConsoleServer({
         });
         return;
       }
-      if (route === "/trigger")
+      if (route === "/integrations/jenkins/builds")
+        result = await service.importJenkinsBuild(body, identity.actor);
+      else if (verification)
+        result = await service.verifyResult(
+          verification[1],
+          body,
+          identity.actor,
+        );
+      else if (route === "/trigger")
         result = await service.trigger(body, identity.actor);
       else if (route === "/tasks/bulk")
         result = await service.bulk(body, identity.actor);

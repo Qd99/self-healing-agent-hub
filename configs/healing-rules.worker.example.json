@@ -1,0 +1,16 @@
+{
+  "version": "2.0.0",
+  "rules": [
+    {
+      "id": "ci-repair",
+      "name": "固定 Jenkins 失败提交修复",
+      "enabled": true,
+      "match": { "taskType": "ci-failure", "context.retryCount": { "$lt": 3 } },
+      "processor": {
+        "engine": "fast",
+        "action": "create-pr",
+        "priority": "high"
+      }
+    }
+  ]
+}

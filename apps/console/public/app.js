@@ -4,6 +4,7 @@ import { createTaskController } from "./task-controller.js";
 import { createAdministrationController } from "./administration-controller.js";
 import { renderActivityDetail } from "./administration-views.js";
 import { createMonitoringController } from "./monitoring-controller.js";
+import { createCiController } from "./ci-controller.js";
 import { installInteractionFeedback } from "./interaction.js";
 import { uiStatus } from "./ui.js";
 import { getApprovalFlow } from "./approvals.js";
@@ -54,6 +55,11 @@ const state = {
   authPending: false,
   createDraft: null,
   createError: "",
+  createMode: "task",
+  ciImportDraft: null,
+  ciImportError: "",
+  ciImportResult: null,
+  ciVerificationFeedback: null,
   overviewTab: "focus",
   days: 7,
   expandedTask: "",
@@ -103,6 +109,12 @@ const monitoringController = createMonitoringController({
   toast,
   api,
   runMutation,
+});
+const ciController = createCiController({
+  state,
+  api,
+  runMutation,
+  refreshWorkspace,
 });
 const flowResizeObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) fitFlowCanvas(target);
@@ -190,6 +202,9 @@ function refreshDetail() {
     (element) => [element.scrollTop, element.scrollLeft],
   );
   const receiptOpen = detailDialog.querySelector(".task-receipts")?.open;
+  const ciDisclosures = [".ci-candidate", ".ci-contexts"].filter(
+    (selector) => detailDialog.querySelector(selector)?.open,
+  );
   const selection =
     focused && typeof focused.selectionStart === "number"
       ? [focused.selectionStart, focused.selectionEnd]
@@ -208,6 +223,10 @@ function refreshDetail() {
   if (receiptOpen) {
     const receipts = detailDialog.querySelector(".task-receipts");
     if (receipts) receipts.open = true;
+  }
+  for (const selector of ciDisclosures) {
+    const disclosure = detailDialog.querySelector(selector);
+    if (disclosure) disclosure.open = true;
   }
   if (focused) {
     const replacement = [
@@ -277,6 +296,7 @@ function openTask(id, tab = "trace") {
   state.reconciliationDraft = null;
   state.reconciliationError = "";
   state.reconciliationSuccess = "";
+  state.ciVerificationFeedback = null;
   state.selectedRule = "";
   state.selectedActivity = "";
   state.detailTab = ["trace", "diff", "evidence", "logs"].includes(tab)
@@ -315,7 +335,22 @@ function openActivity(id) {
   if (!detailDialog.open) detailDialog.showModal();
   detailDialog.querySelector('[data-action="close-detail"]')?.focus();
 }
-function openCreate() {
+function openCreate(kind = "task") {
+  if (kind === "ci") {
+    if (!state.snapshot || state.pendingAction || state.authRequired) return;
+    lastFocus = document.activeElement;
+    state.createMode = "ci";
+    const sourceId = state.snapshot.integrations?.jenkins?.sourceId;
+    if (state.ciImportDraft?.sourceId !== sourceId) {
+      state.ciImportDraft = { sourceId, buildNumber: "" };
+      state.ciImportError = "";
+      state.ciImportResult = null;
+    }
+    createDialog.innerHTML = renderCreate(state);
+    createDialog.showModal();
+    createDialog.querySelector("#ci-build-number")?.focus();
+    return;
+  }
   if (
     !state.snapshot?.capabilities.trigger ||
     state.pendingAction ||
@@ -325,6 +360,7 @@ function openCreate() {
     return;
   }
   lastFocus = document.activeElement;
+  state.createMode = "task";
   state.createDraft ||= {
     title: "",
     type: "type-error",
@@ -448,6 +484,7 @@ function setSnapshot(next) {
     closeCreate();
     state.createDraft = null;
     state.approvalComment = "";
+    ciController.reset();
   }
   state.snapshot = next;
   state.error = "";
@@ -478,6 +515,7 @@ async function loadData(mode = state.mode, { background = false } = {}) {
     state.authRequired = false;
     state.approvalComment = "";
     state.createDraft = null;
+    ciController.reset();
   }
   state.mode = mode;
   state.loading = !state.snapshot;
@@ -553,7 +591,7 @@ async function authenticate(form) {
     state.loading = false;
     if (state.resumeCreate) {
       state.resumeCreate = false;
-      openCreate();
+      openCreate(state.createMode);
     }
     toast(result.message || "已连接管理服务", "success");
   } catch (error) {
@@ -734,7 +772,12 @@ document.addEventListener("click", (event) => {
       .querySelector(`[data-action="detail-tab"][data-tab="${tab}"]`)
       ?.focus();
   } else if (action === "new-task") openCreate();
-  else if (action === "close-create") closeCreate();
+  else if (action === "ci-import-open") openCreate("ci");
+  else if (action === "ci-verify") ciController.verifyTask(id);
+  else if (action === "ci-open-task") {
+    go("tasks");
+    openTask(id);
+  } else if (action === "close-create") closeCreate();
   else if (action === "mode") loadData(mode === "demo" ? "demo" : "live");
   else if (action === "refresh") {
     const expectedSequence = loadSequence + 1;
@@ -821,7 +864,23 @@ function captureReconciliationDraft(target) {
   return true;
 }
 
+function captureCiImportDraft(target) {
+  if (!target.closest?.("#ci-import-form") || target.name !== "buildNumber")
+    return false;
+  if (state.pendingAction === "ci-import") return true;
+  state.ciImportDraft ||= {
+    sourceId: state.snapshot?.integrations?.jenkins?.sourceId,
+  };
+  state.ciImportDraft.buildNumber = target.value;
+  state.ciImportResult = null;
+  state.ciImportError = "";
+  document.querySelector(".ci-import-result")?.remove?.();
+  const error = document.querySelector("#ci-import-error");
+  if (error) error.textContent = "";
+  return true;
+}
 document.addEventListener("input", (event) => {
+  if (captureCiImportDraft(event.target)) return;
   if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
     if (state.pendingAction === "trigger") return;
@@ -842,6 +901,7 @@ document.addEventListener("compositionend", (event) => {
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if (captureCiImportDraft(event.target)) return;
   if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
     if (state.pendingAction === "trigger") return;
@@ -862,6 +922,11 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if (event.target.id === "ci-import-form") {
+    event.preventDefault();
+    ciController.importBuild(Object.fromEntries(new FormData(event.target)));
+    return;
+  }
   if (event.target.id === "reconciliation-form") {
     event.preventDefault();
     const id = event.target.dataset.taskId;
