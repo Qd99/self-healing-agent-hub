@@ -19,6 +19,10 @@
 
 任务创建后进入持久队列。**没有 Agent 领取或回传时，页面会显示等待状态。** 服务不会为了让报表有数值而生成演示成功记录。
 
+## 内嵌平台：agent-autoloop
+
+`apps/agent-autoloop/` 内嵌 [agent-autoloop](https://github.com/KKKKhazix/agent-autoloop) 平台完整源码（事件驱动 Agent 编排内核：规则、插件、多通道、多 Worker），作为本 Hub 的执行层底座。独立启动与安装见该目录下 `README.md` 与 `INSTALL.md`。
+
 ## 启动工作台
 
 需要 Node.js 18 或更新版本。生产环境建议使用仍受支持的 Node.js LTS。
