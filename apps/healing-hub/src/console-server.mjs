@@ -342,7 +342,7 @@ export function createConsoleServer({
       if (route.startsWith("/worker/")) {
         const identity = auth.authenticateWorker(request);
         const target =
-          /^\/worker\/tasks\/([^/]+)\/(heartbeat|proposal|complete|cancelled)$/.exec(
+          /^\/worker\/tasks\/([^/]+)\/(heartbeat|proposal|complete|cancelled|observe)$/.exec(
             route,
           );
         if (route !== "/worker/claim" && !target)
@@ -359,6 +359,7 @@ export function createConsoleServer({
             : await service[
                 {
                   heartbeat: "heartbeat",
+                  observe: "observe",
                   proposal: "proposal",
                   complete: "complete",
                   cancelled: "acknowledgeCancellation",

@@ -1,3 +1,4 @@
+import { createObservationBuffer, normalizeObservation } from "./workbench-observation.mjs";
 import { appendWorkbenchRecord, listWorkbenchRecords, validateWorkbenchRecords } from "./workbench-records.mjs";
 import {
   hashCandidateV2,
@@ -822,6 +823,8 @@ export function createHealingService({
   integrationsEnv = process.env,
 } = {}) {
   const root = resolve(rootDir);
+  const observations=createObservationBuffer();
+  let observing=0;
   const integrations = () =>
     loadHealingIntegrations({
       rootDir: root,
@@ -1088,7 +1091,7 @@ export function createHealingService({
       rulesOverridden: state.ruleOverrides.length > 0,
       monitoring: monitoringFor(config, state),
       monitoringSource: state.monitoring === null ? "configuration" : "saved",
-      tasks: state.tasks.map(publicTask),
+      tasks: state.tasks.map(entry=>({...publicTask(entry),...(observations.read(entry.task.id).events.length?{observation:observations.read(entry.task.id)}:{})})),
       activity: copy(state.activity),
     };
   }
@@ -1536,6 +1539,19 @@ export function createHealingService({
     });
   }
   return {
+    async observe(id,body,actor) {
+      object(body);
+      const event=normalizeObservation(body.event);
+      if(observing>=4)fail(429,"OBSERVATION_BUSY","观测缓冲繁忙。");
+      observing++;
+      try{
+        const identity=actorIdentity(actor),state=await store.read(),time=now();
+        const entry=activeLease(state,id,body,identity,undefined,true);
+        if(entry.lease.workerId!==body.workerId||Date.parse(entry.lease.expiresAt)<=time.getTime())conflict("执行器租约无效或已过期。");
+        const accepted=observations.add(id,entry.lease,event,time.toISOString());
+        return {accepted,completeness:"partial"};
+      }finally{observing--;}
+    },
     async workbenchRecords(query) {
       const config=await loadConsoleConfiguration(root);
       return listWorkbenchRecords((await store.read()).workbenchRecords,config.project,query);

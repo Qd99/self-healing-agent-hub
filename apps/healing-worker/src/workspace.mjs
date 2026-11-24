@@ -181,6 +181,8 @@ function validateManifest(candidate, base) {
   )
     throw new Error("Invalid or stale candidate identity");
 }
+// Never let telemetry callbacks affect checkout, model or check execution.
+function observe(options,stage,state,extra){try{options.onObserve?.(stage,state,extra);}catch{/* best effort */}}
 export function createWorkspaceEngine(
   config,
   {
@@ -625,12 +627,18 @@ export function createWorkspaceEngine(
     async diagnose(claim, options = {}) {
       options = { ...options, resourceSession: resourceSession(options) };
       const { task, safety, checks: ids } = claimInfo(claim);
+      observe(options,"checkout","start");
       const cwd = await checkout(task.commitSha, options);
+      observe(options,"checkout","returned");
       try {
+        observe(options,"baseline-checks","start");
         const before = await checks(cwd, ids, options);
+        observe(options,"baseline-checks","returned");
         if (before.every((r) => r.exitCode === 0))
           throw new Error("Could not reproduce baseline failure");
         await active(options);
+        observe(options,"model","start");
+        const modelStarted=Date.now();
         const generated = validateGeneration(
           await generate(
             {
@@ -644,18 +652,23 @@ export function createWorkspaceEngine(
               failures: before,
               context: await context(cwd, safety),
             },
-            { signal: options.signal },
+            { signal: options.signal, onObserve:options.onObserve },
           ),
         );
+        observe(options,"model","returned",{durationMs:Math.min(86400000,Math.max(0,Date.now()-modelStarted))});
         await active(options);
+        observe(options,"apply","start");
         await applyChanges(cwd, generated.changes, safety);
+        observe(options,"apply","returned");
         const initial = await measure(
           cwd,
           task.commitSha,
           safety,
           options.signal,
         );
+        observe(options,"candidate-checks","start");
         const after = await checks(cwd, ids, options);
+        observe(options,"candidate-checks","returned");
         if (after.some((r) => r.exitCode !== 0))
           throw new Error("Candidate required checks failed");
         const measured = await measure(
@@ -721,7 +734,9 @@ export function createWorkspaceEngine(
           JSON.stringify(before.diff) !== JSON.stringify(artifact.diff)
         )
           throw new Error("Candidate artifact content mismatch");
+        observe(options,"candidate-checks","start");
         const records = await checks(cwd, ids, options);
+        observe(options,"candidate-checks","returned");
         if (records.some((r) => r.exitCode !== 0))
           throw new Error("Candidate required checks failed");
         const after = await measure(

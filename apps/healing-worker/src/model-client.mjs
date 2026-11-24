@@ -32,7 +32,7 @@ export function validateGeneration(value) {
   return { ...value, summary: normalizeCandidateSummaryV2(value.summary) };
 }
 export function createModelClient(config) {
-  return async (input, { signal } = {}) => {
+  return async (input, { signal, onObserve } = {}) => {
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.throwIfAborted();
@@ -77,9 +77,13 @@ export function createModelClient(config) {
         chunks.push(chunk);
       }
       const envelope = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      return validateGeneration(
-        JSON.parse(envelope.choices?.[0]?.message?.content),
-      );
+      const generation=validateGeneration(JSON.parse(envelope.choices?.[0]?.message?.content));
+      const usage={};
+      for(const [key,value] of Object.entries({input:envelope.usage?.prompt_tokens,output:envelope.usage?.completion_tokens,cached:envelope.usage?.prompt_tokens_details?.cached_tokens,total:envelope.usage?.total_tokens})){
+        if(Number.isSafeInteger(value)&&value>=0&&value<=1e9)usage[key]=value;
+      }
+      if(Object.keys(usage).length){try{onObserve?.("model-usage","observed",{usage});}catch{/* best effort */}}
+      return generation;
     } catch (error) {
       if (controller.signal.aborted)
         throw new Error("Model request aborted or timed out");

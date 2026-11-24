@@ -431,6 +431,14 @@ export function createWorkerRuntime(
         deadlineTimer,
         heartbeatPromise = Promise.resolve(),
         stopping = false;
+      let observationSequence=0, observationInflight=0;
+      const observe=(stage,state,extra={})=>{
+        if(typeof client.observe!=="function"||observationInflight>=4||controller.signal.aborted)return;
+        const event={sequence:++observationSequence,stage,state,...extra};
+        observationInflight++;
+        // Telemetry cannot block or change the authoritative task/lease path.
+        Promise.resolve().then(()=>client.observe(id,{...identity(claim),event},{signal:AbortSignal.any([controller.signal,AbortSignal.timeout(1500)])})).catch(()=>{}).finally(()=>{observationInflight--;});
+      };
       const stop = () => controller.abort();
       const assertActive = () => {
         if (
@@ -483,6 +491,8 @@ export function createWorkerRuntime(
       try {
         validateClaim(claim);
         assertActive();
+        observe("worker","start");
+        observe("base-check","start");
         if (
           (await publisher.readBase({
             repo: config.repository.fullName,
@@ -491,12 +501,14 @@ export function createWorkerRuntime(
           })) !== claim.task.task.payload.context.commitSha
         )
           throw Error("Base branch moved");
+        observe("base-check","returned");
         assertActive();
         if (claim.lease.phase === "diagnose") {
           const output = await engine.diagnose(claim, {
             signal: controller.signal,
             assertActive,
             onResources,
+            onObserve:observe,
           });
           assertActive();
           if (record.resources)
@@ -534,6 +546,7 @@ export function createWorkerRuntime(
           await journal.put(id, record);
           assertActive();
           proposalUncertain = true;
+          observe("proposal","start");
           const outcome = await replayProposal(id, record, {
             signal: controller.signal,
           });
@@ -568,12 +581,15 @@ export function createWorkerRuntime(
         });
         if (hash !== proposal.contentHash)
           throw Error("Artifact identity mismatch");
+        observe("prepare","start");
         prepared = await engine.prepareExecution(claim, artifact, {
           signal: controller.signal,
           assertActive,
           onResources,
+          onObserve:observe,
         });
         assertActive();
+        observe("prepare","returned");
         if (!same(prepared.candidate, proposal.candidate))
           throw Error("Prepared candidate mismatch");
         if (
@@ -587,6 +603,7 @@ export function createWorkerRuntime(
         assertActive();
         record = { ...record, state: "executing" };
         await journal.put(id, record);
+        observe("publish","start");
         const facts = await publisher.publish({
           claim,
           prepared,
@@ -599,11 +616,15 @@ export function createWorkerRuntime(
             record = next;
           },
         });
+        observe("publish","returned");
         record = { ...record, known: { ...record.known, ...facts } };
         await journal.put(id, record);
+        observe("cleanup","start");
         await prepared.cleanup();
+        observe("cleanup","returned");
         prepared = undefined;
         assertActive();
+        observe("receipt","start");
         await receipt(id, record, "complete", {
           success: true,
           action: "pr-created",
@@ -613,6 +634,7 @@ export function createWorkerRuntime(
         });
         return { executed: true };
       } catch (error) {
+        observe("worker","error");
         // Never replace a potentially accepted proposal with a different receipt
         // when saving its ambiguous outcome fails. Its durable request can replay.
         if (proposalUncertain) throw error;
