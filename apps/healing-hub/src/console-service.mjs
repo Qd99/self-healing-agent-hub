@@ -1,3 +1,4 @@
+import { appendWorkbenchRecord, listWorkbenchRecords, validateWorkbenchRecords } from "./workbench-records.mjs";
 import {
   hashCandidateV2,
   normalizeCandidateV2,
@@ -549,6 +550,7 @@ function retryAncestors(state, entry) {
 
 function validateStoredState(state) {
   object(state);
+  validateWorkbenchRecords(state.workbenchRecords);
   if (state.schemaVersion !== 1) invalid();
   integer(state.revision);
   object(state.configRevisions);
@@ -1534,6 +1536,19 @@ export function createHealingService({
     });
   }
   return {
+    async workbenchRecords(query) {
+      const config=await loadConsoleConfiguration(root);
+      return listWorkbenchRecords((await store.read()).workbenchRecords,config.project,query);
+    },
+    saveWorkbenchRecord(body,actor,binding) {
+      return mutate(actor,(state,config,identity,time)=>{
+        if(body.kind==="review"&&(!binding||binding.projectId!==config.project.id||binding.repo!==config.project.repo||binding.contractHash!==body.payload?.contractHash||binding.baselineSha!==body.payload?.baselineSha||binding.issueNumber!==body.payload?.issueNumber))
+          fail(409,"WORKBENCH_REVIEW_STALE","需求正文或仓库基线已变化，请重新读取后评审。");
+        const result=appendWorkbenchRecord(state,config.project,body,identity.name,time.toISOString());
+        if(result.changed) audit(state,"workbench-record","保存工作区记录："+body.kind,identity,time.toISOString());
+        return result;
+      },false);
+    },
     async importJenkinsBuild(body, actor) {
       object(body);
       if (

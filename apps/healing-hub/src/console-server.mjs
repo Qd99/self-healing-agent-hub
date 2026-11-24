@@ -374,6 +374,26 @@ export function createConsoleServer({
         json(response, 200, auth.decorate(await service.snapshot(), identity));
         return;
       }
+      if(route==="/workbench/records"){
+        requireMethod(request,["GET","POST"]);
+        if(request.method==="GET"){
+          request.resume();
+          const p=new URL(request.url,"http://localhost").searchParams;
+          json(response,200,await service.workbenchRecords({kind:p.get("kind"),key:p.get("key")||undefined,page:Number(p.get("page")||1),pageSize:Number(p.get("pageSize")||20),history:p.get("history")==="1",issueNumber:p.has("issueNumber")?Number(p.get("issueNumber")):undefined}));
+          return;
+        }
+        auth.assertWrite(request,identity);
+        const body=await readBody(request);
+        let binding;
+        if(body.kind==="review"){
+          const snapshot=await service.snapshot();
+          const current=await workbench.issue(snapshot,body.payload?.issueNumber);
+          if(current.item.state!=="open"||current.item.bodyTruncated) throw new ConsoleError(409,"WORKBENCH_REVIEW_STALE","已关闭或未完整读取的需求不能追加当前评审。");
+          binding={projectId:snapshot.project.id,repo:snapshot.project.repo,issueNumber:current.item.number,contractHash:current.item.contractHash,baselineSha:current.item.baselineSha};
+        }
+        json(response,200,await service.saveWorkbenchRecord(body,identity.actor,binding));
+        return;
+      }
       const workspaceRead=/^\/workbench\/(github-issues|github-prs|github-issue|github-pr|zentao|metrics|alerts)$/.exec(route);
       if(workspaceRead){
         requireMethod(request,"GET");
