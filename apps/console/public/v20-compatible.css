@@ -1,0 +1,259 @@
+/* V20 compatibility preview: presentation only. The original entry point
+   does not load this file. Preserve all existing data-action and ARIA contracts. */
+:root[data-console-ui="v20"] {
+  --paper: #f6f7f9;
+  --side: #f1f3f6;
+  --surface: #fff;
+  --surface-raised: #fff;
+  --subtle: #f6f7f9;
+  --hover: #edf0f4;
+  --line: #dfe4eb;
+  --line-soft: #e9edf2;
+  --nav-active: #e3e9f2;
+  --nav-hover: #e9edf3;
+  --ink: #232a34;
+  --muted: #596574;
+  --faint: #667383;
+  --blue: #385f9b;
+  --blue-soft: #eaf0f9;
+  --accent: #303b50;
+  --on-accent: #fff;
+  --green: #247658;
+  --green-bg: #edf7f2;
+  --red: #b63e48;
+  --red-bg: #fcf0f1;
+  --amber: #8f601c;
+  --amber-bg: #fbf4e8;
+  --code: #f4f6f9;
+  --panel-shadow: 0 1px 2px #19283e06;
+  --shadow: 0 14px 44px #18233724;
+  --ui-radius: 6px;
+  --ui-card-radius: 9px;
+  --ui-control-height: 34px;
+}
+:root[data-console-ui="v20"][data-theme="dark"] {
+  --paper: #17191d;
+  --side: #191c20;
+  --surface: #1d2025;
+  --surface-raised: #23272d;
+  --subtle: #25292f;
+  --hover: #2b3139;
+  --line: #343b45;
+  --line-soft: #2d333b;
+  --nav-active: #29364a;
+  --nav-hover: #282d35;
+  --ink: #e5e8ee;
+  --muted: #b0b8c5;
+  --faint: #a0aab9;
+  --blue: #a1bfee;
+  --blue-soft: #29374b;
+  --accent: #a8c0e8;
+  --on-accent: #171c26;
+  --green: #79c8a5;
+  --green-bg: #233931;
+  --red: #f1989e;
+  --red-bg: #402c32;
+  --amber: #e2b573;
+  --amber-bg: #3b3227;
+  --code: #171a1e;
+  --panel-shadow: 0 1px 2px #0003;
+  --shadow: 0 14px 44px #0007;
+}
+@media (min-width: 651px) {
+  :root[data-console-ui="v20"] { --sidebar: 188px; }
+  :root[data-console-ui="v20"][data-sidebar="collapsed"] { --sidebar: 64px; }
+  :root[data-console-ui="v20"] .sidebar { border-right: 1px solid var(--line); }
+  :root[data-console-ui="v20"] .shell { background: var(--surface); min-height: 100vh; }
+  :root[data-console-ui="v20"] .topbar {
+    padding-inline: 26px;
+    height: 48px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  :root[data-console-ui="v20"] .content {
+    padding: 22px 26px 32px;
+    max-width: 1600px;
+  }
+  :root[data-console-ui="v20"] .sidebar .nav-item { min-height: 34px; border-radius: 6px; }
+  :root[data-console-ui="v20"] .tl-table td { height: 54px; padding-block: 8px; }
+  :root[data-console-ui="v20"] .tl-density-compact .tl-table td { height: 46px; padding-block: 5px; }
+  :root[data-console-ui="v20"] .adm-activity-table.ui-table td { height: 48px; padding-block: 6px; }
+}
+:root[data-console-ui="v20"] .sidebar .brand-mark {
+  background: var(--accent);
+  box-shadow: none;
+  border-radius: 7px;
+}
+:root[data-console-ui="v20"] .sidebar .nav-item.active::before {
+  display: block;
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--blue);
+}
+:root[data-console-ui="v20"] .page-heading { margin-bottom: 18px; }
+:root[data-console-ui="v20"] .page-heading h1 {
+  font-size: 21px;
+  font-weight: 630;
+  letter-spacing: -.35px;
+}
+:root[data-console-ui="v20"] .ui-card.ui-card,
+:root[data-console-ui="v20"] .tl-panel,
+:root[data-console-ui="v20"] .af-review,
+:root[data-console-ui="v20"] .af-requests,
+:root[data-console-ui="v20"] .af-inspector {
+  border: 1px solid var(--line);
+  box-shadow: none;
+  border-radius: var(--ui-card-radius);
+}
+:root[data-console-ui="v20"] .ui-button.ui-button-primary,
+:root[data-console-ui="v20"] .ui-button.tl-button-primary,
+:root[data-console-ui="v20"] .ui-button.primary,
+:root[data-console-ui="v20"] .page-heading .btn.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 1px 2px #19283e0c;
+}
+:root[data-console-ui="v20"] .ui-button.ui-button-primary:hover:not(:disabled),
+:root[data-console-ui="v20"] .ui-button.tl-button-primary:hover:not(:disabled),
+:root[data-console-ui="v20"] .ui-button.primary:hover:not(:disabled),
+:root[data-console-ui="v20"] .page-heading .btn.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, var(--surface));
+}
+:root[data-console-ui="v20"] .ui-button.ui-button:active:not(:disabled),
+:root[data-console-ui="v20"] .ui-icon-button.ui-icon-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+:root[data-console-ui="v20"] :is(button, a, input, textarea, select, summary):focus-visible {
+  outline-color: var(--blue);
+  outline-offset: 2px;
+}
+:root[data-console-ui="v20"] .ui-table th,
+:root[data-console-ui="v20"] .tl-table th {
+  color: var(--muted);
+  background: var(--subtle);
+  font-size: 12px;
+  font-weight: 500;
+}
+:root[data-console-ui="v20"] .ui-table td,
+:root[data-console-ui="v20"] .tl-table td { font-size: 13px; }
+:root[data-console-ui="v20"] .ui-metric-value strong,
+:root[data-console-ui="v20"] .home-metric .ui-metric-value strong,
+:root[data-console-ui="v20"] .mon-summary .ui-metric-value strong,
+:root[data-console-ui="v20"] .report-donut-value strong,
+:root[data-console-ui="v20"] .af-stat strong {
+  font-size: 14px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Dashboard: compact status strip, a dominant trend area and readable recent
+   tasks. Keep the original DOM order and all chart drilldown actions. */
+:root[data-console-ui="v20"] .home-metrics {
+  margin-bottom: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: none;
+}
+:root[data-console-ui="v20"] .home-stat {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+:root[data-console-ui="v20"] .home-stat + .home-stat::before { top: 10px; bottom: 10px; }
+:root[data-console-ui="v20"] .home-metric.ui-metric {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 10px 12px;
+}
+:root[data-console-ui="v20"] .home-metric .ui-metric-heading { min-height: 20px; gap: 5px; }
+:root[data-console-ui="v20"] .home-metric .ui-metric-icon {
+  width: 20px;
+  height: 20px;
+  background: transparent;
+}
+:root[data-console-ui="v20"] .home-metric .ui-metric-icon svg { width: 15px; height: 15px; }
+:root[data-console-ui="v20"] .home-metric .ui-metric-value { margin: 0; gap: 3px; }
+:root[data-console-ui="v20"] .home-metric .ui-metric-detail {
+  grid-column: 1 / -1;
+  margin: 0;
+  white-space: normal;
+}
+:root[data-console-ui="v20"] .home-dashboard .home-stat-action.ui-button {
+  position: static;
+  align-self: flex-start;
+  margin: 0 12px 6px;
+  min-height: 24px;
+}
+:root[data-console-ui="v20"] .home-report-main,
+:root[data-console-ui="v20"] .home-report-bottom { gap: 12px; }
+:root[data-console-ui="v20"] .home-report-main { margin-bottom: 12px; }
+:root[data-console-ui="v20"] .report-card { padding: 13px 15px; }
+:root[data-console-ui="v20"] .home-report-main > .report-card { min-height: 250px; }
+:root[data-console-ui="v20"] .report-header { margin-bottom: 9px; }
+:root[data-console-ui="v20"] .report-donut { width: 108px; height: 108px; }
+:root[data-console-ui="v20"] .home-task-row { min-height: 46px; }
+@media (min-width: 1251px) {
+  :root[data-console-ui="v20"] .home-report-main {
+    grid-template-columns: minmax(0, 2.15fr) minmax(300px, 1fr);
+  }
+  :root[data-console-ui="v20"] .home-report-bottom {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.5fr);
+  }
+}
+@media (max-width: 480px) {
+  :root[data-console-ui="v20"] .home-metric.ui-metric { grid-template-columns: minmax(0, 1fr); }
+  :root[data-console-ui="v20"] .home-metric .ui-metric-value { justify-content: flex-start; }
+  :root[data-console-ui="v20"] .home-stat + .home-stat::before { top: 6px; bottom: 6px; }
+}
+/* Approval counts and monitoring summaries remain visible, but are no longer
+   oversized KPI blocks. Never substitute a value for missing observations. */
+:root[data-console-ui="v20"] .af-overview {
+  gap: 0;
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+:root[data-console-ui="v20"] .af-stat {
+  min-height: 0;
+  padding: 10px 12px;
+  gap: 7px;
+  flex-wrap: wrap;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-console-ui="v20"] .af-stat + .af-stat { border-left: 1px solid var(--line-soft); }
+:root[data-console-ui="v20"] .af-stat-icon { width: 23px; height: 23px; background: transparent; }
+:root[data-console-ui="v20"] .af-stat > div { gap: 6px; white-space: normal; }
+:root[data-console-ui="v20"] .mon-summary { min-height: 0; }
+:root[data-console-ui="v20"] .mon-summary .ui-metric { padding-block: 10px; }
+:root[data-console-ui="v20"] .mon-summary .ui-metric-icon { background: transparent; }
+:root[data-console-ui="v20"] .mon-summary .ui-metric-detail { white-space: normal; }
+:root[data-console-ui="v20"] .ui-setting-stack { gap: 12px; }
+:root[data-console-ui="v20"] .ui-section-header { padding-block: 14px; }
+:root[data-console-ui="v20"] .ui-config-grid > div { padding-block: 13px; }
+:root[data-console-ui="v20"] .cs-service-icon { background: transparent; box-shadow: none; }
+:root[data-console-ui="v20"] .detail-dialog,
+:root[data-console-ui="v20"] .create-dialog,
+:root[data-console-ui="v20"] .tl-bulk-dialog { border-radius: 10px; }
+@media (max-width: 650px) {
+  :root[data-console-ui="v20"] .af-stat { padding: 8px; }
+  :root[data-console-ui="v20"] .af-stat + .af-stat { border-left: 0; }
+  :root[data-console-ui="v20"] .detail-dialog { border-radius: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-console-ui="v20"] .ui-button.ui-button:active:not(:disabled),
+  :root[data-console-ui="v20"] .ui-icon-button.ui-icon-button:active:not(:disabled) {
+    transform: none;
+  }
+}
