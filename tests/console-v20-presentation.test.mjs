@@ -30,13 +30,13 @@ test("V20 stylesheet does not load external assets or synthesize business data",
   assert.match(css, /:root\[data-console-ui="v20"\]\[data-theme="dark"\]/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   // Content may create a decorative rule, never a label or a metric.
-  for (const match of css.matchAll(/\bcontent\s*:\s*([^;]+);/g)) {
+  for (const match of css.matchAll(/(?:^|[;{])\s*content\s*:\s*([^;]+);/g)) {
     assert.equal(match[1].trim(), '""');
   }
   // All ordinary selector lines are scoped to the opt-in document.
   for (const line of css.split("\n")) {
     const trimmed = line.trim();
-    if (/^[.#:\[]/.test(trimmed) && /[{,]$/.test(trimmed)) {
+    if (/^[.#:\[]/.test(trimmed)) {
       assert.ok(trimmed.startsWith(':root[data-console-ui="v20"]'), trimmed);
     }
   }

@@ -53,6 +53,41 @@ test("legacy and V20 assets share one authenticated, unchanged API v1", async (t
     assert.equal(response.status, 200, path);
     assert.equal(await response.text(), await readFile(join(publicDir, name), "utf8"), path);
   }
+  // The same browser session must work from both entry URLs. Neither page
+  // may bypass CSRF merely because the presentation variant changed.
+  const login = await get("/api/healing/session", {
+    method: "POST",
+    headers: auth,
+  });
+  assert.equal(login.status, 200);
+  const setCookie = login.headers.get("set-cookie");
+  assert.match(setCookie || "", /HttpOnly/i);
+  assert.match(setCookie || "", /SameSite=Strict/i);
+  const cookie = setCookie.split(";")[0];
+  const session = (await login.json()).snapshot;
+  assert.ok(session.csrfToken);
+  for (const page of ["/", "/console-v20.html"]) {
+    const response = await get("/api/healing/snapshot", {
+      headers: { Cookie: cookie, Referer: base + page },
+    });
+    assert.equal(response.status, 200);
+    const value = await response.json();
+    assert.equal(value.apiVersion, 1);
+    assert.equal(value.csrfToken, session.csrfToken);
+    assert.deepEqual(value.tasks, before.tasks);
+    const blocked = await get("/api/healing/trigger", {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        Origin: base,
+        Referer: base + page,
+        "Content-Type": "application/json",
+        "X-Heal-CSRF": "incorrect-token",
+      },
+      body: JSON.stringify({ title: "must not run", type: "ci-failure", priority: "high" }),
+    });
+    assert.equal(blocked.status, 403);
+  }
   const after = await snapshot();
   for (const key of ["apiVersion", "mode", "revision", "capabilities", "project", "tasks", "activity"]) {
     assert.deepEqual(after[key], before[key], key);
