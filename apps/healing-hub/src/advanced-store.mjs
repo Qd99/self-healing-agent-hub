@@ -150,9 +150,11 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         return compareRedGreen(j.result.baseline,j.result.candidate,{...j.binding,suiteDigest:j.policy.suiteDigest,environmentDigest:j.policy.environmentDigest,harnessDigest:j.policy.harnessDigest,caseIds:j.policy.caseIds,targetCase:j.policy.targetCase});
       }catch{return {verdict:"unknown",reason:"独立证据暂不可读。"};}
     },
+    async effectsFor(project,kind){return (await read()).effects.filter(x=>matches(x,project)&&x.kind===kind).reverse();},
     async reserveEffect(project,kind,key,details){
       requireEnabled();return tx(s=>{const scope=projectScope(project),id=digest([scope,kind,key]),old=s.effects.find(x=>x.id===id);
         if(old)return {changed:false,value:{created:false,effect:old}};
+        if(kind==="github-requirement"&&s.effects.some(x=>matches(x,project)&&x.kind===kind&&x.details.day===details.day))conflict("每日登记配额已用完。");
         cap(s,"effects");const effect={id,project:scope,kind,key,details,state:"unknown",at:at(clock)};
         s.effects.push(effect);return {changed:true,value:{created:true,effect}};});
     },

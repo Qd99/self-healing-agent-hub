@@ -1,3 +1,4 @@
+import { createAdvancedMetrics } from "./advanced-metrics.mjs";
 import { createAdvancedRoutes } from "./advanced-routes.mjs";
 import { createWorkbenchConnectors } from "./workbench-connectors.mjs";
 import { createServer } from "node:http";
@@ -291,11 +292,13 @@ export function createConsoleServer({
     clock,
   });
   const workbench=createWorkbenchConnectors({env:integrationsEnv,fetchImpl:integrationsFetch,grafanaFetch,grafanaAllowedOrigins,grafanaToken,clock});
-  const advancedRoutes=createAdvancedRoutes({service,env:integrationsEnv,consoleToken,workerToken,auth,readBody,requireMethod,json});
+  const advancedRoutes=createAdvancedRoutes({service,env:integrationsEnv,consoleToken,workerToken,auth,readBody,requireMethod,json,fetchImpl:integrationsFetch,clock});
+  const advancedMetrics=createAdvancedMetrics({service,env:integrationsEnv,rootDir:resolve(rootDir),integrationsConfig,fetchImpl:integrationsFetch,clock});
   let shutdownPromise;
   let closingService;
   const closeService = () => (closingService ||= service.close());
   const server = createServer((request, response) => {
+    advancedMetrics.record(request,response);
     void (async () => {
       const path = pathname(request);
       const [canonicalAssets, canonicalStorage] = await Promise.all([
@@ -516,7 +519,10 @@ export function createConsoleServer({
   });
   server.requestTimeout = 30_000;
   server.headersTimeout = 15_000;
+  let sampleTimer;
+  if(service.advanced.enabled&&integrationsEnv.HUB_METRICS_SAMPLING==="1")server.on("listening",()=>{void advancedMetrics.sample();sampleTimer=setInterval(()=>void advancedMetrics.sample(),60000);sampleTimer.unref();});
   server.on("close", () => {
+    clearInterval(sampleTimer);
     void closeService().catch(() => {});
   });
   server.shutdown = () =>
