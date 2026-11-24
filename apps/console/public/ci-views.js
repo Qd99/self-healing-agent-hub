@@ -94,7 +94,7 @@ export function renderTaskVerification(item, s) {
     Number.isSafeInteger(item.result?.changes?.pr) &&
     item.result.changes.pr > 0 &&
     /^[a-f0-9]{40}$/i.test(item.result.changes.commit || "");
-  const [label, tone] = labels[v?.status] || [
+  const [label, tone] = (Object.hasOwn(labels, v?.status) ? labels[v.status] : null) || [
     hasPr ? "尚未核验" : "待创建修复 PR",
     "neutral",
   ];
@@ -131,5 +131,5 @@ export function renderTaskVerification(item, s) {
   const contexts = v?.statuses?.length
     ? `<details class="ci-contexts"><summary id="ci-contexts-summary">CI 检查项 · ${v.statuses.length}</summary>${v.statuses.map((entry) => `<div><code>${e(entry.context)}</code><span>${e({ success: "通过", pending: "等待", failure: "失败", error: "错误" }[entry.state] || "未确认")}</span></div>`).join("")}</details>`
     : "";
-  return `<section class="task-ci-verification" aria-label="PR 与 CI 核验"><header><h3>${icon("ShieldCheck", 15)}PR 与 CI</h3>${uiStatus({ label, tone })}${uiButton({ label: pending ? "核验中…" : "核验 PR 与 CI", action: "ci-verify", icon: "RefreshCw", attrs: `data-id="${e(item.task.id)}"`, disabled: !allowed, loading: pending, title: !hasPr ? "收到修复 PR 回执后可核验" : unavailable })}</header>${v?.message ? `<p>${e(v.message)}</p>` : hasPr ? '<p class="muted">PR 已创建，CI 结果尚未由管理服务独立核验。</p>' : '<p class="muted">候选审批并执行后，在这里核对修复 PR 和 CI 结果。</p>'}${proof}${contexts}${v?.checkedAt ? `<p class="ci-checked-at">最近查询 <time>${e(v.checkedAt)}</time></p>` : ""}${unavailable ? `<p class="muted">${e(unavailable)}</p>` : ""}${feedback?.error ? `<p class="task-feedback-error" role="alert">${e(feedback.error)}</p>` : feedback?.message ? `<p class="muted" role="status">${e(feedback.message)}</p>` : ""}</section>`;
+  return `<section class="task-ci-verification" aria-label="PR 与 CI 核验"><header><h3>${icon("ShieldCheck", 15)}PR 与 CI</h3>${uiStatus({ label, tone })}${uiButton({ label: pending ? "核验中…" : "核验 PR 与 CI", action: "ci-verify", icon: "RefreshCw", attrs: `data-id="${e(item.task.id)}"`, disabled: !allowed, loading: pending, title: !hasPr ? "收到修复 PR 回执后可核验" : unavailable })}</header>${s.error ? '<p class="muted" role="status">最近一次核验记录 · 当前连接异常，非实时。</p>' : ""}${v?.message ? `<p>${e(v.message)}</p>` : hasPr ? '<p class="muted">PR 已创建，CI 结果尚未由管理服务独立核验。</p>' : '<p class="muted">候选审批并执行后，在这里核对修复 PR 和 CI 结果。</p>'}${proof}${contexts}${v?.checkedAt ? `<p class="ci-checked-at">最近查询 <time>${e(v.checkedAt)}</time></p>` : ""}${unavailable ? `<p class="muted">${e(unavailable)}</p>` : ""}${feedback?.error ? `<p class="task-feedback-error" role="alert">${e(feedback.error)}</p>` : feedback?.message ? `<p class="muted" role="status">${e(feedback.message)}</p>` : ""}</section>`;
 }

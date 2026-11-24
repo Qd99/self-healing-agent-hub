@@ -2155,3 +2155,45 @@ dialog::backdrop {
     margin-left: 0;
   }
 }
+
+
+/* Jenkins imported-failure workspace (both real UI entry points). */
+.jenkins-workspace { min-width: 0; }
+.jenkins-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.jenkins-toolbar h2 { font-size: 15px; font-weight: 600; }
+.jenkins-toolbar p,.jenkins-boundary { color: var(--muted); font-size: 12px; margin-top: 4px; line-height: 1.65; }
+.jenkins-boundary { border-left: 2px solid var(--line); padding: 3px 10px; margin-bottom: 16px; }
+.jenkins-layout { display: grid; grid-template-columns: minmax(0, 2.8fr) minmax(235px, 1fr); gap: 14px; align-items: start; }
+.jenkins-records,.jenkins-summary { min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: var(--ui-card-radius); }
+.jenkins-side { display: grid; gap: 12px; min-width: 0; }
+.jenkins-subhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); }
+.jenkins-subhead h3 { font-size: 13px; font-weight: 600; }
+.jenkins-subhead span { color: var(--muted); font-size: 11px; font-weight: 400; }
+.jenkins-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; }
+.jenkins-search { flex: 1 1 190px; min-width: 0; }
+.jenkins-table-wrap { overflow-x: auto; max-width: 100%; }
+.jenkins-table { min-width: 720px; table-layout: auto; }
+.jenkins-table th,.jenkins-table td { padding: 10px 11px; vertical-align: middle; text-align: left; white-space: nowrap; }
+.jenkins-table td { min-height: 50px; }
+.jenkins-table td:first-child { width: 34%; white-space: normal; }
+.jenkins-record-title { display: block; width: 100%; text-align: left; padding: 0; min-width: 0; background: transparent; overflow-wrap: anywhere; }
+.jenkins-record-title strong { font-size: 13px; font-weight: 550; }
+.jenkins-record-title:hover strong { color: var(--blue); }
+.jenkins-table small { display: block; margin-top: 3px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; white-space: normal; }
+.jenkins-distribution { padding: 8px 12px; }
+.jenkins-chart-row { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 5px 8px; width: 100%; text-align: left; padding: 7px 5px; border-radius: 6px; font-size: 12px; }
+.jenkins-chart-row:hover,.jenkins-chart-row[aria-pressed="true"] { background: var(--hover); }
+.jenkins-chart-row progress { grid-column: 1/-1; width: 100%; height: 5px; accent-color: var(--muted); }
+.jenkins-chart-row .jenkins-bar-success { accent-color: var(--green); }
+.jenkins-chart-row .jenkins-bar-error { accent-color: var(--red); }
+.jenkins-chart-row .jenkins-bar-warning { accent-color: var(--amber); }
+.jenkins-count { color: var(--muted); font-variant-numeric: tabular-nums; }
+.jenkins-summary dl { margin: 0; padding: 8px 14px; display: grid; gap: 10px; }
+.jenkins-summary dt { color: var(--muted); font-size: 11px; }
+.jenkins-summary dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 12px; }
+.jenkins-summary > .ui-button { margin: 0 10px 10px; }
+.jenkins-records .v20-pager { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; }
+.jenkins-records .v20-pager-controls,.jenkins-records .v20-page-size { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.jenkins-records .v20-pager [aria-current="page"] { color: var(--blue); background: var(--blue-soft); }
+@media (max-width: 1240px) { .jenkins-layout { grid-template-columns: minmax(0,1fr); } .jenkins-side { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 650px) { .jenkins-side { grid-template-columns: minmax(0,1fr); } .jenkins-toolbar > .row { flex-wrap: wrap; } .jenkins-filter { align-items: stretch; } .jenkins-filter .jenkins-search { flex-basis: 100%; } }

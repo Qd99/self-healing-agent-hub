@@ -105,6 +105,18 @@ export function renderConnectionSettings(s) {
         <div class="cs-service-status">${uiStatus({ label: monitoringLabel, tone: "neutral" })}${configured ? `<small>${datasourceChecked === "ok" ? "数据源已核对 · 指标尚未查询" : datasourceChecked === "error" ? "数据源检查未通过" : "尚未验证指标"}</small>` : ""}</div>
         ${configureButton("Prometheus", "monitor-datasourceUid")}
       </div>
+      <div class="cs-service">
+        <span class="cs-service-icon" aria-hidden="true">${icon("Workflow", 21)}</span>
+        <div class="cs-service-copy"><h3>Jenkins</h3><p>${e(snapshot?.integrations?.jenkins?.jobName || "失败构建导入 · 服务端配置")}</p></div>
+        <div class="cs-service-status">${uiStatus({label:snapshot?.integrations?.jenkins?.configured?"已配置":"未配置"})}<small>配置不代表在线</small></div>
+        ${uiButton({label:"打开",icon:"ArrowUpRight",action:"navigate",attrs:'data-view="jenkins"',variant:"ghost"})}
+      </div>
+      <div class="cs-service">
+        <span class="cs-service-icon" aria-hidden="true">${icon("ShieldCheck", 21)}</span>
+        <div class="cs-service-copy"><h3>GitHub CI 核验</h3><p>只读 PR / Commit Status 证据</p></div>
+        <div class="cs-service-status">${uiStatus({label:snapshot?.integrations?.verification?.configured?"已配置":"未配置"})}<small>按任务核验</small></div>
+        ${uiButton({label:"打开",icon:"ArrowUpRight",action:"navigate",attrs:'data-view="jenkins"',variant:"ghost"})}
+      </div>
       <div class="cs-scope-row"><div>${icon("Boxes", 15)}<span>监控命名空间</span></div><p>${configured ? monitoring.namespaces.map((value) => `<span class="cs-namespace">${e(value)}</span>`).join("") : "尚未设置"}</p>${uiButton({ label: "设置范围", action: "monitoring-configure", variant: "ghost", attrs: 'data-field="monitor-namespaces"', className: "cs-scope-action" })}</div>
     </section>
     <details class="cs-guide">

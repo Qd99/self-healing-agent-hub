@@ -126,6 +126,10 @@ export function createCiController({
     state.ciImportResult = null;
     state.ciVerificationFeedback = null;
     state.createMode = "task";
+    state.jenkinsQuery = "";
+    state.jenkinsStatus = "all";
+    state.jenkinsPage = 1;
+    state.jenkinsPageSize = 10;
   }
   return { importBuild, verifyTask, reset };
 }

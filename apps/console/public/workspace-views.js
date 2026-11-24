@@ -35,14 +35,14 @@ export function renderWorkspaceExecutionDetail(entry, state) {
 }
 
 export function renderWorkspacePager(list, prefix) {
-  if (!["task", "activity"].includes(prefix)) return "";
+  if (!["task", "activity", "jenkins"].includes(prefix)) return "";
   const task = prefix === "task";
   const { page, pageCount, pageSize, start, end, total } = list;
-  const sizeId = task ? "task-page-size" : "activity-page-size";
-  const action = task ? "task-page" : "activity-page";
-  const sizes = task ? [10,20,50] : [10,15,20,50];
+  const sizeId = `${prefix}-page-size`;
+  const action = `${prefix}-page`;
+  const sizes = prefix === "activity" ? [10,15,20,50] : [10,20,50];
   const edge = (prev) => `<button type="button" id="${prefix}-page-${prev ? "prev" : "next"}" class="ui-icon-button tl-icon-button" data-action="${action}" data-page="${prev ? Math.max(1,page-1) : Math.min(pageCount,page+1)}" aria-label="${prev ? "上一页" : "下一页"}" ${(prev ? page<=1 : page>=pageCount) ? "disabled" : ""}>${icon(prev ? "ChevronLeft" : "ChevronRight",15)}</button>`;
-  return `<footer class="v20-pager ${task ? "tl-pagination" : "adm-pagination"}"><div role="status" aria-live="polite">显示 ${start}–${end} 条，共 ${total} 条</div><div class="v20-pager-controls"><label class="v20-page-size" for="${sizeId}">每页 <select class="ui-select-input" id="${sizeId}" name="${sizeId}">${sizes.map((size)=>`<option value="${size}" ${size===pageSize ? "selected" : ""}>${size}</option>`).join("")}</select></label><nav aria-label="${task ? "任务" : "操作记录"}分页">${edge(true)}${workspacePageNumbers(page,pageCount).map((number)=>number==="gap" ? '<span aria-hidden="true">…</span>' : `<button type="button" id="${prefix}-page-${number}" class="ui-icon-button tl-page-button ${number===page ? "is-current" : ""}" data-action="${action}" data-page="${number}" aria-label="第 ${number} 页" ${number===page ? 'aria-current="page"' : ""}>${number}</button>`).join("")}${edge(false)}</nav></div></footer>`;
+  return `<footer class="v20-pager ${task ? "tl-pagination" : "adm-pagination"}"><div role="status" aria-live="polite">显示 ${start}–${end} 条，共 ${total} 条</div><div class="v20-pager-controls"><label class="v20-page-size" for="${sizeId}">每页 <select class="ui-select-input" id="${sizeId}" name="${sizeId}">${sizes.map((size)=>`<option value="${size}" ${size===pageSize ? "selected" : ""}>${size}</option>`).join("")}</select></label><nav aria-label="${task ? "任务" : prefix === "jenkins" ? "Jenkins 导入记录" : "操作记录"}分页">${edge(true)}${workspacePageNumbers(page,pageCount).map((number)=>number==="gap" ? '<span aria-hidden="true">…</span>' : `<button type="button" id="${prefix}-page-${number}" class="ui-icon-button tl-page-button ${number===page ? "is-current" : ""}" data-action="${action}" data-page="${number}" aria-label="第 ${number} 页" ${number===page ? 'aria-current="page"' : ""}>${number}</button>`).join("")}${edge(false)}</nav></div></footer>`;
 }
 
 export function renderWorkspaceAttention(tasks, state) {

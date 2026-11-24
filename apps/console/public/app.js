@@ -57,6 +57,10 @@ const state = {
   createDraft: null,
   createError: "",
   createMode: "task",
+  jenkinsQuery: "",
+  jenkinsStatus: "all",
+  jenkinsPage: 1,
+  jenkinsPageSize: 10,
   ciImportDraft: null,
   ciImportError: "",
   ciImportResult: null,
@@ -775,6 +779,22 @@ document.addEventListener("click", (event) => {
   } else if (action === "new-task") openCreate();
   else if (action === "ci-import-open") openCreate("ci");
   else if (action === "ci-verify") ciController.verifyTask(id);
+  else if (state.view === "jenkins" && action === "jenkins-page") {
+    state.jenkinsPage = Math.max(1, Number(button.dataset.page) || 1);
+    render();
+    document.querySelector('.jenkins-records [aria-current="page"]')?.focus({ preventScroll: true });
+  } else if (state.view === "jenkins" && action === "jenkins-status-filter") {
+    state.jenkinsStatus = button.dataset.value;
+    state.jenkinsPage = 1;
+    render();
+    document.getElementById(button.id)?.focus({ preventScroll: true });
+  } else if (state.view === "jenkins" && action === "jenkins-reset") {
+    state.jenkinsQuery = "";
+    state.jenkinsStatus = "all";
+    state.jenkinsPage = 1;
+    render();
+    document.getElementById("jenkins-search")?.focus({ preventScroll: true });
+  }
   else if (action === "ci-open-task") {
     go("tasks");
     openTask(id);
@@ -807,6 +827,7 @@ document.addEventListener("click", (event) => {
         state.createDraft = null;
         state.approvalComment = "";
         state.monitoringDirty = false;
+        ciController.reset();
         closeDetail();
         closeCreate();
         taskController.reset(true);
@@ -889,6 +910,12 @@ document.addEventListener("input", (event) => {
     state.createDraft[event.target.name] = event.target.value;
     return;
   }
+  if (state.view === "jenkins" && event.target.id === "jenkins-search") {
+    state.jenkinsQuery = event.target.value.slice(0, 200);
+    state.jenkinsPage = 1;
+    if (!event.isComposing) render();
+    return;
+  }
   if (administrationController.handleInput(event)) return;
   if (monitoringController.handleInput(event)) return;
   if (["approval-comment", "resubmit-comment"].includes(event.target.id)) {
@@ -898,6 +925,12 @@ document.addEventListener("input", (event) => {
   taskController.handleInput(event);
 });
 document.addEventListener("compositionend", (event) => {
+  if (state.view === "jenkins" && event.target.id === "jenkins-search") {
+    state.jenkinsQuery = event.target.value.slice(0, 200);
+    state.jenkinsPage = 1;
+    render();
+    return;
+  }
   if (administrationController.handleCompositionEnd(event)) return;
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
@@ -908,6 +941,13 @@ document.addEventListener("change", (event) => {
     if (state.pendingAction === "trigger") return;
     state.createDraft ||= {};
     state.createDraft[event.target.name] = event.target.value;
+    return;
+  }
+  if (state.view === "jenkins" && ["jenkins-status", "jenkins-page-size"].includes(event.target.id)) {
+    if (event.target.id === "jenkins-status") state.jenkinsStatus = event.target.value;
+    else state.jenkinsPageSize = [10, 20, 50].includes(Number(event.target.value)) ? Number(event.target.value) : 10;
+    state.jenkinsPage = 1;
+    render();
     return;
   }
   if (administrationController.handleChange(event)) return;

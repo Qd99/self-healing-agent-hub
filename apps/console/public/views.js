@@ -1,3 +1,4 @@
+import { renderJenkinsWorkspace } from "./jenkins-workspace.js";
 import { isV20 } from "./workspace-model.js";
 import { renderWorkspaceEngines, renderWorkspaceExecutionDetail } from "./workspace-views.js";
 import { icon } from "./icons.js";
@@ -29,6 +30,7 @@ export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
   tasks: { title: "全部任务", icon: "ListChecks" },
   approvals: { title: "审批中心", icon: "GitPullRequestArrow" },
+  jenkins: { title: "Jenkins", icon: "Workflow" },
   engines: { title: "执行引擎", icon: "Bot" },
   rules: { title: "路由规则", icon: "Workflow" },
   safety: { title: "安全策略", icon: "ShieldCheck" },
@@ -139,6 +141,7 @@ function renderPage(s) {
   const views = {
     overview: renderStudioDashboard,
     approvals: renderApprovalPage,
+    jenkins: renderJenkinsWorkspace,
     tasks: renderTaskPage,
     engines,
     rules: renderRulesPage,
