@@ -1,3 +1,4 @@
+import { createWorkbenchConnectors } from "./workbench-connectors.mjs";
 import { createServer } from "node:http";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import {
@@ -288,6 +289,7 @@ export function createConsoleServer({
     secureCookies,
     clock,
   });
+  const workbench=createWorkbenchConnectors({env:integrationsEnv,fetchImpl:integrationsFetch,grafanaFetch,grafanaAllowedOrigins,grafanaToken,clock});
   let shutdownPromise;
   let closingService;
   const closeService = () => (closingService ||= service.close());
@@ -370,6 +372,14 @@ export function createConsoleServer({
         requireMethod(request, "GET");
         request.resume();
         json(response, 200, auth.decorate(await service.snapshot(), identity));
+        return;
+      }
+      const workspaceRead=/^\/workbench\/(github-issues|github-prs|github-issue|github-pr|zentao|metrics|alerts)$/.exec(route);
+      if(workspaceRead){
+        requireMethod(request,"GET");
+        request.resume();
+        const params=new URL(request.url,"http://localhost").searchParams;
+        json(response,200,await workbench.read(workspaceRead[1],await service.snapshot(),params));
         return;
       }
       const taskAction = /^\/tasks\/([^/]+)\/(cancel|retry)$/.exec(route);
