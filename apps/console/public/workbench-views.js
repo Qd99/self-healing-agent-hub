@@ -1,6 +1,7 @@
+import { renderAdvanced } from "./advanced-views.js";
 import { uiTabs,uiStatus } from "./ui.js";
 import { e,button,note,time,empty } from "./workbench-view-kit.js";
-import { initialWorkbench,workbenchTabs,recordTabs,workbenchScope } from "./workbench-model.js";
+import { initialWorkbench,workbenchTabs,recordTabs,workbenchScope,isAdvanced } from "./workbench-model.js";
 import { renderRequirements } from "./workbench-requirements.js";
 import { renderTrace } from "./workbench-trace.js";
 import { renderRecords,renderZentao } from "./workbench-record-views.js";
@@ -9,7 +10,8 @@ export function renderWorkbenchPage(s){
   const w=s.workbench?.view===s.view&&s.workbench.scope===workbenchScope(s)?s.workbench:initialWorkbench(s.view);
   const observed=w.detail?.observedAt||w.data?.observedAt;
   let content;
-  if(s.view==="trace")content=renderTrace(s,w);
+  if(isAdvanced(w.tab))content=renderAdvanced(s,w);
+  else if(s.view==="trace")content=renderTrace(s,w);
   else if(s.view==="requirements")content=renderRequirements(s,w);
   else if(s.view==="metrics")content='<section class="ui-card wb-reading">'+renderMetrics(s,w)+'</section>';
   else if(w.tab==="zentao")content='<section class="ui-card wb-reading">'+renderZentao(s,w)+'</section>';

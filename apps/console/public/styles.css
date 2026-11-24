@@ -2254,3 +2254,13 @@ button.wb-bar-row:hover,button.wb-bar-row[aria-pressed="true"] { background:var(
 .wb-error { border:1px solid var(--line);padding:10px 12px;color:var(--red);border-radius:6px;margin-bottom:12px;font-size:12px; }
 @media(max-width:1050px){.wb-split{grid-template-columns:minmax(0,1fr)}.wb-list-items{max-height:280px;overflow:auto}.wb-review-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:650px){.wb-report-grid,.wb-metric-layout,.wb-properties{grid-template-columns:minmax(0,1fr)}.wb-metric-layout aside{border-left:0;padding-left:0}.wb-top>.row{flex-wrap:wrap}}
+
+/* Advanced V20 workspaces: compact toolbars, explicit evidence and analysis. */
+.adv-job-layout{display:grid;grid-template-columns:minmax(290px,0.95fr) minmax(0,1.65fr);gap:14px;align-items:start}
+.adv-form{margin:10px 0 14px}.adv-field{display:grid;gap:5px;color:var(--muted);font-size:12px}.adv-check{display:flex;gap:6px;align-items:flex-start;font-size:12px;color:var(--muted)}
+.adv-graph{overflow:auto;max-width:100%;border:1px solid var(--line-soft);border-radius:6px;padding:8px;color:var(--muted)}
+.adv-graph svg{display:block;max-width:none}.adv-waterfall{height:12px;min-width:120px;position:relative;background:var(--line-soft);border-radius:3px}
+.adv-waterfall span{position:absolute;top:2px;height:8px;background:var(--blue);border-radius:2px}
+.adv-replay{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px}.adv-replay input{flex:1;min-width:160px;accent-color:var(--blue)}
+.adv-job-layout .wb-table td{max-width:220px;overflow-wrap:anywhere}
+@media(max-width:1250px){.adv-job-layout{grid-template-columns:minmax(0,1fr)}}

@@ -155,6 +155,14 @@ export function createApiClient({
       return request("/api/healing/workbench/"+kind+"?"+query.toString(),options);
     },
     saveWorkbenchRecord: body=>request("/api/healing/workbench/records",{method:"POST",body}),
+    readAdvanced(kind,params={},options={}){
+      if(!["profiles","trace","jobs","job","evidence","effects","samples","alerts"].includes(kind))return Promise.reject(new ConsoleApiError("不支持的高级查询。",{code:"INVALID_ACTION"}));
+      return request("/api/healing/advanced/"+kind+"?"+new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined&&v!==null).map(([k,v])=>[k,String(v)])).toString(),options);
+    },
+    writeAdvanced(kind,body){
+      if(!["enqueue","zentao-sync","zentao-bug","zentao-retest","radar-register","reconcile-job"].includes(kind))return Promise.reject(new ConsoleApiError("不支持的高级操作。",{code:"INVALID_ACTION"}));
+      return request("/api/healing/advanced/"+kind,{method:"POST",body});
+    },
     async createSession(token) {
       clearSession();
       return request("/api/healing/session", { method: "POST", token });

@@ -1,17 +1,18 @@
 export const workbenchTabs=Object.freeze({
   requirements:[["github-issues","Issues"],["github-prs","Pull Requests"]],
-  trace:[["trace","任务链路"]],
-  tests:[["zentao","禅道用例"],["case-map","用例映射"],["test-plan","测试计划"],["test-run","执行报告"]],
-  metrics:[["metrics","指标"],["alerts","实时告警"]],
-  knowledge:[["knowledge","知识库"],["evaluation","评估实验"]],
-  radar:[["radar","技术候选"]],
+  trace:[["trace","任务链路"],["advanced-trace","持久 Trace / DAG"]],
+  tests:[["zentao","禅道用例"],["case-map","用例映射"],["test-plan","测试计划"],["test-run","执行报告"],["advanced-jobs","独立执行"],["advanced-evidence","质量门禁"],["advanced-effects","禅道回写"]],
+  metrics:[["metrics","指标"],["alerts","实时告警"],["advanced-samples","服务性能"],["advanced-alerts","告警历史"]],
+  knowledge:[["knowledge","知识库"],["evaluation","评估实验"],["advanced-evaluations","独立评估"]],
+  radar:[["radar","技术候选"],["advanced-radar","自动调研"]],
 });
 export const recordTabs=new Set(["case-map","test-plan","test-run","knowledge","evaluation","radar"]);
 // Include monitoring configuration identity so old responses cannot be labeled with new settings.
 export const workbenchScope=(s)=>JSON.stringify([s.mode,s.snapshot?.project?.id,s.snapshot?.project?.repo,s.view==="metrics"?s.snapshot?.monitoring:null]);
+export const isAdvanced=tab=>typeof tab==="string"&&tab.startsWith("advanced-");
 export const isWorkbench=view=>Object.hasOwn(workbenchTabs,view);
 export function initialWorkbench(view){
-  return {view,tab:workbenchTabs[view]?.[0]?.[0],page:1,commentPage:1,selected:null,data:null,detail:null,reviews:null,query:"",status:"all",githubState:"open",namespace:"",metric:"cpu",range:"1h",loading:false,error:"",draft:null,reviewDraft:{role:"product",verdict:"changes-required",note:""},detailPage:1,detailFilter:"all",sampleIndex:null,historyKey:"",loadedAt:0};
+  return {view,tab:workbenchTabs[view]?.[0]?.[0],page:1,commentPage:1,selected:null,data:null,detail:null,reviews:null,query:"",status:"all",githubState:"open",namespace:"",metric:"cpu",range:"1h",loading:false,error:"",draft:null,reviewDraft:{role:"product",verdict:"changes-required",note:""},detailPage:1,detailFilter:"all",sampleIndex:null,historyKey:"",loadedAt:0,advancedProfiles:null,advancedDetail:null,advancedDraft:{},advancedUntil:null,advancedAfter:0,advancedWorkflow:"",advancedCasePage:1,advancedRadarIndex:null};
 }
 export const matchingText=(value,query)=>JSON.stringify(value).toLowerCase().includes(String(query||"").trim().toLowerCase());
 export function localPage(rows,page=1,size=10){

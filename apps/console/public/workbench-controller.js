@@ -1,5 +1,5 @@
 /** Request lifecycle for D-G workspaces. Late results cannot cross projects or sessions. */
-import { initialWorkbench,isWorkbench,workbenchTabs,recordTabs,workbenchScope } from "./workbench-model.js";
+import { initialWorkbench,isWorkbench,workbenchTabs,recordTabs,workbenchScope,isAdvanced } from "./workbench-model.js";
 import { selectedRecord,recordIdentity } from "./workbench-record-views.js";
 
 export function createWorkbenchController({state,api,render,runMutation,requireAuthentication,refreshSnapshot,now=Date.now}){
@@ -28,9 +28,9 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   }
   async function sync(force=false){
     const w=ensure();
-    if(!w||w.view==="trace"||!usable()||state.pendingAction)return;
+    if(!w||(w.view==="trace"&&!isAdvanced(w.tab))||!usable()||state.pendingAction)return;
     const active=typeof document!=="undefined"?document.activeElement:null;
-    if(!force&&(w.loading||w.draft||w.reviewDraft.note||active?.matches?.("input,textarea,select,[contenteditable='true']")||now()-w.loadedAt<30000))return;
+    if(!force&&(w.loading||w.draft||w.reviewDraft.note||Object.keys(w.advancedDraft||{}).length||w.advancedUntil!==null||active?.matches?.("input,textarea,select,[contenteditable='true']")||now()-w.loadedAt<30000))return;
     const g=++generation;
     request?.abort();
     const controller=new AbortController();
@@ -38,7 +38,14 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
     const read=(kind,params)=>api.readWorkbench(kind,params,{signal:controller.signal});
     w.loading=true;w.error="";render();
     try{
-      if(w.view==="requirements"){
+      if(isAdvanced(w.tab)){
+        const config=await api.readAdvanced("profiles",{},{signal:controller.signal});if(!isCurrent(w,g))return;w.advancedProfiles=config;
+        if(!config.enabled){w.data=null;return;}
+        const kind=["advanced-jobs","advanced-evaluations","advanced-radar"].includes(w.tab)?"jobs":w.tab.slice(9);
+        const params=kind==="trace"?{workflow:w.advancedWorkflow,after:w.advancedAfter,until:w.advancedUntil}:{page:w.page};
+        const data=await api.readAdvanced(kind,params,{signal:controller.signal});if(!isCurrent(w,g))return;w.data=data;
+        if(kind==="jobs"&&w.advancedDetail?.id){const detail=await api.readAdvanced("job",{id:w.advancedDetail.id},{signal:controller.signal});if(!isCurrent(w,g))return;w.advancedDetail=detail;}
+      }else if(w.view==="requirements"){
         const data=await read(w.tab,{page:w.page,state:w.githubState});
         if(!isCurrent(w,g))return;
         w.data=data;
@@ -82,7 +89,7 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   }
   function reload(w){
     w.page=1;w.detailPage=1;w.detailFilter="all";w.sampleIndex=null;w.data=null;clearSelection(w);
-    if(w.view==="trace")render();else void sync(true);
+    if(w.view==="trace"&&!isAdvanced(w.tab))render();else void sync(true);
   }
   function selectTask(id){
     const w=ensure();
@@ -95,20 +102,21 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   const dirty=w=>Boolean(w.draft||w.reviewDraft.note);
   function handleClick(event,button){
     const action=button?.dataset?.action;
+    if(action?.startsWith("adv-")){const w=ensure();if(w&&isAdvanced(w.tab)&&!button.disabled){event.preventDefault?.();advancedClick(w,action,button);}return true;}
     if(!action?.startsWith("wb-")||action==="wb-open-trace")return false;
     const w=ensure();if(!w||button.disabled)return true;
     event.preventDefault?.();
     if(action==="wb-refresh"){
-      if(w.view==="trace")void refreshSnapshot();else if(!dirty(w))void sync(true);
+      if(w.view==="trace"&&!isAdvanced(w.tab))void refreshSnapshot();else if(!dirty(w))void sync(true);
     }else if(action==="wb-tab"){
       const tab=button.dataset.tab;
       if(!workbenchTabs[w.view].some(([id])=>id===tab)||w.tab===tab)return true;
       if(dirty(w)){w.error="请先保存或取消当前录入，再切换页签。";render();return true;}
-      w.tab=tab;w.query="";w.status="all";w.historyKey="";reload(w);
+      w.tab=tab;w.query="";w.status="all";w.historyKey="";w.advancedDraft={};w.advancedDetail=null;w.advancedUntil=null;w.advancedAfter=0;w.advancedCasePage=1;w.advancedRadarIndex=null;reload(w);
     }else if(action==="wb-page"){
       if(dirty(w))return true;
       w.page=Math.min(100000,Math.max(1,Number(button.dataset.page)||1));clearSelection(w);
-      if(w.view==="trace"||w.tab==="alerts")render();else{w.data=null;void sync(true);}
+      if((w.view==="trace"&&!isAdvanced(w.tab))||w.tab==="alerts")render();else{w.data=null;void sync(true);}
     }else if(action==="wb-comment-page"){
       if(dirty(w))return true;
       w.commentPage=Math.min(100,Math.max(1,Number(button.dataset.page)||1));void sync(true);
@@ -146,6 +154,7 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   function handleInput(event){
     const w=ensure();if(!w)return false;
     const id=event.target?.id,value=event.target?.value;
+    if(isAdvanced(w.tab)&&event.target?.closest?.("form[id^=adv-]")&&event.target.name&&event.target.name!=="confirm"){w.advancedDraft[event.target.name]=String(value??"");return true;}
     if(id==="wb-search"){w.query=String(value||"").slice(0,300);w.detailPage=1;if(w.view==="trace"||w.tab==="alerts")w.page=1;if(!event.isComposing)render();return true;}
     if(id==="wb-review-note"){w.reviewDraft.note=String(value||"").slice(0,4000);return true;}
     if(w.draft&&id==="wb-key"){w.draft.key=String(value||"").slice(0,120);return true;}
@@ -155,6 +164,14 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   function handleChange(event){
     const w=ensure();if(!w)return false;
     const id=event.target?.id,value=event.target?.value;
+    if(isAdvanced(w.tab)&&id?.startsWith("adv-")){
+      if(id==="adv-profile"){w.advancedDraft.profile=value;w.advancedRequestId=null;render();}
+      else if(id==="adv-task"){w.advancedDraft.taskId=value;w.advancedRequestId=null;}
+      else if(id==="adv-effect-kind"){w.advancedDraft.effectKind=value;render();}
+      else if(id==="adv-replay"){w.advancedUntil=Number(value);w.advancedAfter=0;void sync(true);}
+      else if(id==="adv-metric"){w.advancedMetric=value;render();}
+      return true;
+    }
     if(id==="wb-github-state"){if(dirty(w)){render();return true;}w.githubState=value;reload(w);return true;}
     if(id==="wb-namespace"){w.namespace=value;reload(w);return true;}
     if(id==="wb-metric"){w.metric=value;reload(w);return true;}
@@ -187,6 +204,7 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   }
   function handleSubmit(event){
     const w=ensure(),id=event.target?.id;
+    if(w&&isAdvanced(w.tab)&&id?.startsWith("adv-")){event.preventDefault();void advancedSubmit(w,event.target);return true;}
     if(!w||!["wb-record-form","wb-review-form"].includes(id))return false;
     event.preventDefault();
     if(id==="wb-record-form"&&w.draft&&recordTabs.has(w.tab)){
@@ -201,6 +219,44 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
       void save(w,{kind:"review",expectedVersion:current?.version??0,payload:{issueNumber:item.number,contractHash:item.contractHash,baselineSha:item.baselineSha,role:d.role,verdict:d.verdict,note:d.note}});
     }
     return true;
+  }
+  function advancedClick(w,action,b){
+    if(action==="adv-live"){w.advancedUntil=null;w.advancedAfter=0;void sync(true);}
+    else if(action==="adv-trace-reset"){w.advancedAfter=0;void sync(true);}
+    else if(action==="adv-trace-next"){w.advancedAfter=Number(b.dataset.after)||0;void sync(true);}
+    else if(action==="adv-span"){w.advancedSpan=b.dataset.id;render();}
+    else if(action==="adv-sample"){w.advancedSample=b.dataset.id;render();}
+    else if(action==="adv-case-page"){w.advancedCasePage=Math.max(1,Number(b.dataset.page)||1);render();}
+    else if(action==="adv-radar-pick"){w.advancedRadarIndex=Number(b.dataset.index);w.advancedDraft={};render();}
+    else if(action==="adv-job"){
+      const g=++generation;request?.abort();const ctrl=new AbortController();request=ctrl;w.loading=true;w.error="";w.advancedDraft={};w.advancedCasePage=1;w.advancedRadarIndex=null;render();
+      void api.readAdvanced("job",{id:b.dataset.id},{signal:ctrl.signal}).then(data=>{if(isCurrent(w,g))w.advancedDetail=data;}).catch(err=>{if(isCurrent(w,g))w.error=err.message;}).finally(()=>{if(isCurrent(w,g)){w.loading=false;render();}});
+    }
+  }
+  async function advancedSubmit(w,form){
+    const d=Object.fromEntries(new FormData(form));
+    if(form.id==="adv-trace-form"){w.advancedWorkflow=String(d.workflow||"").trim();w.advancedAfter=0;w.advancedUntil=null;w.advancedDraft={};await sync(true);return;}
+    if(!usable()||state.pendingAction||state.snapshot.storage?.status==="read-only"||!Object.hasOwn(d,"confirm"))return;
+    let kind,body;
+    if(form.id==="adv-enqueue-form"){
+      kind="enqueue";const profile=w.advancedDraft.profile||form.querySelector("#adv-profile")?.value;
+      const taskId=w.advancedDraft.taskId||form.querySelector("#adv-task")?.value||undefined;
+      const signature=JSON.stringify([profile,taskId]);
+      if(w.advancedSignature!==signature){w.advancedRequestId=null;w.advancedSignature=signature;}
+      w.advancedRequestId ||= crypto.randomUUID();
+      body={profile,taskId,requestId:w.advancedRequestId};
+    }else if(form.id==="adv-effect-form"){
+      kind=form.querySelector("#adv-effect-kind")?.value||"zentao-sync";body={confirm:true,jobId:d.jobId,caseId:Number(d.caseId),caseVersion:Number(d.caseVersion),...(d.bugId?{bugId:Number(d.bugId)}:{})};
+    }else if(form.id==="adv-radar-form"){
+      kind="radar-register";body={confirm:true,jobId:w.advancedDetail.id,index:Number(d.index),title:d.title,requirements:d.requirements,acceptance:d.acceptance,tests:d.tests,impact:d.impact};
+    }else if(form.id==="adv-reconcile-form"){kind="reconcile-job";body={confirm:true,id:w.advancedDetail.id,note:d.note};}
+    if(!kind)return;
+    const result=await runMutation("advanced-"+kind,()=>api.writeAdvanced(kind,body),{onSuccess(){return false;},onError(error){if(state.workbench===w)w.error=error.message;}});
+    if(result&&state.workbench===w){
+      w.advancedDraft={};w.advancedRequestId=null;w.error="";
+      if(kind==="reconcile-job"||kind==="enqueue")w.advancedDetail=result;
+      await sync(true);
+    }
   }
   return {reset,sync,selectTask,handleClick,handleInput,handleChange,handleSubmit};
 }
