@@ -37,6 +37,9 @@ export function createAdvancedExternal({service,env=process.env,fetchImpl=global
     if(!mapping||mapping.payload.productId!==z.product)bad("缺少准确的禅道用例版本映射。");
     const job=await advanced.job(project,identifier(body.jobId)),run=job.result?.run??job.result?.candidate;
     if(!run||!run.complete||!run.clean||!["completed","failed"].includes(job.state))bad("报告不完整，禁止回写。");
+    if(!["test","red-green"].includes(job.kind)||!["suiteDigest","environmentDigest","harnessDigest"].every(k=>run[k]===job.policy?.[k]))bad("报告与独立测试策略不一致。");
+    const ids=new Set(run.results.map(x=>x.id));
+    if(ids.size!==job.policy.caseIds.length||!job.policy.caseIds.every(x=>ids.has(x)))bad("测试集合与冻结配置不一致。");
     const rows=run.results.filter(x=>x.id===mapping.payload.automatedId);
     if(!rows.length||new Set(rows.map(x=>x.result)).size!==1||!["pass","fail"].includes(rows[0].result))bad("未获得稳定的实际用例结果。");
     if(job.kind==="red-green"&&run.tree!==job.binding.treeSha)bad("候选身份不一致。");
@@ -52,6 +55,9 @@ export function createAdvancedExternal({service,env=process.env,fetchImpl=global
     return c;
   }
   async function effect(project,kind,key,details,action){
+    const latest=await service.advancedProject();
+    if(latest.id!==project.id||latest.repo!==project.repo)conflict("当前项目已变化。");
+    if((await service.snapshot()).storage?.status==="read-only")disabled();
     const reserved=await advanced.reserveEffect(project,kind,key,details);
     if(!reserved.created)return reserved.effect;
     // Reservation is the durable write-before-send boundary. No blind retry after

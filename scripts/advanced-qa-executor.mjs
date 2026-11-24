@@ -14,7 +14,7 @@ export function qaPolicy(c){
   const protectedPaths=c.kind==="red-green"?c.protectedPaths??[]:[];
   if(c.kind==="red-green"&&(!protectedPaths.length||typeof c.argv[0]!=="string"||!c.argv[0].startsWith("/")||c.argv[0].startsWith("/workspace/")))throw Error("Independent red-green harness and protected paths required");
   const harnessDigest=digest([c.image,c.argv,c.adapter,"metadata-v1",protectedPaths]);
-  return {id:c.id,kind:c.kind,intervalMs:c.intervalMs??0,leaseMs:c.leaseMs??900000,suiteDigest,environmentDigest,harnessDigest,policyDigest:digest([suiteDigest,environmentDigest,harnessDigest,c.targetCase??null]),caseIds:c.caseIds,...(c.kind==="red-green"?{targetCase:c.targetCase,protectedPaths}:{})};
+  return {id:c.id,kind:c.kind,intervalMs:c.intervalMs??0,leaseMs:c.leaseMs??900000,suiteDigest,environmentDigest,harnessDigest,policyDigest:digest([suiteDigest,environmentDigest,harnessDigest,c.targetCase??null,c.projectRepo??null,c.repository??null,c.kind==="test"?c.ref??null:null]),caseIds:c.caseIds,...(c.kind==="red-green"?{targetCase:c.targetCase,protectedPaths}:{})};
 }
 function parseXml(raw){
   return new Promise((resolve,reject)=>{
@@ -82,6 +82,7 @@ export function createQaExecutor({journal,scratchRoot,runCheck=createCheckRunner
   const validRef=v=>typeof v==="string"&&/^([a-f0-9]{40}|refs\/heads\/[A-Za-z0-9._/-]+)$/.test(v);
   return {cleanup,async execute(profile,job,signal){
     const policy=qaPolicy(profile);
+    if(typeof profile.projectRepo!=="string"||JSON.parse(job.project)[1]!==profile.projectRepo)throw Error("QA repository scope mismatch");
     if(job.policy.policyDigest!==policy.policyDigest)throw Error("QA policy mismatch");
     if(job.kind==="red-green"){
       if(!job.binding||!validRef(profile.candidateRef))throw Error("Candidate ref required");

@@ -16,7 +16,7 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
     validate(s){if(s.schemaVersion!==1||!Number.isSafeInteger(s.revision)||!Number.isSafeInteger(s.sequence))bad();for(const [k,n] of Object.entries(LIMITS))if(!Array.isArray(s[k])||s[k].length>n)bad();},
   });
   const evidenceKey=env.HUB_QA_EVIDENCE_HMAC;
-  const signable=typeof evidenceKey==="string"&&evidenceKey.length>=32&&evidenceKey!==env.HUB_QA_RUNNER_TOKEN&&evidenceKey!==env.HUB_OTLP_TOKEN;
+  const signable=typeof evidenceKey==="string"&&evidenceKey.length>=32&&evidenceKey!==env.HUB_QA_RUNNER_TOKEN&&evidenceKey!==env.HUB_OTLP_TOKEN&&evidenceKey!==env.CONSOLE_API_TOKEN&&evidenceKey!==env.HEALING_WORKER_TOKEN;
   const signature=v=>createHmac("sha256",evidenceKey).update(JSON.stringify(v)).digest("hex");
   const verifySignature=(body,signed)=>signable&&typeof signed==="string"&&/^[a-f0-9]{64}$/.test(signed)&&timingSafeEqual(Buffer.from(signed,"hex"),Buffer.from(signature(body),"hex"));
   const requireEnabled=()=>{if(!enabled)denied();};
@@ -68,7 +68,7 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
     async trace(project,{workflow="",after=0,until=Number.MAX_SAFE_INTEGER}={}){
       const s=await read();integer(after,0,Number.MAX_SAFE_INTEGER);integer(until,0,Number.MAX_SAFE_INTEGER);
       if(workflow)identifier(workflow);
-      const available=s.events.filter(x=>matches(x,project)&&(!workflow||x.workflow===workflow));
+      const available=s.events.filter(x=>matches(x,project)&&(!workflow||x.workflow===workflow||x.task===workflow));
       const all=available.filter(x=>x.cursor<=until);
       const rows=all.filter(x=>x.cursor>after).slice(0,200);
       const graphRows=workflow?all.slice(-500):[];
@@ -166,7 +166,7 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         if(!e)return {verdict:"unknown",reason:"缺少绑定当前候选的独立 QA 证据。"};
         const {digest:hash,signature:signed,...body}=e;
         const j=s.jobs.find(x=>x.id===e.jobId&&matches(x,project)&&["completed","failed"].includes(x.state));
-        if(hash!==digest(body)||!verifySignature(body,signed)||!j||j.kind!=="red-green"||!profiles.some(p=>digest(p)===digest(j.policy))||digest(j.result?.baseline)!==e.baselineDigest||digest(j.result?.candidate)!==e.candidateDigest)return {verdict:"unknown",reason:"证据完整性或当前策略未确认。"};
+        if(hash!==digest(body)||!verifySignature(body,signed)||!j||j.kind!=="red-green"||j.profile!==e.profile||j.policy.policyDigest!==e.policyDigest||!["taskId","proposalId","contentHash","baseSha","treeSha","round"].every(k=>j.binding?.[k]===e[k])||!profiles.some(p=>digest(p)===digest(j.policy))||digest(j.result?.baseline)!==e.baselineDigest||digest(j.result?.candidate)!==e.candidateDigest)return {verdict:"unknown",reason:"证据完整性或当前策略未确认。"};
         return compareRedGreen(j.result.baseline,j.result.candidate,{...j.binding,suiteDigest:j.policy.suiteDigest,environmentDigest:j.policy.environmentDigest,harnessDigest:j.policy.harnessDigest,caseIds:j.policy.caseIds,targetCase:j.policy.targetCase});
       }catch{return {verdict:"unknown",reason:"独立证据暂不可读。"};}
     },

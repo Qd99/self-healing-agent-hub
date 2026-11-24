@@ -58,7 +58,7 @@ function evaluation(result,w){
   const bars=[["基线",stats.baselinePass],["候选",stats.candidatePass]].map(([k,v])=>'<div class="wb-bar-row"><span>'+k+'</span><progress max="'+Math.max(1,stats.total)+'" value="'+v+'"></progress><span>'+v+'</span></div>').join("");
   return section("独立模型评估",bars+props([["全部样本",stats.total],["可比较",stats.paired],["退化 / 改善",stats.regressions+" / "+stats.improvements],["基线估算费用",aggregate("baseline")],["候选估算费用",aggregate("candidate")],["费率指纹",result.rateDigest],["数据集指纹",result.datasetDigest]])+note("所有样本保留；未知和超预算不会被移除，不触发模型推广。")+table(["样本","轮次","基线","候选","延迟 ms","Token"],sample.items.map(x=>[esc(x.caseId),esc(x.trial),tag(x.baseline),tag(x.candidate),esc(fmt(x.baselineMs)+" / "+fmt(x.candidateMs)),esc(fmt(x.baselineTokens)+" / "+fmt(x.candidateTokens))]))+pager(sample.page,sample.page<sample.pageCount,"adv-case-page",sample.total));
 }
-function radar(result,job,w,s){
+function radar(result,w,s){
   const rows=result.candidates||[],draft=stateForm(w);
   let body=table(["来源","外部 SHA / 本仓 SHA","路径证据","已匹配需求"],rows.map((x,i)=>[button(x.repo,"adv-radar-pick",'data-index="'+i+'"'),esc(x.sourceSha.slice(0,12)+" / "+x.baselineSha.slice(0,12)),esc(x.paths.map(p=>p.path+" ["+(p.external?"外部有":"外部无")+"/"+(p.local?"本仓有":"本仓无")+"]").join("；")),esc(x.issueMatches.join(", ")||"未匹配")]));
   const c=rows[w.advancedRadarIndex];
@@ -75,7 +75,7 @@ function jobDetails(s,w){
   if(j.result?.baseline)body+=runTable(j.result.baseline,w,"修复前 · 红");
   if(j.result?.candidate)body+=runTable(j.result.candidate,w,"修复后 · 绿");
   if(j.kind==="evaluation"&&j.result)body+=evaluation(j.result,w);
-  if(j.kind==="radar"&&j.result)body+=radar(j.result,j,w,s);
+  if(j.kind==="radar"&&j.result)body+=radar(j.result,w,s);
   if(j.state==="running"&&canWrite(s))body+=section("执行控制",j.cancelRequested?note("已请求取消，等待 Runner 清理确认。"):form("adv-cancel-job-form",confirmText("请求停止此 QA 作业；等待资源清理确认")+submit("请求取消")));
   if(["queued","unknown"].includes(j.state)&&canWrite(s))body+=section("人工处置",form("adv-reconcile-form",field("核对说明","note",stateForm(w).note)+confirmText("确认未执行或已核对资源和外部结果；不会自动重试")+submit(j.state==="queued"?"取消等待作业":"记录人工核对")));
   return body;

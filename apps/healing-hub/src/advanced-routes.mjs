@@ -39,6 +39,10 @@ export function createAdvancedRoutes({service,env,consoleToken,workerToken,auth,
         requireMethod(req,"POST");auth.assertWrite(req,identity);
         const body=await readBody(req);
         if(!advanced.enabled)throw new HealingError(403,"ADVANCED_DISABLED","高级工作区未启用。");
+        const current=await service.snapshot();
+        if(current.storage?.status==="read-only"&&!route.startsWith("/advanced/reconcile-")&&route!=="/advanced/cancel-job")throw new HealingError(503,"STORE_READ_ONLY","主任务存储只读，暂停高级工作区新操作。");
+        const latest=await service.advancedProject();
+        if(latest.id!==project.id||latest.repo!==project.repo)throw new HealingError(409,"ADVANCED_CONFLICT","当前项目已变化。");
         if(route==="/advanced/enqueue")value=await service.enqueueAdvanced(body);
         else if(route==="/advanced/zentao-sync")value=await external.syncCase(project,body);
         else if(route==="/advanced/zentao-bug")value=await external.linkBug(project,body);
