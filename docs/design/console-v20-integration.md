@@ -39,3 +39,10 @@
 - API Client、服务端、Worker 和存储保持基线；app.js 仅新增 presentation 开关；审计 controller/model 仅调整客户端分页；共用 uiStatus、uiSearch、原详情与批量对话框。
 
 新增 `tests/console-v20-workspaces.test.mjs`：进度边界、历史 Trace、断线、租约过期、待核对、XSS、共享分页及视图选择。实际 Node/HTTP/浏览器门禁仍须在可执行环境按最终 SHA 运行。不能把静态代码检查、V20 离线设计稿或样例渲染作为真实生产验收。
+
+
+### 阶段 B 源码核查记录
+
+基于实现提交 `cf8a12d332e1a60a7bf492218f4cf60a50a94a65`：直接读取远端实际源码，在受限 V8 执行环境中对 ES module 做静态 import/export 绑定，并为纯 JSON 演示夹具提供 structuredClone 兼容实现；非浏览器、非 Node 完整测试。6 组执行投影/分页/转义检查、15 组真实视图渲染与操作标识检查、4 组审计 controller 和批量确认检查均通过。最初一组渲染因该环境缺少 structuredClone 未执行，补充夹具兼容层后通过。新增正式 Node 测试含 controller/批量回归，但本轮未运行 Node 测试文件。GitHub tarball 与 git clone 在当前环境不可获取。最终合并必须使用实际 Node/HTTP/浏览器和 Jenkins 结果，不得以本记录替代。
+
+与 #2 当前 head `1aa13919634eb7411236b4993ce5c90626973772` 的文件交集为 app.js 与 views.js；其任务详情段不同，需要在集成基线上进行三方合并、检查 CI 相关新增入口/控制器并重跑回归。没有进行该 PR 的合并或部署。

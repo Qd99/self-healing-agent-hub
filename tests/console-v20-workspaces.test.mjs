@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { createDemoSnapshot } from "../apps/console/public/data.js";
 import { workspaceExecution, workspacePageNumbers, activityPageSize } from "../apps/console/public/workspace-model.js";
 import { renderWorkspaceExecutionDetail, renderWorkspacePager } from "../apps/console/public/workspace-views.js";
-import { getActivityPage } from "../apps/console/public/administration-model.js";
+import { getActivityPage, filterActivities } from "../apps/console/public/administration-model.js";
+import { createAdministrationController } from "../apps/console/public/administration-controller.js";
+import { planBulkAction } from "../apps/console/public/task-model.js";
+import { renderBulkDialog } from "../apps/console/public/task-views.js";
 import { renderShell, renderTaskDetail } from "../apps/console/public/views.js";
 import { renderTaskPage } from "../apps/console/public/task-views.js";
 import { renderStudioDashboard } from "../apps/console/public/dashboard.js";
@@ -85,4 +88,48 @@ test("V20 uses real view data and opt-in layouts while the legacy shell remains 
     assert.ok(html.includes(marker),view);
     assert.match(html,/旧版界面/);
   }
+});
+
+
+test("audit page-size and filter changes use existing controller and preserve legacy behavior", () => {
+  const entries=Array.from({length:61},(_,i)=>({id:String(i),at,action:"trigger",message:"record",actor:"operator",level:"info"}));
+  const setup=(presentation)=>{
+    const state={presentation,snapshot:{activity:entries,rules:[]},activityPage:3};
+    let renders=0;
+    const controller=createAdministrationController({state,render:()=>renders++,toast:()=>{}});
+    return {state,controller,renders:()=>renders};
+  };
+  const {state,controller,renders}=setup("v20");
+  assert.equal(state.activityPageSize,15);
+  assert.equal(state.activityPage,3);
+  assert.equal(controller.handleChange({target:{id:"activity-page-size",value:"20"}}),true);
+  assert.equal(state.activityPageSize,20);
+  assert.equal(state.activityPage,1);
+  assert.equal(renders(),1);
+  controller.handleClick({}, {dataset:{action:"activity-page",page:"3"}});
+  assert.equal(state.activityPage,3);
+  controller.handleChange({target:{id:"activity-page-size",value:"50"}});
+  controller.handleClick({}, {dataset:{action:"activity-page",page:"9"}});
+  assert.equal(state.activityPage,2);
+  assert.equal(filterActivities(entries).length,61);
+  controller.handleInput({target:{id:"activity-search",value:"no match"}});
+  assert.equal(state.activityPage,1);
+  assert.equal(getActivityPage(entries,{filters:state.activityFilters,pageSize:50}).total,0);
+  controller.reset();
+  assert.equal(state.activityPageSize,15);
+  const legacy=setup("legacy");
+  assert.equal(legacy.controller.handleChange({target:{id:"activity-page-size",value:"50"}}),false);
+  assert.equal(legacy.state.activityPageSize,15);
+});
+
+test("V20 cross-page selection retains the existing bulk eligibility and confirmation", () => {
+  const snapshot=createDemoSnapshot(Date.parse(at));
+  const candidate=snapshot.tasks.find((entry)=>["failed","cancelled"].includes(entry.status.status)&&entry.reviewState!=="pending");
+  assert.ok(candidate);
+  const plan=planBulkAction(snapshot,{type:"retry",ids:[candidate.task.id]});
+  assert.equal(plan.canExecute,true);
+  const state={presentation:"v20",mode:"demo",snapshot,taskPage:1,taskPageSize:10,selectedTaskIds:[candidate.task.id]};
+  const page=renderTaskPage(state);
+  for (const marker of ['data-action="bulk-open"','data-action="task-select"',"task-select-page","task-page-size"]) assert.ok(page.includes(marker),marker);
+  assert.match(renderBulkDialog({...state,bulkPlan:plan,bulkType:"retry"}),/data-action="bulk-confirm"/);
 });
