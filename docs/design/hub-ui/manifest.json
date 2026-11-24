@@ -1,0 +1,294 @@
+{
+  "rule": "hub-ui/2026-11-24.v1",
+  "designVersion": "v13-proposal",
+  "baseline": "0bc418319f6287756bc13e7837dc2d907dac17a0",
+  "issueCount": 19,
+  "source": "all open issues page 1, page 2 empty; PR #2 excluded",
+  "issues": [
+    {
+      "number": 3,
+      "title": "[需求·待评审][HUB-CORE-001] Hub 与 Agent Autoloop 执行层统一集成",
+      "bodyFingerprint": "fnv1a32-unicode:6ba6f7fd",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/待补充"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "workers",
+      "visibleDelta": "执行器与连接设置：真实连接、版本、最后同步、未知状态",
+      "existingAndGap": "复用 navigation.js、connection-views.js、administration-views.js；统一引擎状态投影待 #3 契约确认",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 4,
+      "title": "[需求·待评审][HUB-CORE-002] 完成 PR #2 与最新 main 集成及真实 Jenkins 自愈验收",
+      "bodyFingerprint": "fnv1a32-unicode:6afac5b8",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/待补充"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "delivery",
+      "visibleDelta": "任务详情、候选版本、真实 CI/PR 证据及核对",
+      "existingAndGap": "复用 task-views.js、approval-views.js；PR #2 尚未合并，不将分支能力当作 main",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 5,
+      "title": "[需求·待评审][HUB-GOV-001] GitHub 需求生命周期、标签同步与三方评审账本",
+      "bodyFingerprint": "fnv1a32-unicode:f97a6e7e",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/待补充"
+      ],
+      "classification": "UI-NEW",
+      "route": "requirements",
+      "visibleDelta": "需求与审批：三方结果、版本差异、授权、历史及同步冲突",
+      "existingAndGap": "复用 approvals.js 与 approval-views.js；独立评审账本及权限角色待确认",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 6,
+      "title": "[需求·待评审][HUB-PIPE-001] 版本化研发、测试和自愈流水线与阶段级断点续跑",
+      "bodyFingerprint": "fnv1a32-unicode:bd5773ac",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/待补充"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "trace",
+      "visibleDelta": "流水线阶段、分支、attempt、断点及失败解释",
+      "existingAndGap": "复用 task-views.js、console-service.mjs；版本化模板、合法恢复状态待确认",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 7,
+      "title": "[需求·待评审][HUB-AGENT-001] 多 Agent 研发任务 DAG、原子认领与隔离工作区",
+      "bodyFingerprint": "fnv1a32-unicode:85787a08",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "trace",
+      "visibleDelta": "Agent DAG/泳道、依赖、角色、分支、工作区、交接证据",
+      "existingAndGap": "复用任务详情；多 Agent 原子认领及工作区接口待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 8,
+      "title": "[需求·待评审][HUB-EVID-001] 可信证据账本与程序化质量门禁",
+      "bodyFingerprint": "fnv1a32-unicode:0a895d64",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/待补充"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "trace",
+      "visibleDelta": "证据和门禁抽屉：来源、SHA、失效、未知、可信报告",
+      "existingAndGap": "复用 approval-views.js 与现有 evidence；证据生命周期及独立门禁投影待评审",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 9,
+      "title": "[需求·待评审][HUB-TEST-001] 统一自动化 TestRunner、用例计划与测试中心",
+      "bodyFingerprint": "fnv1a32-unicode:8bc09dbf",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "tests",
+      "visibleDelta": "测试中心：计划、用例、执行、报告、用例级结果与筛选",
+      "existingAndGap": "现有可信执行器和测试报告可作为数据来源；TestRunner、计划及用例查询待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 10,
+      "title": "[需求·待评审][HUB-TEST-002] Bug 先红后绿、差分回归与测试防篡改门禁",
+      "bodyFingerprint": "fnv1a32-unicode:58623f36",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "tests",
+      "visibleDelta": "红绿差分、候选对比、新增失败、门禁拒绝",
+      "existingAndGap": "复用测试中心与证据抽屉；需固定测试用例、环境、候选 SHA",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 11,
+      "title": "[需求·待评审][HUB-DELIVERY-001] PR、Jenkins CI、测试环境部署及生产版本核验闭环",
+      "bodyFingerprint": "fnv1a32-unicode:53c3e3b6",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "delivery",
+      "visibleDelta": "交付中心：PR、CI、部署、实际版本与核验时间线",
+      "existingAndGap": "复用候选和回执、PR #2 集成；交付关联与环境核验接口待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 12,
+      "title": "[需求·待评审][HUB-OBS-001] 统一工作流身份、事件采集与全链路 Trace 关联",
+      "bodyFingerprint": "fnv1a32-unicode:7eed759d",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/待补充"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "trace",
+      "visibleDelta": "统一链路 ID、事件来源、更新时间、完整性和缺口提示",
+      "existingAndGap": "复用 console-service.mjs readTrace；统一事件、跨系统关联待评审",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 13,
+      "title": "[需求·待评审][HUB-OBS-002] 全链路可视化中心：DAG、流水线、瀑布图、日志及回放",
+      "bodyFingerprint": "fnv1a32-unicode:7d3f53a8",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "trace",
+      "visibleDelta": "全链路 DAG、瀑布、日志、测试、PR/CI、证据、只读回放",
+      "existingAndGap": "复用 task-views.js、现有 Trace；真实事件查询、游标分页、回放接口待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 14,
+      "title": "[需求·待评审][HUB-OBS-003] 标准可观测基础设施、模型用量、研发效能与异常告警",
+      "bodyFingerprint": "fnv1a32-unicode:644b72ef",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "monitor",
+      "visibleDelta": "监控：吞吐、排队、错误、延迟、成本、告警、覆盖率",
+      "existingAndGap": "复用 monitoring-views.js、monitoring-controller.js；目前 Grafana 仅验证连接/数据源身份",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 15,
+      "title": "[需求·待评审][HUB-REC-001] 统一失败分类、死因指纹、有限修复循环与模型升级",
+      "bodyFingerprint": "fnv1a32-unicode:3b57a614",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "healing",
+      "visibleDelta": "失败分类、指纹、有限重试、冷却、模型升级及转人工",
+      "existingAndGap": "复用 task-feedback.js 和重试核对；预算、升级与复诊策略待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 16,
+      "title": "[需求·待评审][HUB-SEC-001] 统一 Agent 沙箱、网络凭据隔离与可信外部动作执行器",
+      "bodyFingerprint": "fnv1a32-unicode:866ec85e",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-UPDATE",
+      "route": "security",
+      "visibleDelta": "安全策略与 Worker：隔离、网络、资源、拒绝审计",
+      "existingAndGap": "复用 administration-views.js、现有保护路径/检查配置；沙箱与可信动作层待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 17,
+      "title": "[需求·待评审][HUB-DISC-001] 统一缺陷发现台账、主动巡检与故障复诊",
+      "bodyFingerprint": "fnv1a32-unicode:34127091",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "healing",
+      "visibleDelta": "缺陷发现台账、复诊队列、复发及修复 PR",
+      "existingAndGap": "复用任务、审计和监控；缺陷指纹台账与复诊计划 API 待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 18,
+      "title": "[需求·待评审][HUB-ENV-001] 多项目、测试环境资源锁、测试数据及 RBAC 治理",
+      "bodyFingerprint": "fnv1a32-unicode:2a6dd539",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "security",
+      "visibleDelta": "环境及资源锁、测试数据、项目范围、角色权限",
+      "existingAndGap": "复用 settings 和 security；当前单管理身份，RBAC、跨项目权限及锁待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 19,
+      "title": "[需求·待评审][HUB-RESEARCH-001] 平台原生技术雷达、差异评估与需求自动登记中心",
+      "bodyFingerprint": "fnv1a32-unicode:269ea333",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "radar",
+      "visibleDelta": "技术雷达：发现、候选对比、未采纳、已登记",
+      "existingAndGap": "复用需求中心/GitHub 关联；内部调研调度及候选账本待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 20,
+      "title": "[需求·待评审][HUB-KNOW-001] 跨 Agent 工程知识库、按需上下文注入与会话恢复",
+      "bodyFingerprint": "fnv1a32-unicode:b8c7fb70",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "knowledge",
+      "visibleDelta": "工程知识库、项目范围、知识版本、批准与注入引用",
+      "existingAndGap": "复用任务证据；知识存储、检索及版本化注入待实现",
+      "designStatus": "proposal-review-required"
+    },
+    {
+      "number": 21,
+      "title": "[需求·待评审][HUB-EVAL-001] Agent、模型与 Skills 的独立能力评估、A/B 对比及版本回归",
+      "bodyFingerprint": "fnv1a32-unicode:3bcae67c",
+      "requirementVersion": "v1",
+      "reviewLabels": [
+        "status/待评审",
+        "review/未评审"
+      ],
+      "classification": "UI-NEW",
+      "route": "knowledge",
+      "visibleDelta": "Agent/模型/Skills 评估：基线候选、结果、成本与推广审批",
+      "existingAndGap": "复用测试中心和证据；eval-set、样本指标、A/B 与盲评待实现",
+      "designStatus": "proposal-review-required"
+    }
+  ]
+}
