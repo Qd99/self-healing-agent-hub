@@ -160,7 +160,7 @@ export function createApiClient({
       return request("/api/healing/advanced/"+kind+"?"+new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined&&v!==null).map(([k,v])=>[k,String(v)])).toString(),options);
     },
     writeAdvanced(kind,body){
-      if(!["enqueue","zentao-sync","zentao-bug","zentao-retest","radar-register","reconcile-job"].includes(kind))return Promise.reject(new ConsoleApiError("不支持的高级操作。",{code:"INVALID_ACTION"}));
+      if(!["enqueue","zentao-sync","zentao-bug","zentao-retest","radar-register","reconcile-job","cancel-job","reconcile-effect"].includes(kind))return Promise.reject(new ConsoleApiError("不支持的高级操作。",{code:"INVALID_ACTION"}));
       return request("/api/healing/advanced/"+kind,{method:"POST",body});
     },
     async createSession(token) {

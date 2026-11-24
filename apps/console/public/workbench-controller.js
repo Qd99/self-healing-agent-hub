@@ -102,6 +102,7 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
   const dirty=w=>Boolean(w.draft||w.reviewDraft.note);
   function handleClick(event,button){
     const action=button?.dataset?.action;
+    if(action==="adv-open-workflow"&&state.view==="trace"){const w=ensure();w.tab="advanced-trace";w.advancedWorkflow=button.dataset.id;w.advancedAfter=0;w.advancedUntil=null;w.data=null;void sync(true);return true;}
     if(action?.startsWith("adv-")){const w=ensure();if(w&&isAdvanced(w.tab)&&!button.disabled){event.preventDefault?.();advancedClick(w,action,button);}return true;}
     if(!action?.startsWith("wb-")||action==="wb-open-trace")return false;
     const w=ensure();if(!w||button.disabled)return true;
@@ -155,6 +156,7 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
     const w=ensure();if(!w)return false;
     const id=event.target?.id,value=event.target?.value;
     if(isAdvanced(w.tab)&&event.target?.closest?.("form[id^=adv-]")&&event.target.name&&event.target.name!=="confirm"){w.advancedDraft[event.target.name]=String(value??"");return true;}
+    if(id==="adv-case-query"&&isAdvanced(w.tab)){w.advancedCaseQuery=String(value||"").slice(0,300);w.advancedCasePage=1;if(!event.isComposing)render();return true;}
     if(id==="wb-search"){w.query=String(value||"").slice(0,300);w.detailPage=1;if(w.view==="trace"||w.tab==="alerts")w.page=1;if(!event.isComposing)render();return true;}
     if(id==="wb-review-note"){w.reviewDraft.note=String(value||"").slice(0,4000);return true;}
     if(w.draft&&id==="wb-key"){w.draft.key=String(value||"").slice(0,120);return true;}
@@ -170,6 +172,8 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
       else if(id==="adv-effect-kind"){w.advancedDraft.effectKind=value;render();}
       else if(id==="adv-replay"){w.advancedUntil=Number(value);w.advancedAfter=0;void sync(true);}
       else if(id==="adv-metric"){w.advancedMetric=value;render();}
+      else if(id==="adv-case-result"){w.advancedResult=value;w.advancedCasePage=1;render();}
+      else if(id==="adv-effect-outcome"){w.advancedDraft.effectOutcome=value;}
       return true;
     }
     if(id==="wb-github-state"){if(dirty(w)){render();return true;}w.githubState=value;reload(w);return true;}
@@ -224,6 +228,8 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
     if(action==="adv-live"){w.advancedUntil=null;w.advancedAfter=0;void sync(true);}
     else if(action==="adv-trace-reset"){w.advancedAfter=0;void sync(true);}
     else if(action==="adv-trace-next"){w.advancedAfter=Number(b.dataset.after)||0;void sync(true);}
+    else if(action==="adv-workflow-pick"){w.advancedWorkflow=b.dataset.id;w.advancedAfter=0;w.advancedUntil=null;w.advancedDraft={};void sync(true);}
+    else if(action==="adv-effect-pick"){w.advancedEffectId=b.dataset.id;w.advancedDraft={};render();}
     else if(action==="adv-span"){w.advancedSpan=b.dataset.id;render();}
     else if(action==="adv-sample"){w.advancedSample=b.dataset.id;render();}
     else if(action==="adv-case-page"){w.advancedCasePage=Math.max(1,Number(b.dataset.page)||1);render();}
@@ -250,11 +256,13 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
     }else if(form.id==="adv-radar-form"){
       kind="radar-register";body={confirm:true,jobId:w.advancedDetail.id,index:Number(d.index),title:d.title,requirements:d.requirements,acceptance:d.acceptance,tests:d.tests,impact:d.impact};
     }else if(form.id==="adv-reconcile-form"){kind="reconcile-job";body={confirm:true,id:w.advancedDetail.id,note:d.note};}
+    else if(form.id==="adv-cancel-job-form"){kind="cancel-job";body={confirm:true,id:w.advancedDetail.id};}
+    else if(form.id==="adv-reconcile-effect-form"){kind="reconcile-effect";body={confirm:true,id:w.advancedEffectId,outcome:form.querySelector("#adv-effect-outcome").value,note:d.note};}
     if(!kind)return;
     const result=await runMutation("advanced-"+kind,()=>api.writeAdvanced(kind,body),{onSuccess(){return false;},onError(error){if(state.workbench===w)w.error=error.message;}});
     if(result&&state.workbench===w){
       w.advancedDraft={};w.advancedRequestId=null;w.error="";
-      if(kind==="reconcile-job"||kind==="enqueue")w.advancedDetail=result;
+      if(kind==="reconcile-job"||kind==="cancel-job"||kind==="enqueue")w.advancedDetail=result;
       await sync(true);
     }
   }

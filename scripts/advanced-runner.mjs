@@ -46,15 +46,20 @@ async function main(){
       const profile=local.find(x=>x.id===job.profile),expected=manifest.find(x=>x.id===job.profile),identity={id:job.id,worker,lease:job.lease};
       const left=Date.parse(job.expiresAt)-Date.now()-5000;
       let outbox;
+      const jobControl=new AbortController();let polling=false;
+      const poll=setInterval(()=>{if(polling||jobControl.signal.aborted)return;polling=true;void request("status",identity,jobControl.signal).then(value=>{if(value.cancelRequested)jobControl.abort();}).catch(()=>jobControl.abort()).finally(()=>{polling=false;});},5000);
       try{
         if(!profile||!expected||digest(expected)!==digest(job.policy)||left<=0)throw Error("Runner profile or lease changed");
-        const signal=AbortSignal.any([controller.signal,AbortSignal.timeout(Math.max(1,left))]);
+        const signal=AbortSignal.any([controller.signal,jobControl.signal,AbortSignal.timeout(Math.max(1,left))]);
         const result=job.kind==="evaluation"?await evaluate(profile,job,signal):job.kind==="radar"?await research(profile,job,signal):await qa.execute(profile,job,signal);
+        signal.throwIfAborted();
+        const check=await request("status",identity,signal);
+        if(check.cancelRequested)throw Error("Cancelled");
         outbox={route:"complete",body:{...identity,result}};
       }catch{
         await qa.cleanup();
         outbox={route:"abort",body:identity};
-      }
+      }finally{clearInterval(poll);jobControl.abort();}
       await journal.put("outbox",outbox);
       await flush();
       console.log(JSON.stringify({jobId:job.id,acknowledged:true}));

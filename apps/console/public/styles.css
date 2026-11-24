@@ -2264,3 +2264,5 @@ button.wb-bar-row:hover,button.wb-bar-row[aria-pressed="true"] { background:var(
 .adv-replay{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:12px}.adv-replay input{flex:1;min-width:160px;accent-color:var(--blue)}
 .adv-job-layout .wb-table td{max-width:220px;overflow-wrap:anywhere}
 @media(max-width:1250px){.adv-job-layout{grid-template-columns:minmax(0,1fr)}}
+
+.adv-graph{max-height:420px}.adv-form .ui-input{min-width:0;width:100%}

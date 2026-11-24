@@ -1,4 +1,4 @@
-import {e,head,note,empty,section,props,table,button,pager,status,search,uiSelect,options,time,uiStatus,canWrite} from "./workbench-view-kit.js";
+import {e,head,note,empty,section,props,table,button,pager,search,uiSelect,options,time,uiStatus,canWrite} from "./workbench-view-kit.js";
 import {matchingText,localPage,evaluationSummary,metricPlot} from "./workbench-model.js";
 const esc=e;
 const fmt=n=>Number.isFinite(n)?String(Math.round(n*100)/100):"—";
@@ -41,7 +41,7 @@ function trace(w){
   const controls=form("adv-trace-form",field("Workflow ID（留空查看全部事件）","workflow",draft.workflow??w.advancedWorkflow??"","text",false)+submit("查询"));
   const player=d.latest?'<div class="adv-replay"><span>'+esc(replay?"回放游标 "+w.advancedUntil:"跟随最新")+'</span><input type="range" id="adv-replay" min="0" max="'+d.latest+'" value="'+(replay?Math.min(w.advancedUntil,d.latest):d.latest)+'" aria-label="事件回放游标">'+button("跟随最新","adv-live")+'</div>':"";
   const events=(d.items||[]).filter(x=>matchingText([x.workflow,x.agent,x.stage,x.source],w.query));
-  const rows=events.map(x=>[esc(x.cursor),esc(x.workflow),esc(x.agent),esc(x.stage),esc(x.source),esc(x.state??(x.status===2?"error":"span")),time(x.receivedAt),x.bundle?esc("知识 "+x.bundle.items.length+" 项 / "+x.bundle.digest.slice(0,12)):x.usage?esc(JSON.stringify(x.usage)):"—"]);
+  const rows=events.map(x=>[esc(x.cursor),button(x.workflow,"adv-workflow-pick",'data-id="'+esc(x.workflow)+'"'),esc(x.agent),esc(x.stage),esc(x.source),esc(x.state??(x.status===2?"error":"span")),time(x.receivedAt),x.bundle?esc("知识 "+x.bundle.items.length+" 项 / "+x.bundle.digest.slice(0,12)):x.usage?esc(JSON.stringify(x.usage)):"—"]);
   return head("持久全链路 · 只读回放")+controls+player+note("使用接收游标回放已持久记录，不会重新执行。没有采集的 Agent、日志和事件保持未知。")+graph(w)+section("事件时间线",search(w)+(rows.length?table(["游标","Workflow","Agent","阶段","来源","状态","接收时间","摘要"],rows):empty("未收到事件"))+'<div class="wb-pager">'+button("返回起点","adv-trace-reset")+button("下一批","adv-trace-next",'data-after="'+esc(d.cursor??0)+'"',"default",!d.hasMore)+'</div>');
 }
 function runTable(run,w,title){
@@ -70,11 +70,13 @@ function jobDetails(s,w){
   let body=head(j.profile,tag(j.state))+props([["作业 ID",j.id],["执行器",j.worker],["类型",j.kind],["创建",time(j.createdAt)],["完成",time(j.finishedAt)],["策略指纹",j.policy?.policyDigest]]);
   if(j.binding)body+=section("候选绑定",props([["任务",j.binding.taskId],["候选",j.binding.proposalId],["Base",j.binding.baseSha],["Tree",j.binding.treeSha],["审批轮次",j.binding.round]]));
   if(j.result?.verdict)body+=section("红绿差分门禁",tag(j.result.verdict.verdict)+note(j.result.verdict.reason)+note("证据 ID："+j.result.evidenceId));
+  if(j.result?.run||j.result?.baseline||j.result?.candidate)body+='<div class="wb-tools"><input type="search" id="adv-case-query" class="ui-input" aria-label="搜索用例" placeholder="搜索用例 ID" value="'+esc(w.advancedCaseQuery||"")+'">'+uiSelect({id:"adv-case-result",label:"结果筛选",value:w.advancedResult||"all",options:options([["all","全部"],["pass","通过"],["fail","失败"],["skip","跳过"],["error","异常"],["timeout","超时"],["cancelled","取消"],["unknown","未知"]])})+'</div>';
   if(j.result?.run)body+=runTable(j.result.run,w,"执行报告");
   if(j.result?.baseline)body+=runTable(j.result.baseline,w,"修复前 · 红");
   if(j.result?.candidate)body+=runTable(j.result.candidate,w,"修复后 · 绿");
   if(j.kind==="evaluation"&&j.result)body+=evaluation(j.result,w);
   if(j.kind==="radar"&&j.result)body+=radar(j.result,j,w,s);
+  if(j.state==="running"&&canWrite(s))body+=section("执行控制",j.cancelRequested?note("已请求取消，等待 Runner 清理确认。"):form("adv-cancel-job-form",confirmText("请求停止此 QA 作业；等待资源清理确认")+submit("请求取消")));
   if(["queued","unknown"].includes(j.state)&&canWrite(s))body+=section("人工处置",form("adv-reconcile-form",field("核对说明","note",stateForm(w).note)+confirmText("确认未执行或已核对资源和外部结果；不会自动重试")+submit(j.state==="queued"?"取消等待作业":"记录人工核对")));
   return body;
 }
@@ -93,7 +95,9 @@ function effects(s,w){
   const d=stateForm(w),rows=(w.data?.items||[]).filter(x=>matchingText(x,w.query));
   let formHtml="";
   if(canWrite(s))formHtml=form("adv-effect-form",uiSelect({id:"adv-effect-kind",label:"操作",value:d.effectKind||"zentao-sync",options:options([["zentao-sync","回写测试结果"],["zentao-bug","关联现有 Bug"],["zentao-retest","登记缺陷复验"]])})+field("QA 作业 ID","jobId",d.jobId)+field("禅道用例 ID","caseId",d.caseId,"number")+field("用例版本","caseVersion",d.caseVersion,"number")+(d.effectKind&&d.effectKind!=="zentao-sync"?field("缺陷 ID","bugId",d.bugId,"number"):"")+confirmText("确认对已配置禅道产品执行该操作")+submit("提交"));
-  return head("外部回执与缺陷复验")+note("使用独立 QA 作业及版本映射。未知写入结果不自动重试；复验不自动关闭 Bug。")+formHtml+listPage(w,rows,["类型","状态","关联详情","时间"],x=>[esc(x.kind),tag(x.state),esc(JSON.stringify(x.details)),time(x.at)]);
+  const selected=rows.find(x=>x.id===w.advancedEffectId);
+  const reconcile=selected&&canWrite(s)?form("adv-reconcile-effect-form",uiSelect({id:"adv-effect-outcome",label:"实际核对结果",value:d.effectOutcome||"verified",options:options([["verified","已核实生效"],["not-applied","确认未生效"]])})+field("核对说明","note",d.note)+confirmText("已在外部系统核对；不重新发送原请求")+submit("保存核对")):"";
+  return head("外部回执与缺陷复验")+reconcile+note("使用独立 QA 作业及版本映射。未知写入结果不自动重试；复验不自动关闭 Bug。")+formHtml+listPage(w,rows,["类型","状态","关联详情","时间","操作"],x=>[esc(x.kind),tag(x.state),esc(JSON.stringify(x.details)),time(x.at),["unknown","submitted-unverified"].includes(x.state)&&canWrite(s)?button("核对","adv-effect-pick",'data-id="'+esc(x.id)+'"'):"—"]);
 }
 function evidence(w){
   const rows=(w.data?.items||[]).filter(x=>matchingText(x,w.query));

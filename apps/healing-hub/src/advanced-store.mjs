@@ -1,5 +1,5 @@
 /** Separate durable file; failures here must not corrupt authoritative task storage. */
-import { randomUUID } from "node:crypto";
+import { randomUUID,createHmac,timingSafeEqual } from "node:crypto";
 import { join } from "node:path";
 import { createConsoleStore,HealingError } from "./console-store.mjs";
 import { bad,conflict,digest,identifier,integer,normalizeProfiles,normalizeRun,compareRedGreen,projectScope,graphFor,workerEvent,decodeOtlp,hex,array,obj,one,text } from "./advanced-model.mjs";
@@ -15,6 +15,10 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
     initialState:{schemaVersion:1,revision:0,sequence:0,events:[],jobs:[],evidence:[],effects:[],samples:[],alerts:[]},
     validate(s){if(s.schemaVersion!==1||!Number.isSafeInteger(s.revision)||!Number.isSafeInteger(s.sequence))bad();for(const [k,n] of Object.entries(LIMITS))if(!Array.isArray(s[k])||s[k].length>n)bad();},
   });
+  const evidenceKey=env.HUB_QA_EVIDENCE_HMAC;
+  const signable=typeof evidenceKey==="string"&&evidenceKey.length>=32&&evidenceKey!==env.HUB_QA_RUNNER_TOKEN&&evidenceKey!==env.HUB_OTLP_TOKEN;
+  const signature=v=>createHmac("sha256",evidenceKey).update(JSON.stringify(v)).digest("hex");
+  const verifySignature=(body,signed)=>signable&&typeof signed==="string"&&/^[a-f0-9]{64}$/.test(signed)&&timingSafeEqual(Buffer.from(signed,"hex"),Buffer.from(signature(body),"hex"));
   const requireEnabled=()=>{if(!enabled)denied();};
   const profileFor=id=>{const p=profiles.find(x=>x.id===id);if(!p)denied();return p;};
   const matches=(v,project)=>v.project===projectScope(project);
@@ -100,7 +104,7 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         if(!j)bad("找不到执行记录。");
         const fingerprint=digest(body);
         if(j.completionDigest===fingerprint)return {changed:false,value:publicJob(j)};
-        if(j.state!=="running"||j.worker!==body.worker||j.lease!==body.lease||Date.parse(j.expiresAt)<=Number(clock()))conflict("执行租约已失效，禁止覆盖结果。");
+        if(j.state!=="running"||j.cancelRequested||j.worker!==body.worker||j.lease!==body.lease||Date.parse(j.expiresAt)<=Number(clock()))conflict("执行租约已失效，禁止覆盖结果。");
         const output=obj(body.result);
         if(j.kind==="test"){
           const run=normalizeRun(output.run),ids=new Set(run.results.map(x=>x.id));
@@ -112,7 +116,7 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
           const verdict=compareRedGreen(baseline,candidate,binding);
           cap(s,"evidence");
           const evidence={id:randomUUID(),project:j.project,jobId:j.id,taskId:j.binding.taskId,proposalId:j.binding.proposalId,contentHash:j.binding.contentHash,baseSha:j.binding.baseSha,treeSha:j.binding.treeSha,round:j.binding.round,policyDigest:j.policy.policyDigest,profile:j.profile,producer:j.worker,at:at(clock),baselineDigest:digest(baseline),candidateDigest:digest(candidate),verdict};
-          s.evidence.push({...evidence,digest:digest(evidence)});
+          s.evidence.push({...evidence,digest:digest(evidence),signature:signable?signature(evidence):null});
           j.result={baseline,candidate,verdict,evidenceId:evidence.id};j.state=verdict.verdict==="pass"?"completed":"failed";
         }else if(j.kind==="evaluation"){
           const rows=array(output.samples,200).map(x=>({caseId:identifier(x.caseId),trial:integer(x.trial,1,20),baseline:one(x.baseline,["pass","fail","unknown"]),candidate:one(x.candidate,["pass","fail","unknown"]),baselineMs:x.baselineMs==null?null:integer(x.baselineMs,0,86400000),candidateMs:x.candidateMs==null?null:integer(x.candidateMs,0,86400000),baselineTokens:x.baselineTokens==null?null:integer(x.baselineTokens,0,1e9),candidateTokens:x.candidateTokens==null?null:integer(x.candidateTokens,0,1e9),baselineMicros:x.baselineMicros==null?null:integer(x.baselineMicros,0,1e12),candidateMicros:x.candidateMicros==null?null:integer(x.candidateMicros,0,1e12)}));
@@ -126,12 +130,20 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         return {changed:true,value:publicJob(j)};
       });
     },
+    async runnerStatus(project,id,worker,lease){
+      const s=await read(),j=s.jobs.find(x=>matches(x,project)&&x.id===id);
+      if(!j||j.state!=="running"||j.worker!==worker||j.lease!==lease||Date.parse(j.expiresAt)<=Number(clock()))conflict();
+      return {cancelRequested:j.cancelRequested===true,expiresAt:j.expiresAt};
+    },
     async abort(project,id,worker,lease){
       requireEnabled();return tx(s=>{const j=s.jobs.find(x=>matches(x,project)&&x.id===id);
         if(j?.abortDigest===digest([worker,lease]))return {changed:false,value:publicJob(j)};
         if(!j||j.state!=="running"||j.worker!==worker||j.lease!==lease||Date.parse(j.expiresAt)<=Number(clock()))conflict();
-        j.abortDigest=digest([worker,lease]);j.state="unknown";j.finishedAt=at(clock);delete j.lease;
+        j.abortDigest=digest([worker,lease]);j.state=j.cancelRequested?"cancelled":"unknown";j.finishedAt=at(clock);delete j.lease;
         return {changed:true,value:publicJob(j)};});
+    },
+    async cancelJob(project,id,body){
+      requireEnabled();if(body.confirm!==true)bad();return tx(s=>{const j=s.jobs.find(x=>matches(x,project)&&x.id===id);if(!j||j.state!=="running"||Date.parse(j.expiresAt)<=Number(clock()))conflict();if(j.cancelRequested)return {changed:false,value:publicJob(j)};j.cancelRequested=true;return {changed:true,value:publicJob(j)};});
     },
     async reconcileJob(project,id,body){
       requireEnabled();if(body.confirm!==true)bad();const note=text(body.note,500);
@@ -147,14 +159,14 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
     async job(project,id){const s=await read(),j=s.jobs.find(x=>matches(x,project)&&x.id===id);if(!j)bad();return publicJob(j);},
     async gate(project,entry){
       if(env.HUB_QA_GATE_REQUIRED!=="1"||entry.proposal?.version!==2)return {verdict:"disabled"};
-      if(!enabled)return {verdict:"unknown",reason:"独立 QA 尚未配置。"};
+      if(!enabled||!signable)return {verdict:"unknown",reason:"独立 QA 或证据签名密钥尚未正确配置。"};
       try{
         const s=await read(),policy=env.HUB_QA_POLICY_DIGEST;
         const e=s.evidence.filter(x=>matches(x,project)&&x.taskId===entry.task.id&&x.proposalId===entry.proposal.id&&x.contentHash===entry.proposal.contentHash&&x.baseSha===entry.proposal.candidate.baseCommitSha&&x.treeSha===entry.proposal.candidate.treeSha&&x.round===entry.approvalFlow?.round&&x.policyDigest===policy).at(-1);
         if(!e)return {verdict:"unknown",reason:"缺少绑定当前候选的独立 QA 证据。"};
-        const {digest:hash,...body}=e;
+        const {digest:hash,signature:signed,...body}=e;
         const j=s.jobs.find(x=>x.id===e.jobId&&matches(x,project)&&["completed","failed"].includes(x.state));
-        if(hash!==digest(body)||!j||j.kind!=="red-green"||!profiles.some(p=>digest(p)===digest(j.policy))||digest(j.result?.baseline)!==e.baselineDigest||digest(j.result?.candidate)!==e.candidateDigest)return {verdict:"unknown",reason:"证据完整性或当前策略未确认。"};
+        if(hash!==digest(body)||!verifySignature(body,signed)||!j||j.kind!=="red-green"||!profiles.some(p=>digest(p)===digest(j.policy))||digest(j.result?.baseline)!==e.baselineDigest||digest(j.result?.candidate)!==e.candidateDigest)return {verdict:"unknown",reason:"证据完整性或当前策略未确认。"};
         return compareRedGreen(j.result.baseline,j.result.candidate,{...j.binding,suiteDigest:j.policy.suiteDigest,environmentDigest:j.policy.environmentDigest,harnessDigest:j.policy.harnessDigest,caseIds:j.policy.caseIds,targetCase:j.policy.targetCase});
       }catch{return {verdict:"unknown",reason:"独立证据暂不可读。"};}
     },
@@ -165,6 +177,10 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         if(kind==="github-requirement"&&s.effects.some(x=>matches(x,project)&&x.kind===kind&&x.details.day===details.day))conflict("每日登记配额已用完。");
         cap(s,"effects");const effect={id,project:scope,kind,key,details,state:"unknown",at:at(clock)};
         s.effects.push(effect);return {changed:true,value:{created:true,effect}};});
+    },
+    async reconcileEffect(project,id,body){
+      requireEnabled();if(body.confirm!==true||!["verified","not-applied"].includes(body.outcome))bad();const note=text(body.note,500);
+      return tx(s=>{const e=s.effects.find(x=>matches(x,project)&&x.id===id);if(!e||!["unknown","submitted-unverified"].includes(e.state))conflict();e.reconciliation={outcome:body.outcome,note,at:at(clock)};e.state=body.outcome;e.finishedAt=at(clock);return {changed:true,value:e};});
     },
     async finishEffect(project,id,result){
       return tx(s=>{const e=s.effects.find(x=>matches(x,project)&&x.id===id);
