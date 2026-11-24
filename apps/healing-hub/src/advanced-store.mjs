@@ -29,7 +29,8 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         const key=row.project+"|"+row.id,previous=existing.get(key);
         if(previous){
           const {cursor,receivedAt,...rest}=previous;void cursor;void receivedAt;
-          if(digest(rest)!==digest(row))conflict("相同事件 ID 内容冲突。");
+          const comparable=x=>{const {observedAt,...value}=x;void observedAt;return value;};
+          if(digest(comparable(rest))!==digest(comparable(row)))conflict("相同事件 ID 内容冲突。");
           continue;
         }
         cap(s,"events");
@@ -107,7 +108,7 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
           const binding={...j.binding,suiteDigest:j.policy.suiteDigest,environmentDigest:j.policy.environmentDigest,harnessDigest:j.policy.harnessDigest,caseIds:j.policy.caseIds,targetCase:j.policy.targetCase};
           const verdict=compareRedGreen(baseline,candidate,binding);
           cap(s,"evidence");
-          const evidence={id:randomUUID(),project:j.project,jobId:j.id,taskId:j.binding.taskId,proposalId:j.binding.proposalId,contentHash:j.binding.contentHash,baseSha:j.binding.baseSha,treeSha:j.binding.treeSha,policyDigest:j.policy.policyDigest,profile:j.profile,producer:j.worker,at:at(clock),baselineDigest:digest(baseline),candidateDigest:digest(candidate),verdict};
+          const evidence={id:randomUUID(),project:j.project,jobId:j.id,taskId:j.binding.taskId,proposalId:j.binding.proposalId,contentHash:j.binding.contentHash,baseSha:j.binding.baseSha,treeSha:j.binding.treeSha,round:j.binding.round,policyDigest:j.policy.policyDigest,profile:j.profile,producer:j.worker,at:at(clock),baselineDigest:digest(baseline),candidateDigest:digest(candidate),verdict};
           s.evidence.push({...evidence,digest:digest(evidence)});
           j.result={baseline,candidate,verdict,evidenceId:evidence.id};j.state=verdict.verdict==="pass"?"completed":"failed";
         }else if(j.kind==="evaluation"){
@@ -141,10 +142,10 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
       if(!enabled)return {verdict:"unknown",reason:"独立 QA 尚未配置。"};
       try{
         const s=await read(),policy=env.HUB_QA_POLICY_DIGEST;
-        const e=s.evidence.filter(x=>matches(x,project)&&x.taskId===entry.task.id&&x.proposalId===entry.proposal.id&&x.contentHash===entry.proposal.contentHash&&x.baseSha===entry.proposal.candidate.baseCommitSha&&x.treeSha===entry.proposal.candidate.treeSha&&x.policyDigest===policy).at(-1);
+        const e=s.evidence.filter(x=>matches(x,project)&&x.taskId===entry.task.id&&x.proposalId===entry.proposal.id&&x.contentHash===entry.proposal.contentHash&&x.baseSha===entry.proposal.candidate.baseCommitSha&&x.treeSha===entry.proposal.candidate.treeSha&&x.round===entry.approvalFlow?.round&&x.policyDigest===policy).at(-1);
         if(!e)return {verdict:"unknown",reason:"缺少绑定当前候选的独立 QA 证据。"};
         const {digest:hash,...body}=e;
-        const j=s.jobs.find(x=>x.id===e.jobId&&matches(x,project)&&x.state==="completed");
+        const j=s.jobs.find(x=>x.id===e.jobId&&matches(x,project)&&["completed","failed"].includes(x.state));
         if(hash!==digest(body)||!j||j.kind!=="red-green"||!profiles.some(p=>digest(p)===digest(j.policy))||digest(j.result?.baseline)!==e.baselineDigest||digest(j.result?.candidate)!==e.candidateDigest)return {verdict:"unknown",reason:"证据完整性或当前策略未确认。"};
         return compareRedGreen(j.result.baseline,j.result.candidate,{...j.binding,suiteDigest:j.policy.suiteDigest,environmentDigest:j.policy.environmentDigest,harnessDigest:j.policy.harnessDigest,caseIds:j.policy.caseIds,targetCase:j.policy.targetCase});
       }catch{return {verdict:"unknown",reason:"独立证据暂不可读。"};}
@@ -159,6 +160,10 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
       return tx(s=>{const e=s.effects.find(x=>matches(x,project)&&x.id===id);
         if(!e||e.state!=="unknown")conflict();
         e.state=result.state;e.result=result;e.finishedAt=at(clock);return {changed:true,value:e};});
+    },
+    async recentResources(project){
+      const s=await read(),m=new Map();for(const row of s.events)if(matches(row,project)&&row.stage==="worker-resource"&&row.resource)m.set(row.agent,row);
+      return [...m.values()].filter(x=>Number(clock())-Date.parse(x.observedAt)<=120000).map(x=>({agent:x.agent,at:x.observedAt,...x.resource}));
     },
     async sample(project,values,conditions){
       requireEnabled();return tx(s=>{

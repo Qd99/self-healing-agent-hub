@@ -93,7 +93,7 @@ export function createHubClient(
   const client = {
     claim: (body, options) => request("/worker/claim", body, options),
   };
-  for (const method of ["heartbeat", "proposal", "complete", "cancelled", "observe"])
+  for (const method of ["heartbeat", "proposal", "complete", "cancelled", "observe", "quality-gate"])
     client[method] = (id, body, options) =>
       request(
         `/worker/tasks/${encodeURIComponent(id)}/${method}`,

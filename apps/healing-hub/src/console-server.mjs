@@ -1,3 +1,4 @@
+import { createAdvancedRoutes } from "./advanced-routes.mjs";
 import { createWorkbenchConnectors } from "./workbench-connectors.mjs";
 import { createServer } from "node:http";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
@@ -290,6 +291,7 @@ export function createConsoleServer({
     clock,
   });
   const workbench=createWorkbenchConnectors({env:integrationsEnv,fetchImpl:integrationsFetch,grafanaFetch,grafanaAllowedOrigins,grafanaToken,clock});
+  const advancedRoutes=createAdvancedRoutes({service,env:integrationsEnv,consoleToken,workerToken,auth,readBody,requireMethod,json});
   let shutdownPromise;
   let closingService;
   const closeService = () => (closingService ||= service.close());
@@ -313,6 +315,7 @@ export function createConsoleServer({
       if (!path.startsWith("/api/healing/"))
         throw new ConsoleError(404, "NOT_FOUND", "API route not found.");
       const route = path.slice("/api/healing".length);
+      if(await advancedRoutes.machine(route,request,response))return;
       if (route === "/session") {
         requireMethod(request, ["POST", "DELETE"]);
         request.resume();
@@ -342,7 +345,7 @@ export function createConsoleServer({
       if (route.startsWith("/worker/")) {
         const identity = auth.authenticateWorker(request);
         const target =
-          /^\/worker\/tasks\/([^/]+)\/(heartbeat|proposal|complete|cancelled|observe)$/.exec(
+          /^\/worker\/tasks\/([^/]+)\/(heartbeat|proposal|complete|cancelled|observe|quality-gate)$/.exec(
             route,
           );
         if (route !== "/worker/claim" && !target)
@@ -360,6 +363,7 @@ export function createConsoleServer({
                 {
                   heartbeat: "heartbeat",
                   observe: "observe",
+                  "quality-gate": "checkAdvancedGate",
                   proposal: "proposal",
                   complete: "complete",
                   cancelled: "acknowledgeCancellation",
@@ -369,6 +373,7 @@ export function createConsoleServer({
         return;
       }
       const identity = auth.authenticate(request);
+      if(await advancedRoutes.manager(route,request,response,identity))return;
       if (route === "/snapshot") {
         requireMethod(request, "GET");
         request.resume();

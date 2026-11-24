@@ -1,11 +1,11 @@
 /** Ephemeral best-effort telemetry. Not persisted evidence and never an authorization gate. */
 import { createHash } from "node:crypto";
 import { HealingError } from "./console-store.mjs";
-export const observationStages=new Set(["worker","base-check","checkout","baseline-checks","model","model-usage","apply","candidate-checks","proposal","prepare","publish","cleanup","receipt"]);
+export const observationStages=new Set(["worker","worker-resource","base-check","checkout","baseline-checks","model","model-usage","apply","candidate-checks","proposal","prepare","publish","cleanup","receipt"]);
 const invalid=()=>{throw new HealingError(400,"INVALID_OBSERVATION","观测事件格式无效。");};
 const safeInt=(v,max)=>Number.isSafeInteger(v)&&v>=0&&v<=max;
 export function normalizeObservation(value){
-  if(!value||typeof value!=="object"||Array.isArray(value)||Object.keys(value).some(k=>!["sequence","stage","state","durationMs","usage"].includes(k)))invalid();
+  if(!value||typeof value!=="object"||Array.isArray(value)||Object.keys(value).some(k=>!["sequence","stage","state","durationMs","usage","resource"].includes(k)))invalid();
   if(!safeInt(value.sequence,1000000)||!observationStages.has(value.stage)||!["start","returned","error","observed"].includes(value.state))invalid();
   const out={sequence:value.sequence,stage:value.stage,state:value.state};
   if(value.durationMs!==undefined){if(!safeInt(value.durationMs,86400000))invalid();out.durationMs=value.durationMs;}
@@ -13,6 +13,10 @@ export function normalizeObservation(value){
     if(value.stage!=="model-usage"||!value.usage||typeof value.usage!=="object"||Array.isArray(value.usage)||Object.keys(value.usage).some(k=>!["input","output","cached","total"].includes(k)))invalid();
     out.usage={};
     for(const [key,n] of Object.entries(value.usage)){if(!safeInt(n,1e9))invalid();out.usage[key]=n;}
+  }
+  if(value.resource!==undefined){
+    if(value.stage!=="worker-resource"||!value.resource||typeof value.resource!=="object"||Array.isArray(value.resource)||Object.keys(value.resource).some(k=>!["rssBytes","cpuMs","uptimeMs"].includes(k)))invalid();
+    out.resource={};for(const [key,n] of Object.entries(value.resource)){if(!safeInt(n,1e15))invalid();out.resource[key]=n;}
   }
   return out;
 }

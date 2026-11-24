@@ -1,3 +1,5 @@
+import { createAdvancedStore } from "./advanced-store.mjs";
+import { approvedKnowledge } from "./advanced-model.mjs";
 import { createObservationBuffer, normalizeObservation } from "./workbench-observation.mjs";
 import { appendWorkbenchRecord, listWorkbenchRecords, validateWorkbenchRecords } from "./workbench-records.mjs";
 import {
@@ -823,6 +825,7 @@ export function createHealingService({
   integrationsEnv = process.env,
 } = {}) {
   const root = resolve(rootDir);
+  const advanced=createAdvancedStore({dataDir:dataDir??join(root,".healing"),env:integrationsEnv,clock});
   const observations=createObservationBuffer();
   let observing=0;
   const integrations = () =>
@@ -1542,6 +1545,28 @@ export function createHealingService({
     });
   }
   return {
+    advanced,
+    async advancedProject(){return (await loadConsoleConfiguration(root)).project;},
+    async enqueueAdvanced(body){
+      object(body);
+      const config=await loadConsoleConfiguration(root),p=advanced.profiles().find(x=>x.id===body.profile);
+      if(!p)fail(422,"ADVANCED_PROFILE_UNAVAILABLE","执行配置未启用。");
+      let binding=null;
+      if(p.kind==="red-green"){
+        const entry=taskFor(await store.read(),body.taskId);
+        if(entry.task.payload.repo!==config.project.repo||entry.proposal?.version!==2||!entry.proposal.candidate||!entry.approvalFlow)
+          fail(422,"ADVANCED_CANDIDATE_REQUIRED","需要当前项目的 v2 候选。");
+        binding={taskId:entry.task.id,proposalId:entry.proposal.id,contentHash:entry.proposal.contentHash,baseSha:entry.proposal.candidate.baseCommitSha,treeSha:entry.proposal.candidate.treeSha,patchSha256:entry.proposal.candidate.patchSha256,round:entry.approvalFlow.round};
+      }
+      return advanced.enqueue(config.project,body.profile,binding,body.requestId);
+    },
+    async checkAdvancedGate(id,body,actor){
+      const state=await store.read(),entry=activeLease(state,id,body,actorIdentity(actor),"execute");
+      if(Date.parse(entry.lease.expiresAt)<=now().getTime())conflict("执行器租约已过期。");
+      const config=await loadConsoleConfiguration(root);
+      if(entry.task.payload.repo!==config.project.repo)conflict("任务仓库已变化。");
+      return advanced.gate(config.project,entry);
+    },
     async observe(id,body,actor) {
       object(body);
       const event=normalizeObservation(body.event);
@@ -1552,7 +1577,17 @@ export function createHealingService({
         const entry=activeLease(state,id,body,identity,undefined,true);
         if(entry.lease.workerId!==body.workerId||Date.parse(entry.lease.expiresAt)<=time.getTime())conflict("执行器租约无效或已过期。");
         const accepted=observations.add(id,entry.lease,event,time.toISOString());
-        return {accepted,completeness:"partial"};
+        let durable=false;
+        if(advanced.enabled){
+          try{
+            const config=await loadConsoleConfiguration(root);
+            if(config.project.repo===entry.task.payload.repo){
+              await advanced.persistWorker(config.project,id,entry.lease,event,time.toISOString());
+              durable=true;
+            }
+          }catch{/* Observability failure cannot mutate the authoritative task. */}
+        }
+        return {accepted,completeness:"partial",durable};
       }finally{observing--;}
     },
     async workbenchRecords(query) {
@@ -1919,7 +1954,7 @@ export function createHealingService({
       );
     },
     decide(id, body, actor) {
-      return mutate(actor, (state, config, identity, time) => {
+      return mutate(actor, async (state, config, identity, time) => {
         object(body);
         const entry = taskFor(state, id);
         checkRevision(body.expectedRevision, entry.revision);
@@ -1968,6 +2003,10 @@ export function createHealingService({
               .some((gate) => gate.status !== "approved")
           )
             conflict("审批节点已变化或尚未解锁。");
+          if(decision==="approve"&&index===flow.gates.length-1&&entry.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"){
+            const result=await advanced.gate(config.project,entry);
+            if(result.verdict!=="pass")fail(422,"QA_GATE_BLOCKED",result.reason||"独立 QA 门禁未通过。");
+          }
           const gate = flow.gates[index];
           gate.status = decision === "approve" ? "approved" : "rejected";
           gate.actor = identity.name;
@@ -2067,7 +2106,7 @@ export function createHealingService({
     async claim(body, actor) {
       const response = await workerMutation(
         actor,
-        (state, config, identity, time) => {
+        async (state, config, identity, time) => {
           object(body);
           const engineId = text(body.engineId, 120);
           const workerId = text(body.workerId, 120);
@@ -2123,9 +2162,9 @@ export function createHealingService({
               at,
             );
           }
-          const entry = [...state.tasks]
+          const candidates = [...state.tasks]
             .reverse()
-            .find(
+            .filter(
               (task) =>
                 task.engineId === engineId &&
                 (!filters.actions ||
@@ -2163,6 +2202,14 @@ export function createHealingService({
                       (gate) => gate.status === "approved",
                     ))),
             );
+          let entry;
+          for(const candidate of candidates.slice(0,30)){
+            if(candidate.task.payload.repo!==config.project.repo)continue;
+            if(candidate.executionPhase==="execute"&&candidate.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"){
+              if((await advanced.gate(config.project,candidate)).verdict!=="pass")continue;
+            }
+            entry=candidate;break;
+          }
           if (!entry) return { changed: true, value: { task: null } };
           entry.lease = {
             id: randomUUID(),
@@ -2203,6 +2250,8 @@ export function createHealingService({
                 safety: copy(entry.safety),
                 rule: copy(entry.routingRule),
                 monitoring: monitoringFor(config, state),
+                ...(entry.lease.phase==="execute"&&entry.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"?{qaGateRequired:true}:{}),
+                ...(entry.lease.phase==="diagnose"&&integrationsEnv.HUB_KNOWLEDGE_INJECTION==="1"?{knowledge:approvedKnowledge(state.workbenchRecords,config.project,entry.task.payload.context.commitSha,[entry.title,entry.task.type,...(entry.task.payload.files||[])].join(" "))}:{}),
               },
             },
           };
@@ -2549,6 +2598,6 @@ export function createHealingService({
         return { changed: true, value: response };
       });
     },
-    close: () => store.close(),
+    close: async () => { await Promise.all([store.close(),advanced.close()]); },
   };
 }

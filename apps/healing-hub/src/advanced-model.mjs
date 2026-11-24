@@ -64,7 +64,7 @@ export function decodeOtlp(body, project, knownTasks=new Set()){
 }
 export function workerEvent(project,task,lease,event,at){
   const attempt=digest(lease.id).slice(0,24);
-  return {id:"worker:"+task+":"+attempt+":"+event.sequence,project:projectScope(project),workflow:task,task,source:"worker",agent:identifier(lease.workerId),stage:event.stage,attempt,sequence:event.sequence,phase:lease.phase,state:event.state,observedAt:at,...(event.durationMs===undefined?{}:{durationMs:event.durationMs}),...(event.usage?{usage:event.usage}:{})};
+  return {id:"worker:"+task+":"+attempt+":"+event.sequence,project:projectScope(project),workflow:task,task,source:"worker",agent:identifier(lease.workerId),stage:event.stage,attempt,sequence:event.sequence,phase:lease.phase,state:event.state,observedAt:at,...(event.durationMs===undefined?{}:{durationMs:event.durationMs}),...(event.usage?{usage:event.usage}:{}),...(event.resource?{resource:event.resource}:{})};
 }
 /** Explicit parent edges only. Links are separate causal edges, never inferred from time. */
 export function graphFor(rows){

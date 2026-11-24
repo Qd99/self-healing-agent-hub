@@ -475,6 +475,7 @@ export function createWorkerRuntime(
               )
                 throw Error("Invalid renewal");
               expiry = Date.parse(response.lease.expiresAt);
+              { const cpu=process.cpuUsage();observe("worker-resource","observed",{resource:{rssBytes:process.memoryUsage().rss,cpuMs:Math.round((cpu.user+cpu.system)/1000),uptimeMs:Math.round(process.uptime()*1000)}}); }
               assertActive();
               deadline();
             } catch {
@@ -492,6 +493,8 @@ export function createWorkerRuntime(
         validateClaim(claim);
         assertActive();
         observe("worker","start");
+        const reportResources=()=>{const cpu=process.cpuUsage();observe("worker-resource","observed",{resource:{rssBytes:process.memoryUsage().rss,cpuMs:Math.round((cpu.user+cpu.system)/1000),uptimeMs:Math.round(process.uptime()*1000)}});};
+        reportResources();
         observe("base-check","start");
         if (
           (await publisher.readBase({
@@ -603,6 +606,12 @@ export function createWorkerRuntime(
         assertActive();
         record = { ...record, state: "executing" };
         await journal.put(id, record);
+        if(claim.context?.qaGateRequired===true){
+          if(typeof client["quality-gate"]!=="function")throw Error("Independent QA gate unavailable");
+          const gate=await client["quality-gate"](id,identity(claim),{signal:controller.signal});
+          if(gate.verdict!=="pass")throw Error("Independent QA gate blocked");
+          assertActive();
+        }
         observe("publish","start");
         const facts = await publisher.publish({
           claim,

@@ -651,6 +651,7 @@ export function createWorkspaceEngine(
               },
               failures: before,
               context: await context(cwd, safety),
+              ...(claim.context?.knowledge?.items?.length?{engineeringKnowledge:{untrusted:true,...claim.context.knowledge}}:{}),
             },
             { signal: options.signal, onObserve:options.onObserve },
           ),
