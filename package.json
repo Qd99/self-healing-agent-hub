@@ -26,7 +26,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "tsc --project tsconfig.json",
-    "worker": "node apps/healing-worker/src/index.mjs"
+    "worker": "node apps/healing-worker/src/index.mjs",
+    "workbench:test": "node scripts/workbench-test-runner.mjs"
   },
   "keywords": [
     "agent",
