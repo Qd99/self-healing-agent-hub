@@ -380,7 +380,7 @@ export function createConsoleServer({
         if(request.method==="GET"){
           request.resume();
           const p=new URL(request.url,"http://localhost").searchParams;
-          json(response,200,await service.workbenchRecords({kind:p.get("kind"),key:p.get("key")||undefined,page:Number(p.get("page")||1),pageSize:Number(p.get("pageSize")||20),history:p.get("history")==="1",issueNumber:p.has("issueNumber")?Number(p.get("issueNumber")):undefined}));
+          json(response,200,await service.workbenchRecords({kind:p.get("kind"),key:p.get("key")||undefined,page:Number(p.get("page")||1),pageSize:Number(p.get("pageSize")||20),history:p.get("history")==="1",issueNumber:p.has("issueNumber")?Number(p.get("issueNumber")):undefined,contractHash:p.get("contractHash")||undefined,baselineSha:p.get("baselineSha")||undefined}));
           return;
         }
         auth.assertWrite(request,identity);

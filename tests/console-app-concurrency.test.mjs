@@ -1,3 +1,4 @@
+import { createWorkbenchController } from "../apps/console/public/workbench-controller.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -105,6 +106,7 @@ function harness(fetch) {
     createAdministrationController: controller,
     createMonitoringController: controller,
     createCiController,
+    createWorkbenchController,
     installInteractionFeedback() {},
     pages,
     renderCreate,

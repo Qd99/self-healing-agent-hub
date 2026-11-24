@@ -1,3 +1,4 @@
+import { createWorkbenchController } from "./workbench-controller.js";
 import { createApiClient } from "./api-client.js";
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { createTaskController } from "./task-controller.js";
@@ -121,6 +122,7 @@ const ciController = createCiController({
   runMutation,
   refreshWorkspace,
 });
+const workbenchController=createWorkbenchController({state,api,render,runMutation,requireAuthentication,refreshSnapshot:()=>loadData()});
 const flowResizeObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) fitFlowCanvas(target);
 });
@@ -267,6 +269,7 @@ function refreshWorkspace() {
   render();
   refreshDetail();
   refreshCreate();
+  void workbenchController.sync();
 }
 function closeDetail() {
   if (detailDialog.open) detailDialog.close();
@@ -386,6 +389,7 @@ function go(view) {
   if (location.hash !== `#${view}`) history.pushState(null, "", `#${view}`);
   state.view = view;
   render();
+  void workbenchController.sync();
   window.scrollTo({ top: 0 });
   document.querySelector("#main-content")?.focus({ preventScroll: true });
 }
@@ -417,6 +421,7 @@ window.addEventListener("hashchange", () => {
   closeDetail();
   closeCreate();
   render();
+  void workbenchController.sync();
   window.scrollTo({ top: 0 });
 });
 
@@ -490,12 +495,14 @@ function setSnapshot(next) {
     state.createDraft = null;
     state.approvalComment = "";
     ciController.reset();
+    workbenchController.reset();
   }
   state.snapshot = next;
   state.error = "";
   return true;
 }
 function requireAuthentication(error) {
+  workbenchController.reset();
   state.authRequired = true;
   state.authError = error?.message || "登录已过期，请重新输入管理令牌。";
   state.resumeCreate = createDialog.open || state.resumeCreate;
@@ -521,6 +528,7 @@ async function loadData(mode = state.mode, { background = false } = {}) {
     state.approvalComment = "";
     state.createDraft = null;
     ciController.reset();
+    workbenchController.reset();
   }
   state.mode = mode;
   state.loading = !state.snapshot;
@@ -648,6 +656,7 @@ document.addEventListener("click", (event) => {
   if (administrationController.handleClick(event, button)) return;
   if (monitoringController.handleClick(event, button)) return;
   if (!button || button.disabled) return;
+  if(workbenchController.handleClick(event,button))return;
   const { action, id, tab, view, mode, command, theme } = button.dataset;
   if (action === "sidebar-toggle") {
     state.sidebarCollapsed = !state.sidebarCollapsed;
@@ -768,7 +777,8 @@ document.addEventListener("click", (event) => {
     document
       .querySelector(`[data-action="expand-task"][data-id="${CSS.escape(id)}"]`)
       ?.focus();
-  } else if (action === "open-task") openTask(id, tab);
+  } else if(action==="wb-open-trace"){go("trace");workbenchController.selectTask(id);}
+  else if (action === "open-task") openTask(id, tab);
   else if (action === "close-detail") closeDetail();
   else if (action === "detail-tab") {
     state.detailTab = tab;
@@ -828,6 +838,7 @@ document.addEventListener("click", (event) => {
         state.approvalComment = "";
         state.monitoringDirty = false;
         ciController.reset();
+        workbenchController.reset();
         closeDetail();
         closeCreate();
         taskController.reset(true);
@@ -902,6 +913,7 @@ function captureCiImportDraft(target) {
   return true;
 }
 document.addEventListener("input", (event) => {
+  if(workbenchController.handleInput(event))return;
   if (captureCiImportDraft(event.target)) return;
   if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
@@ -925,6 +937,7 @@ document.addEventListener("input", (event) => {
   taskController.handleInput(event);
 });
 document.addEventListener("compositionend", (event) => {
+  if(event.target.id==="wb-search"&&workbenchController.handleInput(event))return;
   if (state.view === "jenkins" && event.target.id === "jenkins-search") {
     state.jenkinsQuery = event.target.value.slice(0, 200);
     state.jenkinsPage = 1;
@@ -935,6 +948,7 @@ document.addEventListener("compositionend", (event) => {
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if(workbenchController.handleChange(event))return;
   if (captureCiImportDraft(event.target)) return;
   if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
@@ -963,6 +977,7 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if(workbenchController.handleSubmit(event))return;
   if (event.target.id === "ci-import-form") {
     event.preventDefault();
     ciController.importBuild(Object.fromEntries(new FormData(event.target)));

@@ -120,10 +120,12 @@ export function appendWorkbenchRecord(state,project,body,actor,at){
   state.workbenchRecords=next;
   return {changed:true,value:{record,duplicate:false}};
 }
-export function listWorkbenchRecords(records,project,{kind,key,page=1,pageSize=20,history=false,issueNumber}={}){
+export function listWorkbenchRecords(records,project,{kind,key,page=1,pageSize=20,history=false,issueNumber,contractHash,baselineSha}={}){
   one(kind,recordKinds);integer(page,1,100000);integer(pageSize,1,50);
   if(issueNumber!==undefined)integer(issueNumber,1,1e9);
-  let matching=(records??[]).filter(r=>r.project===projectOf(project)&&r.kind===kind&&(!key||r.key===key)&&(issueNumber===undefined||r.payload.issueNumber===issueNumber));
+  if(contractHash!==undefined)hex(contractHash,64);
+  if(baselineSha!==undefined)hex(baselineSha,40);
+  let matching=(records??[]).filter(r=>r.project===projectOf(project)&&r.kind===kind&&(!key||r.key===key)&&(issueNumber===undefined||r.payload.issueNumber===issueNumber)&&(contractHash===undefined||r.payload.contractHash===contractHash)&&(baselineSha===undefined||r.payload.baselineSha===baselineSha));
   if(!history){const latest=new Map();for(const r of matching)latest.set(r.key,r);matching=[...latest.values()];}
   matching.sort((a,b)=>b.at.localeCompare(a.at)||b.version-a.version);
   const total=matching.length,pageCount=Math.max(1,Math.ceil(total/pageSize)),current=Math.min(page,pageCount);

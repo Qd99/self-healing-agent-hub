@@ -148,6 +148,13 @@ export function createApiClient({
     setSnapshot,
     clearSession,
     getSnapshot: (options = {}) => request("/api/healing/snapshot", options),
+    readWorkbench(kind, params={}, options={}) {
+      if(!["github-issues","github-prs","github-issue","github-pr","zentao","metrics","alerts","records"].includes(kind))
+        return Promise.reject(new ConsoleApiError("不支持的工作区查询。",{code:"INVALID_ACTION"}));
+      const query=new URLSearchParams(Object.entries(params).filter(([,v])=>v!==undefined&&v!==null).map(([k,v])=>[k,String(v)]));
+      return request("/api/healing/workbench/"+kind+"?"+query.toString(),options);
+    },
+    saveWorkbenchRecord: body=>request("/api/healing/workbench/records",{method:"POST",body}),
     async createSession(token) {
       clearSession();
       return request("/api/healing/session", { method: "POST", token });

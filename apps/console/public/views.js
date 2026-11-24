@@ -1,3 +1,4 @@
+import { renderWorkbenchPage } from "./workbench-views.js";
 import { renderJenkinsWorkspace } from "./jenkins-workspace.js";
 import { isV20 } from "./workspace-model.js";
 import { renderWorkspaceEngines, renderWorkspaceExecutionDetail } from "./workspace-views.js";
@@ -31,6 +32,12 @@ export const pages = {
   tasks: { title: "全部任务", icon: "ListChecks" },
   approvals: { title: "审批中心", icon: "GitPullRequestArrow" },
   jenkins: { title: "Jenkins", icon: "Workflow" },
+  requirements: {title:"需求与评审",icon:"GitPullRequestArrow"},
+  trace: {title:"全链路观测",icon:"Activity"},
+  tests: {title:"自动化测试",icon:"FlaskConical"},
+  metrics: {title:"性能与告警",icon:"ChartNoAxesCombined"},
+  knowledge: {title:"知识与评估",icon:"BookOpen"},
+  radar: {title:"技术雷达",icon:"Radar"},
   engines: { title: "执行引擎", icon: "Bot" },
   rules: { title: "路由规则", icon: "Workflow" },
   safety: { title: "安全策略", icon: "ShieldCheck" },
@@ -142,6 +149,12 @@ function renderPage(s) {
     overview: renderStudioDashboard,
     approvals: renderApprovalPage,
     jenkins: renderJenkinsWorkspace,
+    requirements:renderWorkbenchPage,
+    trace:renderWorkbenchPage,
+    tests:renderWorkbenchPage,
+    metrics:renderWorkbenchPage,
+    knowledge:renderWorkbenchPage,
+    radar:renderWorkbenchPage,
     tasks: renderTaskPage,
     engines,
     rules: renderRulesPage,
