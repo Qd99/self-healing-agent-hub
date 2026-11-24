@@ -1,3 +1,4 @@
+import { activityPageSize } from "./workspace-model.js";
 /** Pure presentation and export helpers for operation records and routing rules. */
 const DAY_MS = 86_400_000;
 const SHANGHAI_OFFSET = 8 * 60 * 60 * 1000;
@@ -210,25 +211,26 @@ export function filterActivities(
 /** Keep the full filtered result separate from the 15 records currently displayed. */
 export function getActivityPage(
   entries = [],
-  { filters = {}, page = 1, now = Date.now() } = {},
+  { filters = {}, page = 1, pageSize = ACTIVITY_PAGE_SIZE, now = Date.now() } = {},
 ) {
   const filtered = filterActivities(entries, { ...filters, now });
   const total = filtered.length;
-  const pageCount = Math.max(1, Math.ceil(total / ACTIVITY_PAGE_SIZE));
+  const size = activityPageSize(pageSize);
+  const pageCount = Math.max(1, Math.ceil(total / size));
   const requested = Number(page);
   const current = Math.min(
     pageCount,
     Number.isInteger(requested) && requested > 0 ? requested : 1,
   );
-  const offset = (current - 1) * ACTIVITY_PAGE_SIZE;
+  const offset = (current - 1) * size;
   return {
-    items: filtered.slice(offset, offset + ACTIVITY_PAGE_SIZE),
+    items: filtered.slice(offset, offset + size),
     total,
     page: current,
     pageCount,
-    pageSize: ACTIVITY_PAGE_SIZE,
+    pageSize: size,
     start: total ? offset + 1 : 0,
-    end: Math.min(offset + ACTIVITY_PAGE_SIZE, total),
+    end: Math.min(offset + size, total),
   };
 }
 

@@ -1,3 +1,5 @@
+import { isV20 } from "./workspace-model.js";
+import { renderWorkspaceAttention, renderWorkspaceExecutionInline } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { escapeHtml as e, formatDuration } from "./model.js";
 import { getDashboardAnalytics } from "./analytics-model.js";
@@ -128,12 +130,12 @@ function taskStatus(item) {
     className: "home-task-status",
   });
 }
-function taskRow(item) {
+function taskRow(item, state) {
   const review = item.reviewState === "pending" && item.approvalFlow;
   return `<button type="button" class="home-task-row" data-action="${review ? "select-approval" : "open-task"}" data-id="${e(item.task.id)}" title="${e(item.title)} · ${e(administrationEngineName(item.engineId))}">
     <span class="home-task-glyph" aria-hidden="true">${icon(lookup(typeIcons, item.task.type, "ListChecks"), 16)}</span>
     <span class="home-task-copy"><strong>${e(item.title)}</strong><span class="home-task-meta"><code>${e(item.task.id)}</code>${timeLabel(item.task.metadata?.createdAt)}</span></span>
-    ${taskStatus(item)}<span class="home-task-arrow" aria-hidden="true">${icon("ChevronRight", 12)}</span>
+    ${isV20(state) ? renderWorkspaceExecutionInline(item, state) : ""}${taskStatus(item)}<span class="home-task-arrow" aria-hidden="true">${icon("ChevronRight", 12)}</span>
   </button>`;
 }
 
@@ -312,7 +314,7 @@ function recentTasks(analytics, state) {
       label: "工作台任务视图",
       className: "home-task-tabs",
     })}
-    ${list.length ? `<div class="home-task-list">${list.map(taskRow).join("")}</div>` : uiEmpty({ icon: "Inbox", title: state.overviewTab === "review" ? "没有待审批任务" : state.overviewTab === "running" ? "没有运行或排队任务" : "当前范围没有任务", description: "可切换状态或调整时间范围。", className: "home-empty" })}
+    ${list.length ? `<div class="home-task-list">${list.map((item) => taskRow(item, state)).join("")}</div>` : uiEmpty({ icon: "Inbox", title: state.overviewTab === "review" ? "没有待审批任务" : state.overviewTab === "running" ? "没有运行或排队任务" : "当前范围没有任务", description: "可切换状态或调整时间范围。", className: "home-empty" })}
   </section>`;
 }
 
@@ -331,7 +333,8 @@ export function renderStudioDashboard(state) {
       <div class="home-stat">${uiMetric({ label: state.mode === "demo" ? "平均修复耗时" : "平均任务耗时", value: formatDuration(metrics.averageDurationMs), icon: "Clock3", detail: metrics.averageDurationMs === null ? "暂无有效耗时" : "已结束任务的有效均值", className: "home-metric" })}</div>
       <div class="home-stat">${uiMetric({ label: "待审批", value: statusCount("review"), unit: "项", icon: "GitPullRequestArrow", tone: "warning", detail: statusCount("review") ? "等待人工确认" : "无需处理", className: "home-metric" })}${uiButton({ label: "去审批", icon: "ArrowUpRight", action: "navigate", attrs: 'data-view="approvals"', variant: "ghost", className: "home-stat-action" })}</div>
     </section>
-    <div class="home-report-main">${volumeChart(analytics)}${statusChart(analytics)}</div>
-    <div class="home-report-bottom">${typesChart(analytics)}${enginesChart(analytics, state.mode)}${recentTasks(analytics, state)}</div>
+    ${isV20(state)
+      ? `<div class="v20-overview-grid"><div class="v20-overview-main">${volumeChart(analytics)}${recentTasks(analytics, state)}</div><aside class="v20-overview-side">${renderWorkspaceAttention(analytics.tasks, state)}${statusChart(analytics)}</aside></div><div class="v20-overview-analysis">${typesChart(analytics)}${enginesChart(analytics, state.mode)}</div>`
+      : `<div class="home-report-main">${volumeChart(analytics)}${statusChart(analytics)}</div><div class="home-report-bottom">${typesChart(analytics)}${enginesChart(analytics, state.mode)}${recentTasks(analytics, state)}</div>`}
   </div>`;
 }

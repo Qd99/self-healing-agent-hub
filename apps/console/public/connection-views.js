@@ -1,3 +1,5 @@
+import { isV20 } from "./workspace-model.js";
+import { renderWorkspaceConnectionContext } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { escapeHtml as e } from "./model.js";
 import { normalizeMonitoringConfig } from "./monitoring-model.js";
@@ -73,6 +75,7 @@ export function renderConnectionSettings(s) {
         : "未连接";
   const lastRead = snapshot?.generatedAt;
   return `<section class="connection-settings" aria-label="工作空间连接">
+    ${isV20(s) ? renderWorkspaceConnectionContext(s) : ""}
     <section class="ui-card cs-connections" aria-label="服务连接">
       <header class="cs-list-heading"><h2>服务连接</h2><span>状态</span><span class="sr-only">连接操作</span></header>
       <div class="cs-service cs-management">

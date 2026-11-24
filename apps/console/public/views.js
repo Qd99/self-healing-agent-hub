@@ -1,3 +1,5 @@
+import { isV20 } from "./workspace-model.js";
+import { renderWorkspaceEngines, renderWorkspaceExecutionDetail } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { renderStudioDashboard } from "./dashboard.js";
 import {
@@ -162,6 +164,7 @@ function connectionError() {
 }
 
 function engines(s) {
+  if (isV20(s)) return renderWorkspaceEngines(s, engineName);
   return `<div class="ui-setting-stack">${s.snapshot.engines.map((x) => `<section class="ui-card"><header class="ui-section-header"><h2>${icon(x.id === "fast" ? "Zap" : "Workflow", 17)}${e(engineName(x.id))}</h2>${uiStatus({ label: { unavailable: "等待 Agent 接入", idle: "可领取任务", running: "运行中", error: "连接异常" }[x.status] || "状态未知", icon: x.status === "running" ? "Activity" : "Plug", tone: x.status === "running" ? "info" : x.status === "idle" ? "success" : "neutral" })}</header><dl class="ui-config-grid"><div><dt>适用任务</dt><dd>${x.id === "fast" ? "格式、Lint 与轻量修复" : "诊断、多步骤修复与验证"}</dd></div><div><dt>配置模型</dt><dd>${e(x.model || "未配置")}</dd></div><div><dt>引擎类型</dt><dd><code>${e(x.type)}</code></dd></div><div><dt>关联规则</dt><dd>${uiButton({ label: `${s.snapshot.rules.filter((r) => r.processor.engine === x.id).length} 条路由规则`, action: "navigate", variant: "ghost", attrs: 'data-view="rules"' })}</dd></div></dl></section>`).join("")}<details class="ui-card ui-fold"><summary>执行引擎接入说明</summary><div class="ui-fold-content">当前展示${s.mode === "demo" ? "示例" : "已读取的"}配置，任务由已认证的 Agent 领取并回传进度与结果。显示已配置不代表 Agent 在线，实际运行以任务记录为准。</div></details></div>`;
 }
 
@@ -239,7 +242,7 @@ export function renderTaskDetail(item, s) {
     )
     .join(
       "",
-    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderReconciliation(item, s)}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
+    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderReconciliation(item, s)}${isV20(s) && tab === "trace" ? renderWorkspaceExecutionDetail(item, s) : ""}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
 }
 
 export function renderCreate(s) {

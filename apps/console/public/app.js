@@ -43,6 +43,7 @@ const readSidebar = () => {
 const state = {
   view: pages[location.hash.slice(1)] ? location.hash.slice(1) : "overview",
   mode: requestedMode === "demo" ? "demo" : "live",
+  presentation: document.documentElement?.dataset?.consoleUi === "v20" ? "v20" : "legacy",
   theme: readTheme() === "dark" ? "dark" : "light",
   snapshot: null,
   error: "",

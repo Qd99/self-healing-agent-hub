@@ -1,3 +1,5 @@
+import { isV20 } from "./workspace-model.js";
+import { renderWorkspacePager } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { escapeHtml as e } from "./model.js";
 import { uiButton, uiSearch, uiSelect, uiStatus, uiEmpty } from "./ui.js";
@@ -88,7 +90,7 @@ export function renderActivityPage(s) {
     return `<section class="ui-card adm-workspace adm-activity" aria-label="操作记录">${uiEmpty({ icon: "History", title: "尚未读取操作记录", description: "管理服务连接后，任务操作、审批与规则变更的记录会显示在这里。", action: uiButton({ label: "连接设置", icon: "Plug", action: "navigate", attrs: 'data-view="settings"' }) })}</section>`;
   const filters = { ...DEFAULT_ACTIVITY_FILTERS, ...s.activityFilters };
   const all = filterActivities(s.snapshot.activity);
-  const page = getActivityPage(all, { filters, page: s.activityPage });
+  const page = getActivityPage(all, { filters, page: s.activityPage, pageSize: isV20(s) ? s.activityPageSize : 15 });
   const active = Boolean(
     String(filters.query || "").trim() ||
     filters.category !== "all" ||
@@ -130,7 +132,7 @@ export function renderActivityPage(s) {
               action: resetButton("activity-reset"),
             })
           : `<div class="adm-activity-table-wrap"><table class="ui-table adm-activity-table"><caption class="sr-only">操作记录，最新记录在前</caption><thead><tr><th scope="col">操作</th><th scope="col">关联对象</th><th scope="col">操作者</th><th scope="col">时间</th><th scope="col">记录级别</th></tr></thead><tbody>${page.items.map(renderOperation).join("")}</tbody></table></div>
-          <div class="adm-pagination"><span>显示 ${page.start}–${page.end} 条，共 ${page.total} 条</span><nav aria-label="操作记录分页">${uiButton({ label: "上一页", icon: "ChevronLeft", action: "activity-page", variant: "ghost", disabled: page.page <= 1, attrs: `id="activity-page-prev" data-page="${page.page - 1}"` })}<span aria-live="polite">${page.page} / ${page.pageCount}</span>${uiButton({ label: "下一页", icon: "ChevronRight", action: "activity-page", variant: "ghost", disabled: page.page >= page.pageCount, attrs: `id="activity-page-next" data-page="${page.page + 1}"` })}</nav></div>`
+          ${isV20(s) ? renderWorkspacePager(page, "activity") : `<div class="adm-pagination"><span>显示 ${page.start}–${page.end} 条，共 ${page.total} 条</span><nav aria-label="操作记录分页">${uiButton({ label: "上一页", icon: "ChevronLeft", action: "activity-page", variant: "ghost", disabled: page.page <= 1, attrs: `id="activity-page-prev" data-page="${page.page - 1}"` })}<span aria-live="polite">${page.page} / ${page.pageCount}</span>${uiButton({ label: "下一页", icon: "ChevronRight", action: "activity-page", variant: "ghost", disabled: page.page >= page.pageCount, attrs: `id="activity-page-next" data-page="${page.page + 1}"` })}</nav></div>`}`
     }
   </section>`;
 }

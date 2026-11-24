@@ -1,3 +1,4 @@
+import { isV20 } from "./workspace-model.js";
 import { icon } from "./icons.js";
 import { escapeHtml as e } from "./model.js";
 
@@ -19,5 +20,5 @@ export function renderSidebar(s, pages) {
 export function renderTopbar(s, pages) {
   const project =
     s.snapshot?.project?.repo?.split("/").at(-1) || "self-healing-agent-hub";
-  return `<header class="topbar"><div class="row grow"><button class="ui-icon-button icon-button mobile-menu" data-action="open-nav" aria-label="打开导航" aria-expanded="${s.mobileNav}" aria-controls="primary-navigation">${icon("Menu", 19)}</button><div class="breadcrumb"><span class="project-glyph" aria-hidden="true">${icon("Box", 15)}</span><span class="project-name truncate">${e(project)}</span><span class="breadcrumb-current">${pages[s.view].title}</span></div></div></header>`;
+  return `<header class="topbar"><div class="row grow"><button class="ui-icon-button icon-button mobile-menu" data-action="open-nav" aria-label="打开导航" aria-expanded="${s.mobileNav}" aria-controls="primary-navigation">${icon("Menu", 19)}</button><div class="breadcrumb"><span class="project-glyph" aria-hidden="true">${icon("Box", 15)}</span><span class="project-name truncate">${e(project)}</span><span class="breadcrumb-current">${pages[s.view].title}</span></div></div>${isV20(s) ? `<a class="v20-legacy-link" href="./index.html${s.mode === "demo" ? "?demo=1" : ""}#${e(s.view)}" title="返回旧版界面">旧版界面 ${icon("ArrowUpRight", 13)}</a>` : ""}</header>`;
 }
