@@ -7,6 +7,8 @@ export const workbenchTabs=Object.freeze({
   radar:[["radar","技术候选"]],
 });
 export const recordTabs=new Set(["case-map","test-plan","test-run","knowledge","evaluation","radar"]);
+// Include monitoring configuration identity so old responses cannot be labeled with new settings.
+export const workbenchScope=(s)=>JSON.stringify([s.mode,s.snapshot?.project?.id,s.snapshot?.project?.repo,s.view==="metrics"?s.snapshot?.monitoring:null]);
 export const isWorkbench=view=>Object.hasOwn(workbenchTabs,view);
 export function initialWorkbench(view){
   return {view,tab:workbenchTabs[view]?.[0]?.[0],page:1,commentPage:1,selected:null,data:null,detail:null,reviews:null,query:"",status:"all",githubState:"open",namespace:"",metric:"cpu",range:"1h",loading:false,error:"",draft:null,reviewDraft:{role:"product",verdict:"changes-required",note:""},detailPage:1,detailFilter:"all",sampleIndex:null,historyKey:"",loadedAt:0};

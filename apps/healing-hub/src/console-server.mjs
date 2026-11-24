@@ -389,7 +389,7 @@ export function createConsoleServer({
         if(body.kind==="review"){
           const snapshot=await service.snapshot();
           const current=await workbench.issue(snapshot,body.payload?.issueNumber);
-          if(current.item.state!=="open"||current.item.bodyTruncated) throw new ConsoleError(409,"WORKBENCH_REVIEW_STALE","已关闭或未完整读取的需求不能追加当前评审。");
+          if(current.item.state!=="open"||current.item.bodyTruncated||current.item.bodyRedacted) throw new ConsoleError(409,"WORKBENCH_REVIEW_STALE","已关闭或未完整读取的需求不能追加当前评审。");
           binding={projectId:snapshot.project.id,repo:snapshot.project.repo,issueNumber:current.item.number,contractHash:current.item.contractHash,baselineSha:current.item.baselineSha};
         }
         json(response,200,await service.saveWorkbenchRecord(body,identity.actor,binding));

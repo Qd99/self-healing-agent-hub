@@ -64,7 +64,7 @@ export function createWorkbenchConnectors({env=process.env,fetchImpl=globalThis.
         if(!sha(head?.sha))fail(502,"UPSTREAM_FORMAT","无法确认仓库基线。");
         baselineSha=head.sha.toLowerCase();
       }
-      return result("github",{item:{...summary(x),kind,body:clean(x.body,24000),bodyTruncated:typeof x.body==="string"&&x.body.length>24000,contractHash:digest([x.title,x.body,x.state]),baselineSha,...(kind==="pr"?{draft:x.draft===true,headSha:sha(x.head?.sha)?x.head.sha:null,baseRef:clean(x.base?.ref,200)}:{})},page,hasMore:nextPage(link),comments:list(comments).slice(0,20).map(c=>({id:c.id,author:clean(c.user?.login,100),body:clean(c.body,8000),at:clean(c.updated_at||c.created_at,80)}))});
+      return result("github",{item:{...summary(x),kind,body:clean(x.body,24000),bodyTruncated:typeof x.body==="string"&&x.body.length>24000,bodyRedacted:clean(x.body,24000)!==(x.body??"").slice(0,24000)||clean(x.title,300)!==x.title,contractHash:digest([x.title,x.body,x.state]),baselineSha,...(kind==="pr"?{draft:x.draft===true,headSha:sha(x.head?.sha)?x.head.sha:null,baseRef:clean(x.base?.ref,200)}:{})},page,hasMore:nextPage(link),comments:list(comments).slice(0,20).map(c=>({id:c.id,author:clean(c.user?.login,100),body:clean(c.body,8000),at:clean(c.updated_at||c.created_at,80)}))});
     }finally{reader.close();}
   }
   async function zentao(p){

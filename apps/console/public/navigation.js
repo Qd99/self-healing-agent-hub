@@ -6,6 +6,7 @@ export function renderSidebar(s, pages) {
   const review =
     s.snapshot?.tasks.filter((t) => t.reviewState === "pending").length || 0;
   const navItem = (id) => {
+    if (!pages[id]) return "";
     const page = pages[id],
       count = id === "approvals" ? review : null;
     return `<a href="#${id}" class="nav-item ${s.view === id ? "active" : ""}" aria-label="${e(page.title)}" title="${e(page.title)}" ${s.view === id ? 'aria-current="page"' : ""} data-nav="${id}">${icon(page.icon, 18)}<span class="nav-copy">${e(page.title)}</span>${count ? `<span class="nav-count">${count}</span>` : ""}<span class="nav-tooltip" aria-hidden="true">${e(page.title)}${count ? ` · ${count}` : ""}</span></a>`;

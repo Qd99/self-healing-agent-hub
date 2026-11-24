@@ -486,7 +486,7 @@ function setSnapshot(next) {
     state.authError = "";
   } else demoSnapshot = next;
   const projectChanged =
-    state.snapshot && state.snapshot.project.id !== next.project.id;
+    state.snapshot && (state.snapshot.project.id !== next.project.id || state.snapshot.project.repo !== next.project.repo);
   if (projectChanged) {
     taskController.reset(true);
     administrationController.reset();

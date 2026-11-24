@@ -1,12 +1,12 @@
 import { uiTabs,uiStatus } from "./ui.js";
 import { e,button,note,time,empty } from "./workbench-view-kit.js";
-import { initialWorkbench,workbenchTabs,recordTabs } from "./workbench-model.js";
+import { initialWorkbench,workbenchTabs,recordTabs,workbenchScope } from "./workbench-model.js";
 import { renderRequirements } from "./workbench-requirements.js";
 import { renderTrace } from "./workbench-trace.js";
 import { renderRecords,renderZentao } from "./workbench-record-views.js";
 import { renderMetrics } from "./workbench-metrics.js";
 export function renderWorkbenchPage(s){
-  const w=s.workbench?.view===s.view?s.workbench:initialWorkbench(s.view);
+  const w=s.workbench?.view===s.view&&s.workbench.scope===workbenchScope(s)?s.workbench:initialWorkbench(s.view);
   const observed=w.detail?.observedAt||w.data?.observedAt;
   let content;
   if(s.view==="trace")content=renderTrace(s,w);

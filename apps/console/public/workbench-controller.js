@@ -1,10 +1,10 @@
 /** Request lifecycle for D-G workspaces. Late results cannot cross projects or sessions. */
-import { initialWorkbench,isWorkbench,workbenchTabs,recordTabs } from "./workbench-model.js";
+import { initialWorkbench,isWorkbench,workbenchTabs,recordTabs,workbenchScope } from "./workbench-model.js";
 import { selectedRecord,recordIdentity } from "./workbench-record-views.js";
 
 export function createWorkbenchController({state,api,render,runMutation,requireAuthentication,refreshSnapshot,now=Date.now}){
   let generation=0,request;
-  const projectKey=()=>JSON.stringify([state.mode,state.snapshot?.project?.id,state.snapshot?.project?.repo]);
+  const projectKey=()=>workbenchScope(state);
   const usable=()=>state.mode==="live"&&Boolean(state.snapshot)&&!state.authRequired;
   function reset(){
     generation++;
