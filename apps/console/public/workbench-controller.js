@@ -195,7 +195,7 @@ export function createWorkbenchController({state,api,render,runMutation,requireA
         const payload=JSON.parse(w.draft.text);
         void save(w,{kind:w.tab,key:w.draft.key,expectedVersion:w.draft.expectedVersion,payload});
       }catch{w.error="请输入有效且符合大小限制的 JSON。";render();}
-    }else if(id==="wb-review-form"&&w.detail?.item&&w.reviews&&!w.loading&&!w.error){
+    }else if(id==="wb-review-form"&&w.detail?.item&&w.reviews&&!w.loading){
       const item=w.detail.item,d=w.reviewDraft;
       const current=w.reviews.items.find(x=>x.payload.role===d.role&&x.payload.contractHash===item.contractHash&&x.payload.baselineSha===item.baselineSha);
       void save(w,{kind:"review",expectedVersion:current?.version??0,payload:{issueNumber:item.number,contractHash:item.contractHash,baselineSha:item.baselineSha,role:d.role,verdict:d.verdict,note:d.note}});

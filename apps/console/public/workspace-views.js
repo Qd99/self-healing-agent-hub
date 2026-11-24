@@ -29,8 +29,10 @@ export function renderWorkspaceExecutionDetail(entry, state) {
     <div class="v20-current-execution"><span class="v20-current-icon">${icon(v.active ? "Activity" : v.attention ? "CircleAlert" : "Workflow",17)}</span><div><strong>${e(v.label)}</strong><p>${e(v.message)}</p></div></div>
     <div class="v20-execution-progress"><span>服务端进度</span>${progress(v.progress)}</div>
     <dl class="v20-execution-facts"><div><dt>服务端阶段</dt><dd>${e(v.phase)}</dd></div><div><dt>租约 Worker</dt><dd>${e(v.workerId || "未提供")}</dd></div><div><dt>租约到期（北京时间）</dt><dd>${time(v.leaseExpiresAt)}${v.leaseExpired ? " · 已到期" : ""}</dd></div><div><dt>快照时间（北京时间）</dt><dd>${time(v.observedAt)}</dd></div></dl>
-    <p class="v20-observation-note">${demo ? "开发样例，不执行真实任务。" : "沿用现有 15 秒后台快照轮询；编辑、确认和断线时不强制刷新。Worker 心跳仅续租，未提供实时工具事件。"} </p>
+    <p class="v20-observation-note">${demo ? "开发样例，不执行真实任务。" : "沿用现有 15 秒后台快照轮询；编辑、确认和断线时不强制刷新。Worker 心跳仍只续租；新版 Worker 可独立上报部分阶段与模型用量事件。"} </p>
     ${v.lastStep ? `<div class="v20-last-trace"><span>最后列出的回传步骤 · ${v.traceCount} 项</span><strong>${e(v.lastStep.title)}</strong><span>${e(v.lastStep.status)} · 历史记录，不代表当前操作</span></div>` : '<p class="v20-observation-note">尚无回传步骤。</p>'}
+    <div class="v20-evidence-actions">${uiButton({label:"全链路观测",icon:"Activity",action:"wb-open-trace",attrs:`data-id="${e(entry.task.id)}"`,variant:"ghost"})}</div>
+    ${entry.observation?.events?.length?`<div class="v20-last-trace"><span>近期观测 · 内存缓冲 · 非门禁证据</span>${entry.observation.events.slice(-5).map(x=>`<p>${e(x.stage)} · ${e(x.state)} · ${time(x.observedAt)}</p>`).join("")}</div>`:""}
   </section>`;
 }
 

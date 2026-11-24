@@ -18,7 +18,7 @@ export function renderRequirements(s,w){
     }).join("")+'</div>';
     let form="";
     if(canWrite(s)&&item.state==="open"&&!item.bodyTruncated&&w.reviews){
-      form='<form id="wb-review-form" class="wb-form"><div class="wb-tools">'+uiSelect({id:"wb-role",label:"评审角色",value:draft.role,options:options(["product","development","testing"])})+uiSelect({id:"wb-verdict",label:"结论",value:draft.verdict,options:options(["pass","changes-required","blocked"])})+'</div><label for="wb-review-note">评审意见</label><textarea id="wb-review-note" class="ui-textarea" rows="3" maxlength="4000" required>'+e(draft.note)+'</textarea><button class="ui-button ui-button-primary" type="submit">保存人工评审记录</button></form>';
+      form='<form id="wb-review-form" class="wb-form"><div class="wb-tools">'+uiSelect({id:"wb-role",label:"评审角色",value:draft.role,options:options(["product","development","testing"])})+uiSelect({id:"wb-verdict",label:"结论",value:draft.verdict,options:options(["pass","changes-required","blocked"])})+'</div><label for="wb-review-note">评审意见</label><textarea id="wb-review-note" class="ui-textarea" rows="3" maxlength="4000" required>'+e(draft.note)+'</textarea><div class="row"><button class="ui-button ui-button-primary" type="submit">保存人工评审记录</button><button type="button" class="ui-button ui-button-ghost" data-action="wb-cancel">清除草稿</button></div></form>';
     }
     body+=section("本地三方评审账本",props([["正文指纹",item.contractHash],["仓库基线",item.baselineSha]])+cards+note("单管理身份的角色记录不证明三位独立审查人。GitHub 标签与本地人工记录均不触发开发授权。")+form);
   }

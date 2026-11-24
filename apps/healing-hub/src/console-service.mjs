@@ -1091,7 +1091,10 @@ export function createHealingService({
       rulesOverridden: state.ruleOverrides.length > 0,
       monitoring: monitoringFor(config, state),
       monitoringSource: state.monitoring === null ? "configuration" : "saved",
-      tasks: state.tasks.map(entry=>({...publicTask(entry),...(observations.read(entry.task.id).events.length?{observation:observations.read(entry.task.id)}:{})})),
+      tasks: state.tasks.map(entry=>{
+        const observation=observations.read(entry.task.id);
+        return {...publicTask(entry),...(observation.events.length?{observation}:{})};
+      }),
       activity: copy(state.activity),
     };
   }
@@ -1561,7 +1564,13 @@ export function createHealingService({
         if(body.kind==="review"&&(!binding||binding.projectId!==config.project.id||binding.repo!==config.project.repo||binding.contractHash!==body.payload?.contractHash||binding.baselineSha!==body.payload?.baselineSha||binding.issueNumber!==body.payload?.issueNumber))
           fail(409,"WORKBENCH_REVIEW_STALE","需求正文或仓库基线已变化，请重新读取后评审。");
         const result=appendWorkbenchRecord(state,config.project,body,identity.name,time.toISOString());
-        if(result.changed) audit(state,"workbench-record","保存工作区记录："+body.kind,identity,time.toISOString());
+        if(result.changed){
+          // A manual import must not consume the remaining authoritative task capacity.
+          const capacity=maxBytes??32*1024*1024;
+          if(Buffer.byteLength(JSON.stringify(state))>Math.floor(capacity*0.85))
+            fail(503,"WORKBENCH_FULL","工作区导入会侵占任务存储预留空间，已拒绝此次记录。");
+          audit(state,"workbench-record","保存工作区记录："+body.kind,identity,time.toISOString());
+        }
         return result;
       },false);
     },

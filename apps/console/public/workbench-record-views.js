@@ -26,7 +26,7 @@ export function renderRecords(s,w){
   if(w.draft){
     const draft=w.draft;
     const form='<form id="wb-record-form" class="wb-form"><label for="wb-key">记录键（自动键类型可留空）</label><input id="wb-key" class="ui-input" maxlength="120" value="'+e(draft.key||"")+'" '+(draft.expectedVersion>0?"readonly":"")+'><span class="muted">预期版本 '+draft.expectedVersion+'</span><label for="wb-payload">记录 JSON</label><textarea id="wb-payload" class="ui-textarea wb-json" rows="16" required spellcheck="false">'+e(draft.text)+'</textarea><label for="wb-json-file">从本地 JSON 导入</label><input id="wb-json-file" type="file" accept=".json,application/json"><button type="submit" class="ui-button ui-button-primary" '+(canWrite(s)?"":"disabled")+'>保存记录</button></form>';
-    return split(list,head("录入 / 追加版本",button("取消","wb-cancel"))+note("按接口契约填写 JSON。test-run 不可覆盖；知识审核基于已有候选。禁止密钥、原始用户数据及完整模型对话。")+form);
+    return split(list,head("录入 / 追加版本",button("取消","wb-cancel"))+note("按接口契约填写 JSON。test-run 不可覆盖；知识审核基于已有候选。禁止密钥、原始用户数据及完整模型对话。切换主页面或项目会丢弃未保存草稿。")+form);
   }
   if(!record)return split(list,empty("暂无记录"));
   const p=record.payload;
