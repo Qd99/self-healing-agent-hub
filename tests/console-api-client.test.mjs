@@ -275,3 +275,26 @@ test("reconciliation uses the task revision and reuses an uncertain request iden
   assert.ok(requests[0].requestId);
   assert.equal(requests[1].requestId, requests[0].requestId);
 });
+
+test("CI import and verification use manager CSRF and only the specified contracts", async (t) => {
+  const f = await server(t, (request) => ({
+    body:
+      request.method === "GET"
+        ? snapshot()
+        : { snapshot: snapshot(2), outcome: "created", taskId: "task-1" },
+  }));
+  await f.client.getSnapshot();
+  await f.client.importCiBuild({ sourceId: "ci", buildNumber: 23 });
+  await f.client.verifyTask("task #1", { expectedRevision: 4 });
+  assert.equal(f.requests[1].path, "/api/healing/integrations/jenkins/builds");
+  assert.equal(typeof f.requests[1].body.requestId, "string");
+  assert.equal(f.requests[1].body.buildNumber, 23);
+  assert.equal(
+    f.requests[2].path,
+    "/api/healing/tasks/task%20%231/verification",
+  );
+  assert.deepEqual(f.requests[2].body, { expectedRevision: 4 });
+  assert.ok(
+    f.requests.slice(1).every((r) => r.headers["x-heal-csrf"] === "csrf-1"),
+  );
+});

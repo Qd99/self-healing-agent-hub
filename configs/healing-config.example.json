@@ -59,11 +59,7 @@
       "*.pem",
       "server/healing-hub.mjs"
     ],
-    "requiredChecks": [
-      "npm run typecheck",
-      "npm run lint",
-      "npm run test"
-    ],
+    "requiredChecks": ["npm run typecheck", "npm run lint", "npm run test"],
     "circuitBreaker": {
       "enabled": true,
       "failureThreshold": 3,

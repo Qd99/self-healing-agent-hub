@@ -1,0 +1,21 @@
+{
+  "jenkins": {
+    "enabled": false,
+    "sourceId": "primary-jenkins",
+    "generation": "1",
+    "baseUrl": "https://jenkins.example.com/",
+    "jobSegments": ["team", "main-tests"],
+    "repo": "owner/repository",
+    "branch": "main",
+    "scmBranch": "origin/main",
+    "scmRemoteUrls": ["https://github.com/owner/repository.git"],
+    "usernameEnv": "JENKINS_READ_USERNAME",
+    "tokenEnv": "JENKINS_READ_TOKEN"
+  },
+  "githubVerification": {
+    "enabled": false,
+    "tokenEnv": "GITHUB_VERIFICATION_TOKEN",
+    "requiredStatusContexts": ["ci/jenkins/tests"],
+    "trustedStatusCreators": ["your-ci-app[bot]"]
+  }
+}

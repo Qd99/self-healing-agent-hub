@@ -3,8 +3,8 @@
  * 所有编排引擎必须继承此类
  */
 
-import type { Task, TaskStatusInfo } from '../types/task.js';
-import type { Result, HealthStatus } from '../types/result.js';
+import type { Task, TaskStatusInfo } from "../types/task.js";
+import type { Result, HealthStatus } from "../types/result.js";
 
 /**
  * 执行上下文

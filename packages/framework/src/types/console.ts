@@ -120,7 +120,10 @@ export interface ConsoleTask {
   };
   /** Candidate check evidence; final execution evidence remains in result. */
   evidence?: Partial<SerializedResult["evidence"]>;
+  verification?: ConsoleVerification;
   proposal?: {
+    version?: 2;
+    candidate?: CandidateV2;
     kind?: "action" | "code-change";
     id: string;
     summary: string;
@@ -159,6 +162,8 @@ export interface ConsoleCapabilities {
   updateRules: boolean;
   updateMonitoring?: boolean;
   reconcile?: boolean;
+  importCi?: boolean;
+  verifyResult?: boolean;
 }
 
 export interface ConsoleEngine {
@@ -356,6 +361,7 @@ export interface ConsoleSnapshot {
   triggers: ConsoleTriggers;
   /** Optional for compatibility with existing API v1 snapshots. */
   monitoring?: MonitoringSnapshot;
+  integrations?: ConsoleIntegrations;
   tasks: ConsoleTask[];
   activity: ConsoleActivity[];
 }
@@ -419,4 +425,77 @@ export interface ConsoleMonitoringCheck {
     datasource: "ok" | "error" | "unknown";
   };
   datasource?: { uid: string; name: string; type: "prometheus" };
+}
+
+/** Exact executable identity; legacy proposals remain readable. */
+export interface CandidateV2 {
+  version: 2;
+  baseCommitSha: string;
+  patchSha256: string;
+  treeSha: string;
+  artifactId: string;
+}
+export interface ConsoleVerification {
+  schemaVersion: 1;
+  provider: "github";
+  status: "pending" | "passed" | "failed" | "mismatch" | "error" | "stale";
+  checkedAt: string;
+  message: string;
+  target: {
+    proposalId: string;
+    proposalHash: string;
+    repo: string;
+    prNumber: number;
+    baseCommitSha: string;
+    headCommitSha: string;
+    expectedTreeSha: string;
+    policyHash: string;
+  };
+  checks: {
+    pullRequest: "pass" | "fail" | "unknown";
+    commit: "pass" | "fail" | "unknown";
+    files: "pass" | "fail" | "unknown";
+    ci: "pass" | "fail" | "pending" | "unknown";
+  };
+  statuses: { context: string; state: string; id: number; updatedAt: string }[];
+}
+export interface ConsoleIntegrations {
+  jenkins: {
+    configured: boolean;
+    sourceId?: string;
+    jobName?: string;
+    branch?: string;
+    message: string;
+  };
+  verification: {
+    configured: boolean;
+    requiredStatusContexts: string[];
+    message: string;
+  };
+}
+export interface WorkerClaimRequest {
+  engineId: string;
+  workerId: string;
+  actions?: ("auto-commit" | "create-pr" | "create-issue" | "retry")[];
+  sourceKinds?: "jenkins"[];
+  candidateVersions?: (1 | 2)[];
+  phases?: ("diagnose" | "execute")[];
+}
+export interface CandidateAcknowledgement {
+  taskId: string;
+  proposal: {
+    id: string;
+    version: 2;
+    contentHash: string;
+    candidate: CandidateV2;
+  };
+  message: string;
+}
+export interface JenkinsImportRequest {
+  sourceId: string;
+  buildNumber: number;
+  requestId?: string;
+}
+export interface ConsoleVerificationRequest {
+  expectedRevision: number;
 }
