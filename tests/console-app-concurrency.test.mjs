@@ -680,3 +680,54 @@ test("CI disclosures remain open through task refresh", () => {
   assert.equal(nodes[".ci-candidate"].open, true);
   assert.equal(nodes[".ci-contexts"].open, true);
 });
+
+
+test("Jenkins workspace search, chart filters and paging do not issue mutations", () => {
+  const app = harness(() => {
+    throw new Error("Jenkins view filtering must not make API requests");
+  });
+  app.setSnapshot(ciSnapshot());
+  app.state.view = "jenkins";
+  app.state.jenkinsPage = 4;
+  app.listeners.get("input")({ target: { id: "jenkins-search", value: "build 27" } });
+  assert.equal(app.state.jenkinsQuery, "build 27");
+  assert.equal(app.state.jenkinsPage, 1);
+  app.listeners.get("change")({ target: { id: "jenkins-page-size", value: "50" } });
+  assert.equal(app.state.jenkinsPageSize, 50);
+  const click = (dataset, id = "") => app.listeners.get("click")({
+    target: { closest: (selector) => selector === "[data-action]" ? { dataset, id } : null },
+    preventDefault() {},
+  });
+  click({ action: "jenkins-page", page: "3" });
+  assert.equal(app.state.jenkinsPage, 3);
+  click({ action: "jenkins-status-filter", value: "pending" }, "jenkins-filter-pending");
+  assert.equal(app.state.jenkinsStatus, "pending");
+  assert.equal(app.state.jenkinsPage, 1);
+  click({ action: "jenkins-reset" });
+  assert.equal(app.state.jenkinsQuery, "");
+  assert.equal(app.state.jenkinsStatus, "all");
+  assert.equal(app.state.jenkinsPage, 1);
+});
+
+test("Jenkins workspace filters and CI import drafts reset on project changes", () => {
+  const app = harness(() => {
+    throw new Error("Project projection must not make API requests");
+  });
+  app.setSnapshot(ciSnapshot());
+  app.state.view = "jenkins";
+  Object.assign(app.state, {
+    jenkinsQuery: "old project",
+    jenkinsStatus: "passed",
+    jenkinsPage: 9,
+    jenkinsPageSize: 50,
+    ciImportDraft: { sourceId: "ci", buildNumber: "23" },
+  });
+  const next = ciSnapshot(9);
+  next.project.id = "other-project";
+  app.setSnapshot(next);
+  assert.equal(app.state.jenkinsQuery, "");
+  assert.equal(app.state.jenkinsStatus, "all");
+  assert.equal(app.state.jenkinsPage, 1);
+  assert.equal(app.state.jenkinsPageSize, 10);
+  assert.equal(app.state.ciImportDraft, null);
+});
