@@ -37,7 +37,7 @@
 | HUB_ZENTAO_TOKEN | 禅道 Token（不是用户名密码） |
 | HUB_ZENTAO_API_VERSION | v1（默认）或 v2；按实际禅道版本验收 |
 | GRAFANA_ALLOWED_ORIGINS | 复用现有 Grafana 允许来源配置 |
-| GRAFANA_TOKEN | 复用现有 Grafana Token 配置 |
+| GRAFANA_SERVICE_ACCOUNT_TOKEN | 复用现有 Grafana Token 配置 |
 
 Grafana 的 URL、数据源 UID、名称、orgId、namespace 沿用现有监控配置；只查询已配置命名空间，预设时间窗 15m、1h、6h，拒绝任意 PromQL 和任意上游地址。告警是 Prometheus 当前活动告警，不推断告警已恢复。未采集、查询失败、无数据均不等于零。GitHub/禅道分页以实际接口响应为准，搜索限定当前已载入页；GitHub issue 页过滤 PR 后可能为空，不伪造全量总数。评论轮询约30秒；不是 webhook 推送。
 
