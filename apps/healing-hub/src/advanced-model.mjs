@@ -10,7 +10,7 @@ export const text = (v,max=160) => {
   if(typeof v!=="string"||!v.trim()||v.length>max||/[\r\n]/.test(v)||/(?:gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|bearer\s+\S+|(?:password|token|secret|api[_-]?key)\s*[:=]\s*\S+)/i.test(v))bad();
   return v;
 };
-export const identifier = (v,max=120) => { if(typeof v!=="string"||v.length>max||!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(v))bad();return v; };
+export const identifier = (v,max=120) => { if(typeof v!=="string"||v.length>max||!/^[A-Za-z0-9][A-Za-z0-9_.:-]*$/.test(v)||/gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}/i.test(v))bad();return v; };
 export const hex = (v,n) => { if(typeof v!=="string"||v.length!==n||!/^[a-f0-9]+$/.test(v)||/^0+$/.test(v))bad();return v; };
 export const one = (v,values) => { if(!values.includes(v))bad();return v; };
 export const array = (v,max) => { if(!Array.isArray(v)||v.length>max)bad();return v; };
@@ -92,17 +92,19 @@ export function normalizeRun(input){
   if(new Set(results.map(x=>x.id+":"+x.attempt)).size!==results.length)bad("重复用例尝试。");
   const start=stamp(v.startedAt),end=stamp(v.finishedAt);
   if(end<start||typeof v.clean!=="boolean"||typeof v.complete!=="boolean")bad();
-  return {sha:hex(v.sha,40),tree:hex(v.tree,40),suiteDigest:hex(v.suiteDigest,64),environmentDigest:hex(v.environmentDigest,64),harnessDigest:hex(v.harnessDigest,64),startedAt:start,finishedAt:end,exitCode:optional(v.exitCode,n=>integer(n,0,255)),clean:v.clean,complete:v.complete,results};
+  return {sha:hex(v.sha,40),tree:hex(v.tree,40),suiteDigest:hex(v.suiteDigest,64),environmentDigest:hex(v.environmentDigest,64),harnessDigest:hex(v.harnessDigest,64),testTreeDigest:optional(v.testTreeDigest,x=>hex(x,64)),startedAt:start,finishedAt:end,exitCode:optional(v.exitCode,n=>integer(n,0,255)),clean:v.clean,complete:v.complete,results};
 }
 export function compareRedGreen(base,candidate,binding){
   const unknown=reason=>({verdict:"unknown",reason}),deny=reason=>({verdict:"deny",reason});
   if(!base||!candidate||!binding)return unknown("缺少独立测试或候选绑定。");
   if(base.sha!==binding.baseSha||candidate.tree!==binding.treeSha||base.suiteDigest!==binding.suiteDigest||candidate.suiteDigest!==binding.suiteDigest||base.environmentDigest!==binding.environmentDigest||candidate.environmentDigest!==binding.environmentDigest||base.harnessDigest!==binding.harnessDigest||candidate.harnessDigest!==binding.harnessDigest)return deny("提交、候选树、套件、环境或测试工具指纹不一致。");
+  if(!base.testTreeDigest||base.testTreeDigest!==candidate.testTreeDigest)return deny("冻结测试源文件发生变化或未提供指纹。");
   if(!base.clean||!candidate.clean||!base.complete||!candidate.complete||!base.results.length||!candidate.results.length)return unknown("执行不完整或工作区存在改动。");
   const group=run=>{const m=new Map();for(const row of run.results){if(!m.has(row.id))m.set(row.id,[]);m.get(row.id).push(row);}return m;};
   const a=group(base),b=group(candidate);
   if(a.size!==b.size||[...a.keys()].some(k=>!b.has(k)))return deny("测试集合变化。");
   if(!Array.isArray(binding.caseIds)||binding.caseIds.length!==a.size||binding.caseIds.some(k=>!a.has(k)))return deny("未覆盖冻结的完整用例集合。");
+  if([...a].some(([k,rows])=>rows.length!==b.get(k).length||rows.map(x=>x.attempt).sort((x,y)=>x-y).join(",")!==b.get(k).map(x=>x.attempt).sort((x,y)=>x-y).join(",")))return unknown("基线与候选尝试集合不同。");
   for(const rows of [...a.values(),...b.values()])if(rows.some(x=>!["pass","fail"].includes(x.result))||new Set(rows.map(x=>x.result)).size!==1)return unknown("存在跳过、异常、未知或不稳定结果。");
   const red=a.get(binding.targetCase),green=b.get(binding.targetCase);
   if(!red?.every(x=>x.result==="fail"&&x.assertion)||!green?.every(x=>x.result==="pass"))return deny("未证明同一目标断言先红后绿。");
@@ -125,7 +127,7 @@ export function normalizeProfiles(raw){
     if(["test","red-green"].includes(kind)){
       Object.assign(profile,{suiteDigest:hex(p.suiteDigest,64),environmentDigest:hex(p.environmentDigest,64),harnessDigest:hex(p.harnessDigest,64),caseIds:array(p.caseIds,2000).map(x=>identifier(x,160))});
       if(!profile.caseIds.length||new Set(profile.caseIds).size!==profile.caseIds.length)bad();
-      if(kind==="red-green"){profile.targetCase=identifier(p.targetCase,160);if(!profile.caseIds.includes(profile.targetCase))bad();}
+      if(kind==="red-green"){profile.targetCase=identifier(p.targetCase,160);if(!profile.caseIds.includes(profile.targetCase))bad();profile.protectedPaths=array(p.protectedPaths,100).map(v=>{if(typeof v!=="string"||!v||v.length>250||!/^[-A-Za-z0-9_./]+$/.test(v)||v.startsWith("/")||v.split("/").some(x=>!x||x==="."||x===".."||x===".git"))bad();return v;});if(!profile.protectedPaths.length)bad();}
     }
     return profile;
   });

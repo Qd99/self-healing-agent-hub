@@ -17,7 +17,7 @@ export function createAdvancedMetrics({service,env,rootDir,integrationsConfig,fe
       const observedWorkers=await service.advanced.recentResources(project);
       let raw=integrationsConfig;
       if(raw===undefined){try{const t=await readFile(join(rootDir,"configs/healing-integrations.json"),"utf8");raw=t.length<=262144?JSON.parse(t):{};}catch{raw={};}}
-      const jenkins=await readJenkinsMetrics(raw?.jenkins,env,fetchImpl);
+      const jenkins=raw?.jenkins?.repo===project.repo?await readJenkinsMetrics(raw.jenkins,env,fetchImpl):{state:"unconfigured"};
       const values=latencies.slice().sort((a,b)=>a-b),cpu=process.cpuUsage();
       const hub={rssBytes:process.memoryUsage().rss,cpuMs:Math.round((cpu.user+cpu.system)/1000),uptimeMs:Math.round(process.uptime()*1000),requests:count,serverErrors:errors,meanMs:count?total/count:null,p95Ms:values.length?values[Math.max(0,Math.ceil(values.length*.95)-1)]:null,p95Samples:values.length};
       const oldest=pending.map(x=>Date.parse(x.task.metadata.createdAt)).filter(Number.isFinite).sort((a,b)=>a-b)[0];

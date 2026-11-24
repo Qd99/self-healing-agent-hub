@@ -1,10 +1,10 @@
 import { createJsonReader } from "./bounded-json.mjs";
 import { validateJenkinsConfig } from "./jenkins-source.mjs";
 import { HealingError } from "./console-store.mjs";
-import { bad,conflict,digest,identifier,integer,text,hex } from "./advanced-model.mjs";
+import { bad,conflict,digest,identifier,integer,text } from "./advanced-model.mjs";
 const disabled=()=>{throw new HealingError(422,"ADVANCED_INTEGRATION_DISABLED","外部写入尚未明确启用或配置不完整。");};
 const positive=v=>{const n=Number(v);integer(n,1,1e9);return n;};
-const esc=v=>String(v).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+const prose=(v,max)=>{if(typeof v!=="string"||!v.trim()||v.length>max||/(?:gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,}|bearer\s+\S+|(?:password|token|secret|api[_-]?key)\s*[:=]\s*\S+)/i.test(v))bad();return v;};
 function base(raw){let u;try{u=new URL(raw);}catch{disabled();}
   if(u.username||u.password||u.search||u.hash||!(u.protocol==="https:"||(u.protocol==="http:"&&["localhost","127.0.0.1","[::1]"].includes(u.hostname))))disabled();
   return u.href.replace(/\/$/,"");
@@ -108,9 +108,9 @@ export function createAdvancedExternal({service,env=process.env,fetchImpl=global
       if(job.kind!=="radar"||job.state!=="completed"||!job.result?.complete)bad("调研证据不完整。");
       const i=integer(body.index,0,99),c=job.result.candidates[i];
       if(!c||c.issueMatches.length||!c.paths.some(p=>p.external&&!p.local))bad("已有相关 Issue 或没有确认的路径差异。");
-      const title=text(body.title,160),requirements=text(body.requirements,5000),acceptance=text(body.acceptance,4000),tests=text(body.tests,4000),impact=text(body.impact,2000);
+      const title=text(body.title,160),requirements=prose(body.requirements,5000),acceptance=prose(body.acceptance,4000),tests=prose(body.tests,4000),impact=prose(body.impact,2000);
       if(!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(project.repo)||[".",".."].includes(project.repo.split("/")[1]))bad();
-      const key=digest([c.repo,c.sourceSha,c.baselineSha,c.paths]);
+      const key=digest([c.repo,c.sourceSha,c.paths.map(p=>p.path)]);
       const marker="<!-- hub:radar:"+key+" -->";
       const url="https://api.github.com/repos/"+project.repo;
       const headers={Accept:"application/vnd.github+json",Authorization:"Bearer "+env.HUB_GITHUB_ISSUE_WRITE_TOKEN,"X-GitHub-Api-Version":"2022-11-28","User-Agent":"self-healing-agent-hub"};

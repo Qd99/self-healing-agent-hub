@@ -2203,7 +2203,7 @@ export function createHealingService({
                     ))),
             );
           let entry;
-          for(const candidate of candidates.slice(0,30)){
+          for(const candidate of candidates){
             if(candidate.task.payload.repo!==config.project.repo)continue;
             if(candidate.executionPhase==="execute"&&candidate.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"){
               if((await advanced.gate(config.project,candidate)).verdict!=="pass")continue;
@@ -2257,6 +2257,10 @@ export function createHealingService({
           };
         },
       );
+      if(advanced.enabled&&response.task&&response.context?.knowledge){
+        const project=await loadConsoleConfiguration(root).then(c=>c.project).catch(()=>null);
+        if(project?.repo===response.task.task.payload.repo)void advanced.recordKnowledge(project,response.task.task.id,response.lease.id,response.context.knowledge).catch(()=>{});
+      }
       return response;
     },
     heartbeat(id, body, actor) {

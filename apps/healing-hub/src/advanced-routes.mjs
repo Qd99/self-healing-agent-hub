@@ -12,7 +12,7 @@ export function createAdvancedRoutes({service,env,consoleToken,workerToken,auth,
   const advanced=service.advanced;
   const external=createAdvancedExternal({service,env,fetchImpl,clock});
   const machineRoutes=new Set(["/advanced/otlp/v1/traces","/advanced/runner/claim","/advanced/runner/complete","/advanced/runner/abort"]);
-  const managerRoutes=new Set(["/advanced/profiles","/advanced/trace","/advanced/jobs","/advanced/job","/advanced/evidence","/advanced/effects","/advanced/samples","/advanced/alerts","/advanced/enqueue","/advanced/zentao-sync","/advanced/zentao-bug","/advanced/zentao-retest","/advanced/radar-register"]);
+  const managerRoutes=new Set(["/advanced/profiles","/advanced/trace","/advanced/jobs","/advanced/job","/advanced/evidence","/advanced/effects","/advanced/samples","/advanced/alerts","/advanced/enqueue","/advanced/zentao-sync","/advanced/zentao-bug","/advanced/zentao-retest","/advanced/radar-register","/advanced/reconcile-job"]);
   return {
     async machine(route,req,res){
       if(!machineRoutes.has(route))return false;
@@ -34,7 +34,7 @@ export function createAdvancedRoutes({service,env,consoleToken,workerToken,auth,
       if(!managerRoutes.has(route))return false;
       const p=new URL(req.url,"http://localhost").searchParams,project=await service.advancedProject();
       let value;
-      if(["/advanced/enqueue","/advanced/zentao-sync","/advanced/zentao-bug","/advanced/zentao-retest","/advanced/radar-register"].includes(route)){
+      if(["/advanced/enqueue","/advanced/zentao-sync","/advanced/zentao-bug","/advanced/zentao-retest","/advanced/radar-register","/advanced/reconcile-job"].includes(route)){
         requireMethod(req,"POST");auth.assertWrite(req,identity);
         const body=await readBody(req);
         if(!advanced.enabled)throw new HealingError(403,"ADVANCED_DISABLED","高级工作区未启用。");
@@ -42,6 +42,7 @@ export function createAdvancedRoutes({service,env,consoleToken,workerToken,auth,
         else if(route==="/advanced/zentao-sync")value=await external.syncCase(project,body);
         else if(route==="/advanced/zentao-bug")value=await external.linkBug(project,body);
         else if(route==="/advanced/zentao-retest")value=await external.retest(project,body);
+        else if(route==="/advanced/reconcile-job")value=await advanced.reconcileJob(project,body.id,body);
         else value=await external.registerResearch(project,body);
       }else{
         requireMethod(req,"GET");req.resume();

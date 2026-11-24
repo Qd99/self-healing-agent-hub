@@ -55,18 +55,20 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
     const job={id:randomUUID(),project:scope,profile:p.id,kind:p.kind,policy:p,binding,requestId,fingerprint,state:"queued",createdAt:at(clock)};
     s.jobs.push(job);return {job,created:true};
   }
-  const publicJob=j=>{const {lease,...rest}=j;void lease;return rest;};
+  const publicJob=j=>{const {lease,...rest}=j;void lease;return j.state==="running"&&Date.parse(j.expiresAt)<=Number(clock())?{...rest,state:"unknown"}:rest;};
   return {
     enabled,profiles:()=>enabled?structuredClone(profiles):[],
     async persistWorker(project,task,lease,event,time){return appendEvents([workerEvent(project,task,lease,event,time)]);},
+    async recordKnowledge(project,task,lease,bundle){return appendEvents([{id:"knowledge:"+task+":"+digest(lease).slice(0,24),project:projectScope(project),workflow:task,task,source:"hub",agent:"hub",stage:"knowledge-context",state:"selected",bundle:{digest:bundle.digest,bytes:bundle.bytes??0,omitted:bundle.omitted,items:bundle.items.map(x=>({key:x.key,version:x.version,contentDigest:x.contentDigest}))}}]);},
     async ingest(project,body,knownTasks){requireEnabled();return appendEvents(decodeOtlp(body,project,knownTasks));},
     async trace(project,{workflow="",after=0,until=Number.MAX_SAFE_INTEGER}={}){
       const s=await read();integer(after,0,Number.MAX_SAFE_INTEGER);integer(until,0,Number.MAX_SAFE_INTEGER);
       if(workflow)identifier(workflow);
-      const all=s.events.filter(x=>matches(x,project)&&(!workflow||x.workflow===workflow)&&x.cursor<=until);
+      const available=s.events.filter(x=>matches(x,project)&&(!workflow||x.workflow===workflow));
+      const all=available.filter(x=>x.cursor<=until);
       const rows=all.filter(x=>x.cursor>after).slice(0,200);
       const graphRows=workflow?all.slice(-500):[];
-      return {items:rows,cursor:rows.at(-1)?.cursor??after,latest:all.at(-1)?.cursor??0,hasMore:all.some(x=>x.cursor>(rows.at(-1)?.cursor??after)),graph:graphFor(graphRows),graphTruncated:all.length>500,completeness:"partial",durable:true};
+      return {items:rows,cursor:rows.at(-1)?.cursor??after,latest:available.at(-1)?.cursor??0,visibleLatest:all.at(-1)?.cursor??0,hasMore:all.some(x=>x.cursor>(rows.at(-1)?.cursor??after)),graph:graphFor(graphRows),graphTruncated:all.length>500,completeness:"partial",durable:true};
     },
     async enqueue(project,profile,binding,requestId){
       requireEnabled();const p=profileFor(profile);identifier(requestId);
@@ -101,7 +103,8 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
         if(j.state!=="running"||j.worker!==body.worker||j.lease!==body.lease||Date.parse(j.expiresAt)<=Number(clock()))conflict("执行租约已失效，禁止覆盖结果。");
         const output=obj(body.result);
         if(j.kind==="test"){
-          j.result={run:normalizeRun(output.run)};
+          const run=normalizeRun(output.run),ids=new Set(run.results.map(x=>x.id));
+          j.result={run:{...run,complete:run.complete&&ids.size===j.policy.caseIds.length&&j.policy.caseIds.every(x=>ids.has(x))}};
           j.state=j.result.run.complete&&j.result.run.clean&&j.result.run.exitCode===0&&j.result.run.results.length&&j.result.run.suiteDigest===j.policy.suiteDigest&&j.result.run.environmentDigest===j.policy.environmentDigest&&j.result.run.harnessDigest===j.policy.harnessDigest&&j.result.run.results.every(x=>x.result==="pass"||x.result==="skip")?"completed":"failed";
         }else if(j.kind==="red-green"){
           const baseline=normalizeRun(output.baseline),candidate=normalizeRun(output.candidate);
@@ -125,9 +128,14 @@ export function createAdvancedStore({dataDir,env=process.env,clock=Date.now}){
     },
     async abort(project,id,worker,lease){
       requireEnabled();return tx(s=>{const j=s.jobs.find(x=>matches(x,project)&&x.id===id);
+        if(j?.abortDigest===digest([worker,lease]))return {changed:false,value:publicJob(j)};
         if(!j||j.state!=="running"||j.worker!==worker||j.lease!==lease||Date.parse(j.expiresAt)<=Number(clock()))conflict();
-        j.state="unknown";j.finishedAt=at(clock);delete j.lease;
+        j.abortDigest=digest([worker,lease]);j.state="unknown";j.finishedAt=at(clock);delete j.lease;
         return {changed:true,value:publicJob(j)};});
+    },
+    async reconcileJob(project,id,body){
+      requireEnabled();if(body.confirm!==true)bad();const note=text(body.note,500);
+      return tx(s=>{const expired=expire(s);const j=s.jobs.find(x=>matches(x,project)&&x.id===id);if(!j||!["queued","unknown"].includes(j.state))conflict();j.state=j.state==="queued"?"cancelled":"reconciled";j.finishedAt=at(clock);j.reconciliationNote=note;void expired;return {changed:true,value:publicJob(j)};});
     },
     async list(project,kind,page=1){
       const s=await read();one(kind,["jobs","evidence","effects","samples","alerts"]);integer(page,1,100000);
