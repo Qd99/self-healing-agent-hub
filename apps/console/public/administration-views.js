@@ -1,5 +1,5 @@
 import { isV20 } from "./workspace-model.js";
-import { renderWorkspacePager } from "./workspace-views.js";
+import { renderWorkspacePager, renderWorkspaceSearch } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { escapeHtml as e } from "./model.js";
 import { uiButton, uiSearch, uiSelect, uiStatus, uiEmpty } from "./ui.js";
@@ -99,7 +99,7 @@ export function renderActivityPage(s) {
   );
   return `<section class="ui-card adm-workspace adm-activity" aria-label="操作记录">
     <div class="ui-toolbar adm-toolbar">
-      ${uiSearch({ id: "activity-search", value: filters.query, label: "搜索操作记录", placeholder: "搜索操作、对象或操作者…", className: "adm-search" })}
+      ${isV20(s) ? renderWorkspaceSearch({kind:"activity",value:filters.query,className:"adm-search"}) : uiSearch({ id: "activity-search", value: filters.query, label: "搜索操作记录", placeholder: "搜索操作、对象或操作者…", className: "adm-search" })}
       ${uiSelect({ id: "activity-category", value: filters.category, options: ACTIVITY_CATEGORIES, label: "操作类型" })}
       ${uiSelect({ id: "activity-level", value: filters.level, options: ACTIVITY_LEVELS, label: "记录级别" })}
       ${uiSelect({

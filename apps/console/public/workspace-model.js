@@ -21,6 +21,7 @@ export function workspaceExecution(entry = {}, state = {}) {
   const leaseExpired = observedAt !== null && leaseExpiresAt !== null && Date.parse(leaseExpiresAt) <= Date.parse(observedAt);
   const progress = typeof status.progress === "number" && Number.isFinite(status.progress) && status.progress >= 0 && status.progress <= 100 ? status.progress : null;
   const label = reconcile ? "待人工核对" : cancel ? "等待取消确认" : review ? "等待审批" :
+    status.status === "running" && leaseExpired ? "租约到期 · 等待核对" :
     status.status === "pending" && execution.phase === "execute" ? "等待执行器领取" :
     status.status === "running" && execution.phase === "diagnose" ? "诊断中" :
     status.status === "running" && execution.phase === "execute" ? "执行已批准方案" :
