@@ -87,9 +87,11 @@ test("Docker uses pinned image and restrictive mounts; missing Docker never exec
       "type=bind,source=/tmp/workspace/.git,target=/workspace/.git,readonly",
     ),
   );
-  assert.deepEqual(call.args.slice(-3), [
-    "node@sha256:" + "a".repeat(64),
+  // Docker keeps an image's ENTRYPOINT unless it is explicitly replaced.
+  assert.deepEqual(call.args.slice(-4), [
+    "--entrypoint",
     "npm",
+    "node@sha256:" + "a".repeat(64),
     "test",
   ]);
   assert.equal(call.options.env.HEALING_MODEL_TOKEN, undefined);

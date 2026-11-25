@@ -1,7 +1,14 @@
 import { createAdvancedStore } from "./advanced-store.mjs";
 import { approvedKnowledge } from "./advanced-model.mjs";
-import { createObservationBuffer, normalizeObservation } from "./workbench-observation.mjs";
-import { appendWorkbenchRecord, listWorkbenchRecords, validateWorkbenchRecords } from "./workbench-records.mjs";
+import {
+  createObservationBuffer,
+  normalizeObservation,
+} from "./workbench-observation.mjs";
+import {
+  appendWorkbenchRecord,
+  listWorkbenchRecords,
+  validateWorkbenchRecords,
+} from "./workbench-records.mjs";
 import {
   hashCandidateV2,
   normalizeCandidateV2,
@@ -825,9 +832,13 @@ export function createHealingService({
   integrationsEnv = process.env,
 } = {}) {
   const root = resolve(rootDir);
-  const advanced=createAdvancedStore({dataDir:dataDir??join(root,".healing"),env:integrationsEnv,clock});
-  const observations=createObservationBuffer();
-  let observing=0;
+  const advanced = createAdvancedStore({
+    dataDir: dataDir ?? join(root, ".healing"),
+    env: integrationsEnv,
+    clock,
+  });
+  const observations = createObservationBuffer();
+  let observing = 0;
   const integrations = () =>
     loadHealingIntegrations({
       rootDir: root,
@@ -870,6 +881,21 @@ export function createHealingService({
           rules: state.revision,
           monitoring: state.revision,
         };
+      for (const entry of state?.tasks ?? []) {
+        // Context matching became case-insensitive. Re-derive every stored
+        // policy hash from its canonical form so old stores still load instead
+        // of failing startup; the context list itself is never loosened.
+        if (entry.verificationPolicy) {
+          entry.verificationPolicy = normalizeVerificationPolicy({
+            ...entry.verificationPolicy,
+            requiredStatusContexts:
+              entry.verificationPolicy.requiredStatusContexts?.map((context) =>
+                context.toLowerCase(),
+              ) ?? [],
+          });
+          if (!entry.verificationPolicy) invalid();
+        }
+      }
       for (const entry of state?.tasks ?? []) {
         if (!["failed", "cancelled"].includes(entry.status?.status)) continue;
         // Repair terminal retries saved by the older hold path without reopening
@@ -1094,9 +1120,12 @@ export function createHealingService({
       rulesOverridden: state.ruleOverrides.length > 0,
       monitoring: monitoringFor(config, state),
       monitoringSource: state.monitoring === null ? "configuration" : "saved",
-      tasks: state.tasks.map(entry=>{
-        const observation=observations.read(entry.task.id);
-        return {...publicTask(entry),...(observation.events.length?{observation}:{})};
+      tasks: state.tasks.map((entry) => {
+        const observation = observations.read(entry.task.id);
+        return {
+          ...publicTask(entry),
+          ...(observation.events.length ? { observation } : {}),
+        };
       }),
       activity: copy(state.activity),
     };
@@ -1546,68 +1575,152 @@ export function createHealingService({
   }
   return {
     advanced,
-    async advancedProject(){return (await loadConsoleConfiguration(root)).project;},
-    async enqueueAdvanced(body){
+    async advancedProject() {
+      return (await loadConsoleConfiguration(root)).project;
+    },
+    async enqueueAdvanced(body) {
       object(body);
-      const config=await loadConsoleConfiguration(root),p=advanced.profiles().find(x=>x.id===body.profile);
-      if(!p)fail(422,"ADVANCED_PROFILE_UNAVAILABLE","执行配置未启用。");
-      let binding=null;
-      if(p.kind==="red-green"){
-        const entry=taskFor(await store.read(),body.taskId);
-        if(entry.task.payload.repo!==config.project.repo||entry.proposal?.version!==2||!entry.proposal.candidate||!entry.approvalFlow)
-          fail(422,"ADVANCED_CANDIDATE_REQUIRED","需要当前项目的 v2 候选。");
-        binding={taskId:entry.task.id,proposalId:entry.proposal.id,contentHash:entry.proposal.contentHash,baseSha:entry.proposal.candidate.baseCommitSha,treeSha:entry.proposal.candidate.treeSha,patchSha256:entry.proposal.candidate.patchSha256,round:entry.approvalFlow.round};
+      const config = await loadConsoleConfiguration(root),
+        p = advanced.profiles().find((x) => x.id === body.profile);
+      if (!p) fail(422, "ADVANCED_PROFILE_UNAVAILABLE", "执行配置未启用。");
+      let binding = null;
+      if (p.kind === "red-green") {
+        const entry = taskFor(await store.read(), body.taskId);
+        if (
+          entry.task.payload.repo !== config.project.repo ||
+          entry.proposal?.version !== 2 ||
+          !entry.proposal.candidate ||
+          !entry.approvalFlow
+        )
+          fail(422, "ADVANCED_CANDIDATE_REQUIRED", "需要当前项目的 v2 候选。");
+        binding = {
+          taskId: entry.task.id,
+          proposalId: entry.proposal.id,
+          contentHash: entry.proposal.contentHash,
+          baseSha: entry.proposal.candidate.baseCommitSha,
+          treeSha: entry.proposal.candidate.treeSha,
+          patchSha256: entry.proposal.candidate.patchSha256,
+          round: entry.approvalFlow.round,
+        };
       }
-      return advanced.enqueue(config.project,body.profile,binding,body.requestId);
+      return advanced.enqueue(
+        config.project,
+        body.profile,
+        binding,
+        body.requestId,
+      );
     },
-    async checkAdvancedGate(id,body,actor){
-      const state=await store.read(),entry=activeLease(state,id,body,actorIdentity(actor),"execute");
-      if(Date.parse(entry.lease.expiresAt)<=now().getTime())conflict("执行器租约已过期。");
-      const config=await loadConsoleConfiguration(root);
-      if(entry.task.payload.repo!==config.project.repo)conflict("任务仓库已变化。");
-      return advanced.gate(config.project,entry);
+    async checkAdvancedGate(id, body, actor) {
+      const state = await store.read(),
+        entry = activeLease(state, id, body, actorIdentity(actor), "execute");
+      if (Date.parse(entry.lease.expiresAt) <= now().getTime())
+        conflict("执行器租约已过期。");
+      const config = await loadConsoleConfiguration(root);
+      if (entry.task.payload.repo !== config.project.repo)
+        conflict("任务仓库已变化。");
+      return advanced.gate(config.project, entry);
     },
-    async observe(id,body,actor) {
+    async observe(id, body, actor) {
       object(body);
-      const event=normalizeObservation(body.event);
-      if(observing>=4)fail(429,"OBSERVATION_BUSY","观测缓冲繁忙。");
+      const event = normalizeObservation(body.event);
+      if (observing >= 4) fail(429, "OBSERVATION_BUSY", "观测缓冲繁忙。");
       observing++;
-      try{
-        const identity=actorIdentity(actor),state=await store.read(),time=now();
-        const entry=activeLease(state,id,body,identity,undefined,true);
-        if(entry.lease.workerId!==body.workerId||Date.parse(entry.lease.expiresAt)<=time.getTime())conflict("执行器租约无效或已过期。");
-        const accepted=observations.add(id,entry.lease,event,time.toISOString());
-        let durable=false;
-        if(advanced.enabled){
-          try{
-            const config=await loadConsoleConfiguration(root);
-            if(config.project.repo===entry.task.payload.repo){
-              await advanced.persistWorker(config.project,id,entry.lease,event,time.toISOString());
-              durable=true;
+      try {
+        const identity = actorIdentity(actor),
+          state = await store.read(),
+          time = now();
+        const entry = activeLease(state, id, body, identity, undefined, true);
+        if (
+          entry.lease.workerId !== body.workerId ||
+          Date.parse(entry.lease.expiresAt) <= time.getTime()
+        )
+          conflict("执行器租约无效或已过期。");
+        const accepted = observations.add(
+          id,
+          entry.lease,
+          event,
+          time.toISOString(),
+        );
+        let durable = false;
+        if (advanced.enabled) {
+          try {
+            const config = await loadConsoleConfiguration(root);
+            if (config.project.repo === entry.task.payload.repo) {
+              await advanced.persistWorker(
+                config.project,
+                id,
+                entry.lease,
+                event,
+                time.toISOString(),
+              );
+              durable = true;
             }
-          }catch{/* Observability failure cannot mutate the authoritative task. */}
+          } catch {
+            /* Observability failure cannot mutate the authoritative task. */
+          }
         }
-        return {accepted,completeness:"partial",durable};
-      }finally{observing--;}
+        return { accepted, completeness: "partial", durable };
+      } finally {
+        observing--;
+      }
     },
     async workbenchRecords(query) {
-      const config=await loadConsoleConfiguration(root);
-      return listWorkbenchRecords((await store.read()).workbenchRecords,config.project,query);
+      const config = await loadConsoleConfiguration(root);
+      return listWorkbenchRecords(
+        (await store.read()).workbenchRecords,
+        config.project,
+        query,
+      );
     },
-    saveWorkbenchRecord(body,actor,binding) {
-      return mutate(actor,(state,config,identity,time)=>{
-        if(body.kind==="review"&&(!binding||binding.projectId!==config.project.id||binding.repo!==config.project.repo||binding.contractHash!==body.payload?.contractHash||binding.baselineSha!==body.payload?.baselineSha||binding.issueNumber!==body.payload?.issueNumber))
-          fail(409,"WORKBENCH_REVIEW_STALE","需求正文或仓库基线已变化，请重新读取后评审。");
-        const result=appendWorkbenchRecord(state,config.project,body,identity.name,time.toISOString());
-        if(result.changed){
-          // A manual import must not consume the remaining authoritative task capacity.
-          const capacity=maxBytes??32*1024*1024;
-          if(Buffer.byteLength(JSON.stringify(state))>Math.floor(capacity*0.85))
-            fail(503,"WORKBENCH_FULL","工作区导入会侵占任务存储预留空间，已拒绝此次记录。");
-          audit(state,"workbench-record","保存工作区记录："+body.kind,identity,time.toISOString());
-        }
-        return result;
-      },false);
+    saveWorkbenchRecord(body, actor, binding) {
+      return mutate(
+        actor,
+        (state, config, identity, time) => {
+          if (
+            body.kind === "review" &&
+            (!binding ||
+              binding.projectId !== config.project.id ||
+              binding.repo !== config.project.repo ||
+              binding.contractHash !== body.payload?.contractHash ||
+              binding.baselineSha !== body.payload?.baselineSha ||
+              binding.issueNumber !== body.payload?.issueNumber)
+          )
+            fail(
+              409,
+              "WORKBENCH_REVIEW_STALE",
+              "需求正文或仓库基线已变化，请重新读取后评审。",
+            );
+          const result = appendWorkbenchRecord(
+            state,
+            config.project,
+            body,
+            identity.name,
+            time.toISOString(),
+          );
+          if (result.changed) {
+            // A manual import must not consume the remaining authoritative task capacity.
+            const capacity = maxBytes ?? 32 * 1024 * 1024;
+            if (
+              Buffer.byteLength(JSON.stringify(state)) >
+              Math.floor(capacity * 0.85)
+            )
+              fail(
+                503,
+                "WORKBENCH_FULL",
+                "工作区导入会侵占任务存储预留空间，已拒绝此次记录。",
+              );
+            audit(
+              state,
+              "workbench-record",
+              "保存工作区记录：" + body.kind,
+              identity,
+              time.toISOString(),
+            );
+          }
+          return result;
+        },
+        false,
+      );
     },
     async importJenkinsBuild(body, actor) {
       object(body);
@@ -2003,9 +2116,19 @@ export function createHealingService({
               .some((gate) => gate.status !== "approved")
           )
             conflict("审批节点已变化或尚未解锁。");
-          if(decision==="approve"&&index===flow.gates.length-1&&entry.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"){
-            const result=await advanced.gate(config.project,entry);
-            if(result.verdict!=="pass")fail(422,"QA_GATE_BLOCKED",result.reason||"独立 QA 门禁未通过。");
+          if (
+            decision === "approve" &&
+            index === flow.gates.length - 1 &&
+            entry.proposal?.version === 2 &&
+            integrationsEnv.HUB_QA_GATE_REQUIRED === "1"
+          ) {
+            const result = await advanced.gate(config.project, entry);
+            if (result.verdict !== "pass")
+              fail(
+                422,
+                "QA_GATE_BLOCKED",
+                result.reason || "独立 QA 门禁未通过。",
+              );
           }
           const gate = flow.gates[index];
           gate.status = decision === "approve" ? "approved" : "rejected";
@@ -2114,6 +2237,12 @@ export function createHealingService({
             fail(403, "WORKER_ID_MISMATCH", "执行器标识与认证身份不匹配。");
           if (!config.engines.some((engine) => engine.id === engineId))
             fail(422, "ENGINE_UNAVAILABLE", "指定引擎尚未配置。");
+          const repo =
+            body.repo === undefined ? undefined : text(body.repo, 200);
+          const branch =
+            body.branch === undefined ? undefined : branchName(body.branch);
+          if (repo && !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo))
+            invalid();
           const filters = {};
           for (const key of [
             "actions",
@@ -2167,6 +2296,8 @@ export function createHealingService({
             .filter(
               (task) =>
                 task.engineId === engineId &&
+                (repo === undefined || task.task.payload.repo === repo) &&
+                (branch === undefined || task.task.payload.branch === branch) &&
                 (!filters.actions ||
                   filters.actions.includes(
                     task.routingRule.processor.action,
@@ -2203,12 +2334,21 @@ export function createHealingService({
                     ))),
             );
           let entry;
-          for(const candidate of candidates){
-            if(candidate.task.payload.repo!==config.project.repo)continue;
-            if(candidate.executionPhase==="execute"&&candidate.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"){
-              if((await advanced.gate(config.project,candidate)).verdict!=="pass")continue;
+          for (const candidate of candidates) {
+            if (candidate.task.payload.repo !== config.project.repo) continue;
+            if (
+              candidate.executionPhase === "execute" &&
+              candidate.proposal?.version === 2 &&
+              integrationsEnv.HUB_QA_GATE_REQUIRED === "1"
+            ) {
+              if (
+                (await advanced.gate(config.project, candidate)).verdict !==
+                "pass"
+              )
+                continue;
             }
-            entry=candidate;break;
+            entry = candidate;
+            break;
           }
           if (!entry) return { changed: true, value: { task: null } };
           entry.lease = {
@@ -2250,16 +2390,44 @@ export function createHealingService({
                 safety: copy(entry.safety),
                 rule: copy(entry.routingRule),
                 monitoring: monitoringFor(config, state),
-                ...(entry.lease.phase==="execute"&&entry.proposal?.version===2&&integrationsEnv.HUB_QA_GATE_REQUIRED==="1"?{qaGateRequired:true}:{}),
-                ...(entry.lease.phase==="diagnose"&&integrationsEnv.HUB_KNOWLEDGE_INJECTION==="1"?{knowledge:approvedKnowledge(state.workbenchRecords,config.project,entry.task.payload.context.commitSha,[entry.title,entry.task.type,...(entry.task.payload.files||[])].join(" "))}:{}),
+                ...(entry.lease.phase === "execute" &&
+                entry.proposal?.version === 2 &&
+                integrationsEnv.HUB_QA_GATE_REQUIRED === "1"
+                  ? { qaGateRequired: true }
+                  : {}),
+                ...(entry.lease.phase === "diagnose" &&
+                integrationsEnv.HUB_KNOWLEDGE_INJECTION === "1"
+                  ? {
+                      knowledge: approvedKnowledge(
+                        state.workbenchRecords,
+                        config.project,
+                        entry.task.payload.context.commitSha,
+                        [
+                          entry.title,
+                          entry.task.type,
+                          ...(entry.task.payload.files || []),
+                        ].join(" "),
+                      ),
+                    }
+                  : {}),
               },
             },
           };
         },
       );
-      if(advanced.enabled&&response.task&&response.context?.knowledge){
-        const project=await loadConsoleConfiguration(root).then(c=>c.project).catch(()=>null);
-        if(project?.repo===response.task.task.payload.repo)void advanced.recordKnowledge(project,response.task.task.id,response.lease.id,response.context.knowledge).catch(()=>{});
+      if (advanced.enabled && response.task && response.context?.knowledge) {
+        const project = await loadConsoleConfiguration(root)
+          .then((c) => c.project)
+          .catch(() => null);
+        if (project?.repo === response.task.task.payload.repo)
+          void advanced
+            .recordKnowledge(
+              project,
+              response.task.task.id,
+              response.lease.id,
+              response.context.knowledge,
+            )
+            .catch(() => {});
       }
       return response;
     },
@@ -2602,6 +2770,8 @@ export function createHealingService({
         return { changed: true, value: response };
       });
     },
-    close: async () => { await Promise.all([store.close(),advanced.close()]); },
+    close: async () => {
+      await Promise.all([store.close(), advanced.close()]);
+    },
   };
 }

@@ -132,7 +132,8 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
     if (
       !validCwd(cwd) ||
       !Array.isArray(argv) ||
-      !argv.length ||
+      typeof argv[0] !== "string" ||
+      !argv[0].trim() ||
       argv.some((v) => typeof v !== "string" || v.includes("\0")) ||
       !Number.isFinite(timeoutMs) ||
       timeoutMs <= 0
@@ -178,8 +179,10 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
         "type=bind,source=" + cwd + "/.git,target=/workspace/.git,readonly",
         "--workdir",
         "/workspace",
+        "--entrypoint",
+        argv[0],
         image,
-        ...argv,
+        ...argv.slice(1),
       ];
       let created;
       mayExist = true;

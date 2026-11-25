@@ -113,6 +113,60 @@ test("exact base, canonical patch and fresh replay produce same files without to
   ]);
   await p.cleanup();
 });
+test("approval diff displays changed UTF-8 lines even when Git attributes disable diff", async (t) => {
+  const f = await fixture(t, {
+    generate: async () => ({
+      summary: "Repair value",
+      changes: [{ path: "value.txt", content: "fixed\n" }],
+    }),
+  });
+  await writeFile(join(f.repo, ".gitattributes"), "value.txt -diff\n");
+  f.git("add", ".gitattributes");
+  f.git("commit", "-qm", "disable textual diff");
+  moveBase(f);
+  const d = await f.engine.diagnose(f.claim);
+  assert.deepEqual(d.diff, [
+    {
+      path: "value.txt",
+      additions: 1,
+      deletions: 1,
+      lines: [
+        { type: "remove", content: "later" },
+        { type: "add", content: "fixed" },
+      ],
+    },
+  ]);
+  f.claim.task.proposal = { candidate: d.candidate };
+  const p = await f.engine.prepareExecution(f.claim, d.artifact);
+  assert.equal(p.files[0].content, "fixed\n");
+  await p.cleanup();
+});
+test("approval and replay read only the exact changed filename, not its glob matches", async (t) => {
+  const path = "[ID].js";
+  const f = await fixture(t, {
+    generate: async () => ({
+      summary: "Repair bracketed file",
+      changes: [{ path, content: "fixed\n" }],
+    }),
+    runCheck: async ({ cwd }) => ({
+      exitCode: (await readFile(join(cwd, path), "utf8")) === "fixed\n" ? 0 : 1,
+    }),
+  });
+  await writeFile(join(f.repo, path), "broken\n");
+  await writeFile(join(f.repo, "I.js"), "untouched\n");
+  f.git("add", "-A");
+  f.git("commit", "-qm", "track literal and matching filenames");
+  moveBase(f);
+  const d = await f.engine.diagnose(f.claim);
+  assert.deepEqual(
+    d.diff.map((file) => file.path),
+    [path],
+  );
+  f.claim.task.proposal = { candidate: d.candidate };
+  const p = await f.engine.prepareExecution(f.claim, d.artifact);
+  assert.deepEqual(p.files, [{ path, mode: "100644", content: "fixed\n" }]);
+  await p.cleanup();
+});
 test("rejects non-reproducing baseline without asking model", async (t) => {
   let called = false;
   const f = await fixture(t, {

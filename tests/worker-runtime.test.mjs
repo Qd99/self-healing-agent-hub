@@ -71,6 +71,8 @@ test("diagnose saves artifact/submission before sending, stores ACK and filters 
   assert.equal(rec.proposal.id, "proposal-1");
   assert.deepEqual(s.sent[0][1].phases, ["diagnose"]);
   assert.deepEqual(s.sent[0][1].candidateVersions, [2]);
+  assert.equal(s.sent[0][1].repo, s.cfg.repository.fullName);
+  assert.equal(s.sent[0][1].branch, s.cfg.repository.branch);
 });
 test("lost proposal ACK replays the exact saved submission without generation", async () => {
   const s = setup();

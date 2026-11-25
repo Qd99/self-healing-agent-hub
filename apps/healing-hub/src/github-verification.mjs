@@ -8,7 +8,6 @@ export function normalizeVerificationPolicy(config) {
     !Array.isArray(contexts) ||
     !contexts.length ||
     contexts.length > 100 ||
-    new Set(contexts).size !== contexts.length ||
     contexts.some(
       (x) =>
         typeof x !== "string" ||
@@ -16,7 +15,9 @@ export function normalizeVerificationPolicy(config) {
         x !== x.trim() ||
         x.length > 200 ||
         /[\r\n\0]/.test(x),
-    )
+    ) ||
+    new Set(contexts.map((context) => context.toLowerCase())).size !==
+      contexts.length
   )
     return null;
   if (
@@ -218,7 +219,8 @@ export function createGithubVerifier(
         let pending = false,
           failed = false;
         for (const context of input.policy.requiredStatusContexts) {
-          const relevant = all.filter((s) => s.context === context);
+          const key = context.toLowerCase();
+          const relevant = all.filter((s) => s.context?.toLowerCase() === key);
           if (!relevant.length) {
             pending = true;
             continue;

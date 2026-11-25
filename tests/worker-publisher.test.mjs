@@ -12,6 +12,7 @@ import {
 function setup({
   ambiguous = false,
   moved = false,
+  moveAfter = null,
   conflicting = false,
   lostRef = false,
   unknownPost = false,
@@ -26,7 +27,8 @@ function setup({
   const cfg = config();
   cfg.publish.enabled = true;
   let ref = conflicting,
-    pr = false;
+    pr = false,
+    baseMoved = moved;
   const calls = [],
     events = [];
   const marker = `Healing task: ${c.task.task.id}\nProposal: proposal-1\nContent hash: ${"d".repeat(64)}`;
@@ -50,19 +52,24 @@ function setup({
     if (opt.method === "POST") {
       assert.equal(events.at(-1)?.intent?.path, path);
       if (unknownPost) throw Error("uncertain mutation");
-      if (path.endsWith("/git/trees")) data = { sha: tree };
-      else if (path.endsWith("/git/commits")) data = { sha: commit };
+      if (path.endsWith("/git/trees")) {
+        data = { sha: tree };
+        if (moveAfter === "tree") baseMoved = true;
+      } else if (path.endsWith("/git/commits")) data = { sha: commit };
       else if (path.endsWith("/git/refs")) {
         ref = true;
+        if (moveAfter === "ref") baseMoved = true;
         if (lostRef) throw Error("reference response lost");
         data = { object: { sha: commit } };
       } else if (path.endsWith("/pulls")) {
         pr = true;
+        if (moveAfter === "pr") baseMoved = true;
+        prValue.base.sha = baseMoved ? tree : base;
         if (ambiguous) throw Error("response lost");
         data = prValue;
       } else throw Error("unexpected mutation");
     } else if (path.endsWith("/git/ref/heads/main"))
-      data = { object: { sha: moved ? tree : base } };
+      data = { object: { sha: baseMoved ? tree : base } };
     else if (path.includes("/git/ref/heads/heal/")) {
       data = ref ? { object: { sha: commit } } : {};
       status = ref ? 200 : 404;
@@ -138,6 +145,41 @@ test("moved base, disabled publishing, stopped lease and failed journal prevent 
       };
     await assert.rejects(s.publisher.publish(s.args));
     assert.equal(s.calls.filter((x) => x[0] === "POST").length, 0);
+  }
+});
+test("base drift during publication stops before the next branch or PR write", async () => {
+  for (const [moveAfter, forbidden] of [
+    ["tree", "/git/refs"],
+    ["ref", "/pulls"],
+  ]) {
+    const s = setup({ moveAfter });
+    await assert.rejects(s.publisher.publish(s.args), /Base branch moved/);
+    assert.equal(
+      s.calls.some(
+        ([method, path]) => method === "POST" && path.endsWith(forbidden),
+      ),
+      false,
+    );
+    assert.equal(
+      s.events.some((event) => event.intent?.path.endsWith(forbidden)),
+      false,
+      "a rejected pre-write base check must not announce a GitHub mutation",
+    );
+  }
+});
+test("a draft created on a moved base is recorded for reconciliation, never treated as success", async () => {
+  for (const ambiguous of [false, true]) {
+    const s = setup({ moveAfter: "pr", ambiguous });
+    await assert.rejects(s.publisher.publish(s.args), /Base branch moved/);
+    assert.equal(s.events.at(-1).pr, 7);
+    assert.equal(s.events.at(-1).uncertain, true);
+    const writes = s.calls.filter(([method]) => method === "POST").length;
+    const facts = await s.publisher.recover({ claim: s.c });
+    assert.deepEqual(facts, { commit, pr: 7, uncertain: true });
+    assert.equal(
+      s.calls.filter(([method]) => method === "POST").length,
+      writes,
+    );
   }
 });
 test("recovery is read-only and disabled publishing still supports base reads", async () => {

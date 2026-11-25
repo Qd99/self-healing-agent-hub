@@ -95,6 +95,23 @@ test("remote identity, incomplete files and untrusted or ambiguous status cannot
     "failed",
   );
 });
+test("a newer failure with different context casing supersedes the older success", async () => {
+  const result = await run((d) => {
+    d[3].push({ ...d[3][0], id: 2, context: "TESTS", state: "failure" });
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.statuses[0].id, 2);
+});
+test("one GitHub context cannot be configured twice using different casing", async () => {
+  const { normalizeVerificationPolicy } = await load();
+  assert.equal(
+    normalizeVerificationPolicy({
+      ...input.policy,
+      requiredStatusContexts: ["tests", "TESTS"],
+    }),
+    null,
+  );
+});
 test("pagination rejects cross-origin, skipped pages and missing next despite last", async () => {
   for (const link of [
     '<https://evil.example/files?page=2>; rel="next"',

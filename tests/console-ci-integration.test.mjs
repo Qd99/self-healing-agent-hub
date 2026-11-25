@@ -262,6 +262,28 @@ test("atomic import, trusted source retention and retry despite changed project"
   );
   assert.equal(duplicate.taskId, id);
 });
+test("worker scope rejects another repo or branch before issuing a lease", async (t) => {
+  const { service } = await fixture(t);
+  const { taskId } = await service.importJenkinsBuild(
+    { sourceId: "ci", buildNumber: 7 },
+    manager,
+  );
+  for (const scope of [
+    { repo: "other/repo", branch: "main" },
+    { repo: "owner/repo", branch: "release" },
+  ]) {
+    assert.equal(
+      (await service.claim({ ...claim, ...scope }, worker)).task,
+      null,
+    );
+  }
+  const matching = await service.claim(
+    { ...claim, repo: "owner/repo", branch: "main" },
+    worker,
+  );
+  assert.equal(matching.task.task.id, taskId);
+  assert.equal(matching.lease.phase, "diagnose");
+});
 test("v2 filters phases, affinity, exact ACK replay and execution bindings", async (t) => {
   const { service } = await fixture(t);
   const { taskId } = await service.importJenkinsBuild(

@@ -109,7 +109,7 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
       throw Error("Existing repair branch does not match approval");
     return sha;
   }
-  function verifyPr(pr, d, sha) {
+  function observePr(pr, d, sha) {
     if (
       !Number.isSafeInteger(pr?.number) ||
       pr.number < 1 ||
@@ -120,12 +120,11 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
       pr.head?.ref !== d.branch ||
       pr.head?.repo?.full_name !== config.repository.fullName ||
       pr.base?.ref !== config.repository.branch ||
-      pr.base?.sha !== d.base ||
       pr.base?.repo?.full_name !== config.repository.fullName ||
       !pr.body?.endsWith(d.marker)
     )
       throw Error("Existing PR does not match approval");
-    return pr.number;
+    return { number: pr.number, baseMatches: pr.base.sha === d.base };
   }
   async function findPr(d, sha, signal) {
     const owner = config.repository.fullName.split("/")[0];
@@ -137,7 +136,7 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
     );
     if (!Array.isArray(list) || list.length >= 100 || list.length > 1)
       throw Error("Ambiguous repair pull requests");
-    return list.length ? verifyPr(list[0], d, sha) : null;
+    return list.length ? observePr(list[0], d, sha) : null;
   }
   async function recover({ claim, known = {}, signal }) {
     const d = details(claim);
@@ -145,7 +144,12 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
     if (!sha)
       return { ...known, uncertain: Boolean(known.intent || known.uncertain) };
     const pr = await findPr(d, sha, signal);
-    return { ...known, commit: sha, ...(pr ? { pr } : {}), uncertain: !pr };
+    return {
+      ...known,
+      commit: sha,
+      ...(pr ? { pr: pr.number } : {}),
+      uncertain: !pr?.baseMatches,
+    };
   }
   async function publish({
     claim,
@@ -187,22 +191,28 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
     }
     if (bytes > 512 * 1024) throw Error("Publication exceeds limit");
     const files = prepared.files.map((f) => f.path);
-    let sha,
-      pr,
-      firstWrite = true;
-    const write = async (path, body, confirm) => {
-      if (firstWrite) {
-        assertActive();
-        if (
-          (await readBase({
-            repo: config.repository.fullName,
-            branch: config.repository.branch,
-            signal,
-          })) !== d.base
-        )
-          throw Error("Base branch moved");
-        firstWrite = false;
-      }
+    let sha;
+    let firstWrite = true;
+    const assertBase = async () => {
+      assertActive();
+      if (
+        (await readBase({
+          repo: config.repository.fullName,
+          branch: config.repository.branch,
+          signal,
+        })) !== d.base
+      )
+        throw Error("Base branch moved");
+      assertActive();
+    };
+    const recordPr = async ({ number, baseMatches }) => {
+      const facts = { commit: sha, pr: number, files };
+      await onProgress({ ...facts, uncertain: !baseMatches });
+      if (!baseMatches) throw Error("Base branch moved");
+      return facts;
+    };
+    const write = async (path, body, confirm, checkBase = false) => {
+      if (firstWrite || checkBase) await assertBase();
       await onProgress({
         intent: {
           method: "POST",
@@ -212,6 +222,7 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
           tree: d.tree,
         },
       });
+      firstWrite = false;
       assertActive();
       try {
         return await request("POST", path, body, { signal });
@@ -224,21 +235,12 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
         throw error;
       }
     };
-    assertActive();
-    if (
-      (await readBase({
-        repo: config.repository.fullName,
-        branch: config.repository.branch,
-        signal,
-      })) !== d.base
-    )
-      throw Error("Base branch moved");
-    assertActive();
+    await assertBase();
     sha = await branchCommit(d, signal);
     if (sha) {
-      pr = await findPr(d, sha, signal);
-      await onProgress({ commit: sha, files, ...(pr ? { pr } : {}) });
-      if (pr) return { commit: sha, pr, files };
+      const pr = await findPr(d, sha, signal);
+      if (pr) return recordPr(pr);
+      await onProgress({ commit: sha, files });
     } else {
       const parent = await request(
         "GET",
@@ -274,11 +276,12 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
           const existing = await branchCommit(d);
           return existing === sha ? { object: { sha: existing } } : null;
         },
+        true,
       );
       if (ref?.object?.sha !== sha) throw Error("Repair branch mismatch");
       await onProgress({ branch: d.branch, commit: sha });
     }
-    assertActive();
+    let recoveredPr;
     const created = await write(
       `${repoPath}/pulls`,
       {
@@ -289,13 +292,12 @@ export function createGitHubPublisher(config, { fetchImpl = fetch } = {}) {
         body: `Automated repair candidate awaiting review. CI results are tracked separately.\n\n${d.marker}`,
       },
       async () => {
-        const found = await findPr(d, sha);
-        return found ? { recoveredNumber: found } : null;
+        recoveredPr = await findPr(d, sha);
+        return recoveredPr;
       },
+      true,
     );
-    pr = created.recoveredNumber ?? verifyPr(created, d, sha);
-    await onProgress({ commit: sha, pr, files, uncertain: false });
-    return { commit: sha, pr, files };
+    return recordPr(recoveredPr ?? observePr(created, d, sha));
   }
   return { readBase, publish, recover };
 }
