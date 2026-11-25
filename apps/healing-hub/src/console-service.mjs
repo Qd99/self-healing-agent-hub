@@ -884,7 +884,10 @@ export function createHealingService({
       for (const entry of state?.tasks ?? []) {
         // Context matching became case-insensitive. Re-derive every stored
         // policy hash from its canonical form so old stores still load instead
-        // of failing startup; the context list itself is never loosened.
+        // of failing startup. A stored policy the strict rule no longer accepts
+        // (e.g. a case-variant duplicate that was legal to save before) loses
+        // its policy for THIS task: its verification becomes unavailable, the
+        // task itself stays loadable, and no store is wedged at startup.
         if (entry.verificationPolicy) {
           entry.verificationPolicy = normalizeVerificationPolicy({
             ...entry.verificationPolicy,
@@ -893,7 +896,6 @@ export function createHealingService({
                 context.toLowerCase(),
               ) ?? [],
           });
-          if (!entry.verificationPolicy) invalid();
         }
       }
       for (const entry of state?.tasks ?? []) {

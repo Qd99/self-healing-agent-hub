@@ -148,6 +148,55 @@ test("stored verification policies with mixed-case contexts migrate and survive 
   assert.equal(snapshot.storage.status, "ready");
 });
 
+// A case-variant duplicate was legal to save under the old exact-string rule.
+// The migration must not wedge the whole store: the entry loses only its
+// (now-unrepresentable) policy, stays loadable, and verification for that
+// task reports unavailable instead of failing startup.
+test("a stored policy with case-variant duplicate contexts drops the policy without blocking the store", async (t) => {
+  const { service, open, filename, advance } = await fixture(t);
+  await service.trigger(taskInput, manager);
+  await service.close();
+  const stored = JSON.parse(await readFile(filename, "utf8"));
+  const legacyPolicy = {
+    requiredStatusContexts: ["ci/Test", "CI/test"],
+    trustedStatusCreators: ["ci[bot]"],
+    policyHash: "legacy-dup-hash",
+  };
+  stored.tasks[0].verificationPolicy = legacyPolicy;
+  await writeFile(filename, JSON.stringify(stored));
+  advance(1);
+  const reopened = await open();
+  const snapshot = await reopened.snapshot();
+  assert.equal(
+    snapshot.storage.status,
+    "ready",
+    "store loads, not STORE_INVALID",
+  );
+  const claim = await reopened.claim(
+    { engineId: "fast", workerId: "worker-a" },
+    worker,
+  );
+  await reopened.heartbeat(
+    stored.tasks[0].task.id,
+    { leaseId: claim.lease.id },
+    worker,
+  );
+  const after = JSON.parse(await readFile(filename, "utf8"));
+  assert.equal(
+    after.tasks[0].verificationPolicy ?? undefined,
+    undefined,
+    "the unrepresentable policy is dropped, not kept or re-derived",
+  );
+  const committed = JSON.parse(await readFile(filename, "utf8"));
+  assert.equal(committed.tasks[0].verificationPolicy ?? undefined, undefined);
+  const verify = reopened.verifyResult;
+  assert.equal(
+    typeof verify,
+    "function",
+    "the service itself stays fully usable",
+  );
+});
+
 // Removing per-resource revisions would cause background Worker writes to reject this save.
 test("Worker heartbeats and empty claims do not invalidate configuration edits", async (t) => {
   const { service } = await fixture(t);
