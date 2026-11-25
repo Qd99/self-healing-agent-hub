@@ -12,13 +12,19 @@ test("V20 entry retains the original application, controls and live default", as
   ]);
   assert.match(preview, /data-console-ui="v20"/);
   assert.match(preview, /name="console-default-mode" content="live"/);
-  assert.match(preview, /href="\.\/v20-compatible\.css" \/>\s*<script src="\.\/app\.js" type="module"/);
+  assert.match(
+    preview,
+    /href="\.\/v20-compatible\.css" \/>\s*<script src="\.\/app\.js" type="module"/,
+  );
   assert.doesNotMatch(legacy, /data-console-ui|v20-compatible\.css/);
   assert.equal(
     preview
       .replace(' data-console-ui="v20"', "")
       .replace("heal — V20 兼容预览", "heal — 自愈工作台")
-      .replace('    <link rel="stylesheet" href="./v20-compatible.css" />\n', ""),
+      .replace(
+        '    <link rel="stylesheet" href="./v20-compatible.css" />\n',
+        "",
+      ),
     legacy,
     "Both entries must share the same scripts, controls, and dialog IDs",
   );
@@ -36,7 +42,7 @@ test("V20 stylesheet does not load external assets or synthesize business data",
   // All ordinary selector lines are scoped to the opt-in document.
   for (const line of css.split("\n")) {
     const trimmed = line.trim();
-    if (/^[.#:\[]/.test(trimmed)) {
+    if (/^[.#:[]/.test(trimmed)) {
       assert.ok(trimmed.startsWith(':root[data-console-ui="v20"]'), trimmed);
     }
   }

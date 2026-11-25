@@ -29,6 +29,11 @@ async function fixture(
         PATH: process.env.PATH,
         GIT_CONFIG_NOSYSTEM: "1",
         GIT_CONFIG_GLOBAL: "/dev/null",
+        // The engine forbids macOS Unicode recomposition; the fixture must
+        // store exactly the bytes the approved candidate names.
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "core.precomposeunicode",
+        GIT_CONFIG_VALUE_0: "false",
         GIT_AUTHOR_NAME: "Fixture",
         GIT_AUTHOR_EMAIL: "fixture@example.test",
         GIT_COMMITTER_NAME: "Fixture",

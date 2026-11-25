@@ -79,6 +79,10 @@ const GIT_OPTIONS = [
   "core.fileMode=true",
   "-c",
   "submodule.recurse=false",
+  // Paths are compared byte-for-byte with the approved tree. macOS Git defaults to
+  // composing Unicode names, which would rename a decomposed file in the diff.
+  "-c",
+  "core.precomposeunicode=false",
 ];
 function textFile(buffer) {
   if (buffer.includes(0)) throw new Error("Binary file is unsupported");

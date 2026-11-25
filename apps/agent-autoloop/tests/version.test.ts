@@ -28,7 +28,10 @@ test("it prints this commit's release and the commit, with nothing installed", (
     { env, encoding: "utf8" },
   );
   assert.equal(done.status, 0, done.stderr);
-  const commit = git(root, "rev-parse", "HEAD").slice(0, 12);
+  // Vendored inside another checkout the app has no .git entry of its own, so its
+  // commit is unknown rather than the surrounding repository's. AGENT_AUTOLOOP_COMMIT
+  // is the deployment channel that names the code; without it the build says dev.
+  const commit = existsSync(join(root, ".git")) ? git(root, "rev-parse", "HEAD").slice(0, 12) : "dev";
   assert.equal(done.stdout.trim(), `agent-autoloop ${releaseOf(root) ?? "未发布"}（提交 ${commit}）`);
   assert.ok(!existsSync(empty), "asking the version sets nothing up");
 });
