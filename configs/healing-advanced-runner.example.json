@@ -1,0 +1,6 @@
+{
+  "hub": "http://127.0.0.1:8787",
+  "worker": "independent-qa-01",
+  "dataDir": "/var/lib/healing-independent-qa",
+  "profiles": []
+}

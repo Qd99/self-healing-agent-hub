@@ -95,6 +95,7 @@ Self-Healing Agent Hub 是一个事件驱动、可插拔引擎的自动化修复
 ### 1. EventHub (核心调度层)
 
 **职责：**
+
 - 接收所有事件（webhook、cron、手动触发）
 - 标准化事件为统一的 Task 对象
 - 基于 rules.json 路由到对应处理器
@@ -103,6 +104,7 @@ Self-Healing Agent Hub 是一个事件驱动、可插拔引擎的自动化修复
 - 提供监控指标
 
 **技术选型：**
+
 - Node.js + Express
 - Redis (任务队列)
 - MySQL (可选，审计日志持久化)
@@ -110,6 +112,7 @@ Self-Healing Agent Hub 是一个事件驱动、可插拔引擎的自动化修复
 ### 2. WorkflowEngine (可插拔引擎层)
 
 **接口定义：**
+
 ```typescript
 abstract class WorkflowEngine {
   abstract execute(task: Task, context: Context): Promise<Result>;
@@ -120,6 +123,7 @@ abstract class WorkflowEngine {
 ```
 
 **支持的引擎：**
+
 - **Direct AI Engine**: 快速通道，单次 AI 调用
 - **ZCode Engine**: ZCode Dynamic Workflow
 - **Codex Engine**: 接入 Codex 编排系统
@@ -128,21 +132,25 @@ abstract class WorkflowEngine {
 ### 3. Safety Layer (四层防护)
 
 **L1: 修复前检查**
+
 - 运行项目门禁（typecheck, lint, test）
 - 检查敏感文件黑名单
 - 验证修改范围（默认最多 5 个文件）
 - 检查 commit message 格式
 
 **L2: 修复后验证**
+
 - 自动触发 CI 全量检查
 - 监听 CI 结果
 
 **L3: 自动回滚**
+
 - CI 失败自动 revert commit
 - 通知相关人员
 - 记录回滚原因
 
 **L4: 熔断降级**
+
 - 监控失败率（默认 60 分钟窗口，失败 ≥3 次）
 - 触发熔断：暂停自动修复
 - 降级为只创建 issue 模式
@@ -151,6 +159,7 @@ abstract class WorkflowEngine {
 ### 4. GitHub App 集成
 
 **权限要求：**
+
 - Contents: Read and write
 - Issues: Read and write
 - Pull requests: Read and write
@@ -158,6 +167,7 @@ abstract class WorkflowEngine {
 - Actions: Read-only (可选)
 
 **操作：**
+
 - 通过 GitHub App 身份执行所有 Git 操作
 - commit message 自动标注 `[auto-fix]` 前缀
 - 清晰的审计追踪
@@ -215,19 +225,19 @@ export class MyCustomProcessor {
 实现 `WorkflowEngine` 接口：
 
 ```typescript
-import { WorkflowEngine } from '@healing/framework';
+import { WorkflowEngine } from "@healing/framework";
 
 export class MyEngine extends WorkflowEngine {
-  name = 'my-engine';
-  version = '1.0.0';
-  
+  name = "my-engine";
+  version = "1.0.0";
+
   async execute(task: Task, context: Context): Promise<Result> {
     // 调用你的编排工具
   }
 }
 
 // 注册引擎
-registerEngine('my-engine', (config) => new MyEngine(config));
+registerEngine("my-engine", (config) => new MyEngine(config));
 ```
 
 ### 3. 自定义规则
@@ -261,6 +271,7 @@ EventHub Service (Node.js)
 ```
 
 **systemd 服务：**
+
 - `healing-hub.service` - EventHub 主服务
 - 由 systemd 管理，自动重启
 - 日志输出到 `/var/log/healing-hub/`

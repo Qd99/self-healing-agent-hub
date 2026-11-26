@@ -10,7 +10,8 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/*",
+    "apps/healing-*",
+    "apps/console",
     "engines/*"
   ],
   "scripts": {
@@ -24,7 +25,11 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --project tsconfig.json"
+    "typecheck": "tsc --project tsconfig.json",
+    "worker": "node apps/healing-worker/src/index.mjs",
+    "workbench:test": "node scripts/workbench-test-runner.mjs",
+    "workbench:advanced": "node scripts/advanced-runner.mjs",
+    "fault:drill": "node scripts/fault-drill.mjs"
   },
   "keywords": [
     "agent",
@@ -49,6 +54,6 @@
     "mysql2": "^3.11.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.3.0"
   }
 }

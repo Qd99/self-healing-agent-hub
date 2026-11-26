@@ -91,6 +91,112 @@ const errorCode = (code) => (error) => error.code === code;
 const taskFor = (snapshot, id) =>
   snapshot.tasks.find((entry) => entry.task.id === id);
 
+// A policy saved before context matching became case-insensitive must still
+// load: startup migration canonicalizes it instead of failing STORE_INVALID.
+test("stored verification policies with mixed-case contexts migrate and survive restart", async (t) => {
+  const { service, open, filename, advance } = await fixture(t);
+  await service.trigger(taskInput, manager);
+  await service.close();
+  const stored = JSON.parse(await readFile(filename, "utf8"));
+  const { normalizeVerificationPolicy } =
+    await import("../apps/healing-hub/src/github-verification.mjs");
+  // One context spelled two ways was legal before; the strict rule only
+  // forbids case-variant duplicates, so a lowercase canonical form is stored.
+  const legacyPolicy = {
+    requiredStatusContexts: ["ci/tests", "CI/JENKINS"],
+    trustedStatusCreators: ["ci[bot]"],
+  };
+  assert.equal(
+    normalizeVerificationPolicy({
+      ...legacyPolicy,
+      requiredStatusContexts: ["tests", "TESTS"],
+    }),
+    null,
+  );
+  assert.notEqual(normalizeVerificationPolicy(legacyPolicy), null);
+  stored.tasks[0].verificationPolicy = {
+    ...legacyPolicy,
+    policyHash: "legacy-hash",
+  };
+  await writeFile(filename, JSON.stringify(stored));
+  advance(1);
+  // Migration runs when the store first loads. A worker mutation then commits
+  // the canonical policy to disk; reads alone do not rewrite the file.
+  const reopened = await open();
+  const claim = await reopened.claim(
+    { engineId: "fast", workerId: "worker-a" },
+    worker,
+  );
+  await reopened.heartbeat(
+    stored.tasks[0].task.id,
+    { leaseId: claim.lease.id },
+    worker,
+  );
+  const after = JSON.parse(await readFile(filename, "utf8"));
+  assert.ok(after.tasks[0].verificationPolicy, "policy kept after migration");
+  assert.deepEqual(after.tasks[0].verificationPolicy.requiredStatusContexts, [
+    "ci/jenkins",
+    "ci/tests",
+  ]);
+  assert.notEqual(after.tasks[0].verificationPolicy.policyHash, "legacy-hash");
+  const committed = JSON.parse(await readFile(filename, "utf8"));
+  assert.deepEqual(
+    committed.tasks[0].verificationPolicy,
+    after.tasks[0].verificationPolicy,
+  );
+  const snapshot = await reopened.snapshot();
+  assert.equal(snapshot.storage.status, "ready");
+});
+
+// A case-variant duplicate was legal to save under the old exact-string rule.
+// The migration must not wedge the whole store: the entry loses only its
+// (now-unrepresentable) policy, stays loadable, and verification for that
+// task reports unavailable instead of failing startup.
+test("a stored policy with case-variant duplicate contexts drops the policy without blocking the store", async (t) => {
+  const { service, open, filename, advance } = await fixture(t);
+  await service.trigger(taskInput, manager);
+  await service.close();
+  const stored = JSON.parse(await readFile(filename, "utf8"));
+  const legacyPolicy = {
+    requiredStatusContexts: ["ci/Test", "CI/test"],
+    trustedStatusCreators: ["ci[bot]"],
+    policyHash: "legacy-dup-hash",
+  };
+  stored.tasks[0].verificationPolicy = legacyPolicy;
+  await writeFile(filename, JSON.stringify(stored));
+  advance(1);
+  const reopened = await open();
+  const snapshot = await reopened.snapshot();
+  assert.equal(
+    snapshot.storage.status,
+    "ready",
+    "store loads, not STORE_INVALID",
+  );
+  const claim = await reopened.claim(
+    { engineId: "fast", workerId: "worker-a" },
+    worker,
+  );
+  await reopened.heartbeat(
+    stored.tasks[0].task.id,
+    { leaseId: claim.lease.id },
+    worker,
+  );
+  const after = JSON.parse(await readFile(filename, "utf8"));
+  assert.equal(
+    after.tasks[0].verificationPolicy ?? undefined,
+    undefined,
+    "the unrepresentable policy is dropped, not kept or re-derived",
+  );
+  const committed = JSON.parse(await readFile(filename, "utf8"));
+  assert.equal(committed.tasks[0].verificationPolicy ?? undefined, undefined);
+  const verify = reopened.verifyResult;
+  assert.equal(
+    typeof verify,
+    "function",
+    "the service itself stays fully usable",
+  );
+});
+
 // Removing per-resource revisions would cause background Worker writes to reject this save.
 test("Worker heartbeats and empty claims do not invalidate configuration edits", async (t) => {
   const { service } = await fixture(t);

@@ -1,8 +1,10 @@
+import { createWorkbenchController } from "../apps/console/public/workbench-controller.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { runInNewContext } from "node:vm";
 import { createApiClient } from "../apps/console/public/api-client.js";
+import { createCiController } from "../apps/console/public/ci-controller.js";
 import {
   pages,
   renderCreate,
@@ -103,6 +105,8 @@ function harness(fetch) {
     createTaskController: controller,
     createAdministrationController: controller,
     createMonitoringController: controller,
+    createCiController,
+    createWorkbenchController,
     installInteractionFeedback() {},
     pages,
     renderCreate,
@@ -564,4 +568,168 @@ test("a stale reconciliation completion cannot mark newly arrived evidence resol
   assert.match(app.state.reconciliationError, /新证据/);
   assert.match(app.toastMessages.at(-1)[0], /新证据/);
   assert.equal(app.toastMessages.at(-1)[1], "warning");
+});
+
+function ciSnapshot(revision = 4) {
+  const value = reconciliationSnapshot();
+  value.revision = revision;
+  value.capabilities.importCi = true;
+  value.capabilities.verifyResult = true;
+  value.integrations = {
+    jenkins: {
+      configured: true,
+      sourceId: "ci",
+      jobName: "app",
+      branch: "main",
+    },
+    verification: { configured: true, requiredStatusContexts: ["test"] },
+  };
+  Object.assign(value.tasks[0], {
+    proposal: {
+      id: "p1",
+      version: 2,
+      contentHash: "c".repeat(64),
+      candidate: { treeSha: "d".repeat(40) },
+    },
+    result: {
+      action: "pr-created",
+      success: true,
+      changes: { pr: 1, commit: "a".repeat(40) },
+    },
+  });
+  return value;
+}
+function clickAction(app, action, id) {
+  const button = { dataset: { action, id } };
+  app.listeners.get("click")({
+    target: {
+      closest: (selector) => (selector === "[data-action]" ? button : null),
+    },
+    preventDefault() {},
+  });
+}
+test("CI import uses shared dialog, pending feedback and failed draft recovery", async () => {
+  const pending = deferred();
+  let received;
+  const app = harness((path, options) => {
+    received = { path, body: JSON.parse(options.body) };
+    return pending.promise;
+  });
+  app.setSnapshot(ciSnapshot());
+  clickAction(app, "ci-import-open");
+  assert.equal(app.createDialog.open, true);
+  assert.match(app.createDialog.innerHTML, /id="ci-import-form"/);
+  app.listeners.get("submit")({
+    target: { id: "ci-import-form", values: { buildNumber: "27" } },
+    preventDefault() {},
+  });
+  assert.equal(app.state.pendingAction, "ci-import");
+  assert.match(app.createDialog.innerHTML, /aria-busy="true"/);
+  assert.equal(received.path, "/api/healing/integrations/jenkins/builds");
+  assert.equal(received.body.buildNumber, 27);
+  pending.resolve(
+    json(
+      { error: { code: "UPSTREAM_ERROR", message: "Jenkins 暂不可用" } },
+      502,
+    ),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(app.state.ciImportDraft.buildNumber, "27");
+  assert.match(app.createDialog.innerHTML, /Jenkins 暂不可用/);
+});
+test("verification respects new snapshots without clearing reconciliation input", async () => {
+  const pending = deferred(),
+    app = harness(() => pending.promise);
+  app.setSnapshot(ciSnapshot());
+  app.openTask("task-a", "evidence");
+  app.state.reconciliationDraft = {
+    taskId: "task-a",
+    note: "keep this note",
+    outcome: "changes-recorded",
+  };
+  clickAction(app, "ci-verify", "task-a");
+  assert.equal(app.state.pendingAction, "verify:task-a");
+  assert.match(app.detailDialog.innerHTML, /核验中/);
+  const newer = ciSnapshot(7);
+  newer.tasks[0].verification = { status: "stale", checkedAt: "new" };
+  app.setSnapshot(newer);
+  const older = ciSnapshot(6);
+  older.tasks[0].verification = { status: "passed", checkedAt: "old" };
+  pending.resolve(json({ snapshot: older, message: "passed" }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(app.state.snapshot.tasks[0].verification.status, "stale");
+  assert.equal(app.state.reconciliationDraft.note, "keep this note");
+  assert.match(app.detailDialog.innerHTML, /需要重新核验/);
+  assert.doesNotMatch(app.detailDialog.innerHTML, /CI 核验通过/);
+});
+test("CI disclosures remain open through task refresh", () => {
+  const app = harness(async () => json(ciSnapshot()));
+  app.setSnapshot(ciSnapshot());
+  app.openTask("task-a", "evidence");
+  const nodes = {
+    ".ci-candidate": { open: true },
+    ".ci-contexts": { open: true },
+  };
+  app.detailDialog.querySelector = (selector) => nodes[selector] || null;
+  Object.defineProperty(app.detailDialog, "innerHTML", {
+    set() {
+      Object.values(nodes).forEach((n) => {
+        n.open = false;
+      });
+    },
+  });
+  app.refreshDetail();
+  assert.equal(nodes[".ci-candidate"].open, true);
+  assert.equal(nodes[".ci-contexts"].open, true);
+});
+
+
+test("Jenkins workspace search, chart filters and paging do not issue mutations", () => {
+  const app = harness(() => {
+    throw new Error("Jenkins view filtering must not make API requests");
+  });
+  app.setSnapshot(ciSnapshot());
+  app.state.view = "jenkins";
+  app.state.jenkinsPage = 4;
+  app.listeners.get("input")({ target: { id: "jenkins-search", value: "build 27" } });
+  assert.equal(app.state.jenkinsQuery, "build 27");
+  assert.equal(app.state.jenkinsPage, 1);
+  app.listeners.get("change")({ target: { id: "jenkins-page-size", value: "50" } });
+  assert.equal(app.state.jenkinsPageSize, 50);
+  const click = (dataset, id = "") => app.listeners.get("click")({
+    target: { closest: (selector) => selector === "[data-action]" ? { dataset, id } : null },
+    preventDefault() {},
+  });
+  click({ action: "jenkins-page", page: "3" });
+  assert.equal(app.state.jenkinsPage, 3);
+  click({ action: "jenkins-status-filter", value: "pending" }, "jenkins-filter-pending");
+  assert.equal(app.state.jenkinsStatus, "pending");
+  assert.equal(app.state.jenkinsPage, 1);
+  click({ action: "jenkins-reset" });
+  assert.equal(app.state.jenkinsQuery, "");
+  assert.equal(app.state.jenkinsStatus, "all");
+  assert.equal(app.state.jenkinsPage, 1);
+});
+
+test("Jenkins workspace filters and CI import drafts reset on project changes", () => {
+  const app = harness(() => {
+    throw new Error("Project projection must not make API requests");
+  });
+  app.setSnapshot(ciSnapshot());
+  app.state.view = "jenkins";
+  Object.assign(app.state, {
+    jenkinsQuery: "old project",
+    jenkinsStatus: "passed",
+    jenkinsPage: 9,
+    jenkinsPageSize: 50,
+    ciImportDraft: { sourceId: "ci", buildNumber: "23" },
+  });
+  const next = ciSnapshot(9);
+  next.project.id = "other-project";
+  app.setSnapshot(next);
+  assert.equal(app.state.jenkinsQuery, "");
+  assert.equal(app.state.jenkinsStatus, "all");
+  assert.equal(app.state.jenkinsPage, 1);
+  assert.equal(app.state.jenkinsPageSize, 10);
+  assert.equal(app.state.ciImportDraft, null);
 });

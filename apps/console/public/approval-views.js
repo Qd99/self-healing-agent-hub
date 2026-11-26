@@ -1,3 +1,5 @@
+import { isV20 } from "./workspace-model.js";
+import { renderWorkspaceApprovalEvidence } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { escapeHtml as e } from "./model.js";
 import { getApprovalFlow } from "./approvals.js";
@@ -344,7 +346,7 @@ export function renderApprovalPage(state) {
     )
     .join(
       "",
-    )}</div><div class="af-review-body">${flow.status === "unavailable" && tab === "flow" ? uiEmpty({ icon: "Workflow", title: "审批流程尚未接入", description: "没有服务端节点证据时，不推测检查或审批结果。", className: "af-empty" }) : tab === "flow" ? renderFlowCanvas(entry, { selectedNodeId: state.approvalNodeId, mode: state.mode, zoom: state.flowZoom }) + renderNodeInspector(entry, flow, state) : tab === "diff" ? renderChanges(entry) : renderHistory(flow)}</div></section></div>`;
+    )}</div><div class="af-review-body">${isV20(state) && tab === "flow" ? renderWorkspaceApprovalEvidence(entry, state) : ""}${flow.status === "unavailable" && tab === "flow" ? uiEmpty({ icon: "Workflow", title: "审批流程尚未接入", description: "没有服务端节点证据时，不推测检查或审批结果。", className: "af-empty" }) : tab === "flow" ? renderFlowCanvas(entry, { selectedNodeId: state.approvalNodeId, mode: state.mode, zoom: state.flowZoom }) + renderNodeInspector(entry, flow, state) : tab === "diff" ? renderChanges(entry) : renderHistory(flow)}</div></section></div>`;
 }
 
 /** Compact decision card for the overview; all actions lead to the full flow. */

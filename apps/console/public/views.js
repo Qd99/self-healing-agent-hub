@@ -1,3 +1,7 @@
+import { renderWorkbenchPage } from "./workbench-views.js";
+import { renderJenkinsWorkspace } from "./jenkins-workspace.js";
+import { isV20 } from "./workspace-model.js";
+import { renderWorkspaceEngines, renderWorkspaceExecutionDetail } from "./workspace-views.js";
 import { icon } from "./icons.js";
 import { renderStudioDashboard } from "./dashboard.js";
 import {
@@ -17,11 +21,23 @@ import {
 import { filterActivities } from "./administration-model.js";
 import { uiButton, uiStatus, uiEmpty, uiSelect } from "./ui.js";
 import { renderTaskFeedback, renderReconciliation } from "./task-feedback.js";
+import {
+  renderCiImport,
+  renderTaskSource,
+  renderTaskVerification,
+} from "./ci-views.js";
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
   tasks: { title: "全部任务", icon: "ListChecks" },
   approvals: { title: "审批中心", icon: "GitPullRequestArrow" },
+  jenkins: { title: "Jenkins", icon: "Workflow" },
+  requirements: {title:"需求与评审",icon:"GitPullRequestArrow"},
+  trace: {title:"全链路观测",icon:"Activity"},
+  tests: {title:"自动化测试",icon:"FlaskConical"},
+  metrics: {title:"性能与告警",icon:"ChartNoAxesCombined"},
+  knowledge: {title:"知识与评估",icon:"BookOpen"},
+  radar: {title:"技术雷达",icon:"Radar"},
   engines: { title: "执行引擎", icon: "Bot" },
   rules: { title: "路由规则", icon: "Workflow" },
   safety: { title: "安全策略", icon: "ShieldCheck" },
@@ -120,7 +136,7 @@ function renderPage(s) {
   const activityCount = s.snapshot
     ? filterActivities(s.snapshot.activity, s.activityFilters).length
     : 0;
-  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading || s.refreshing, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger || Boolean(s.pendingAction) || s.authRequired, title: !s.snapshot?.capabilities.trigger ? "当前服务未开放创建任务" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : s.snapshot.capabilities.approve ? "服务端审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
+  const header = `<div class="page-heading"><h1>${pages[s.view].title}</h1><div class="row page-heading-actions">${s.view === "overview" ? periodSelect(s.days) : ""}${["overview", "tasks"].includes(s.view) ? `${uiButton({ label: "", icon: "RefreshCw", action: "refresh", loading: s.loading || s.refreshing, className: "btn", attrs: 'aria-label="刷新工作台"', title: "刷新" })}${s.view === "tasks" ? uiButton({ label: "导入 CI", icon: "Download", action: "ci-import-open", disabled: !s.snapshot || Boolean(s.pendingAction) || s.authRequired, title: s.snapshot?.integrations?.jenkins?.configured ? "导入 Jenkins 失败构建" : "查看 CI 来源接入状态" }) : ""}${uiButton({ label: "发起巡检", icon: "Plus", action: "new-task", variant: "primary", disabled: !s.snapshot?.capabilities.trigger || Boolean(s.pendingAction) || s.authRequired, title: !s.snapshot?.capabilities.trigger ? "当前服务未开放创建任务" : "" })}` : s.view === "activity" ? uiButton({ label: "导出记录", icon: "Download", action: "administration-export", disabled: !activityCount }) : s.view === "approvals" && s.snapshot ? uiStatus({ label: s.mode === "demo" ? "演示审批" : s.snapshot.capabilities.approve ? "服务端审批" : "只读审批", icon: "LockKeyhole", tone: "neutral" }) : ""}</div></div>`;
   if (s.authRequired) return header + renderSessionForm(s);
   if (s.loading && s.view !== "settings")
     return (
@@ -132,6 +148,13 @@ function renderPage(s) {
   const views = {
     overview: renderStudioDashboard,
     approvals: renderApprovalPage,
+    jenkins: renderJenkinsWorkspace,
+    requirements:renderWorkbenchPage,
+    trace:renderWorkbenchPage,
+    tests:renderWorkbenchPage,
+    metrics:renderWorkbenchPage,
+    knowledge:renderWorkbenchPage,
+    radar:renderWorkbenchPage,
     tasks: renderTaskPage,
     engines,
     rules: renderRulesPage,
@@ -162,6 +185,7 @@ function connectionError() {
 }
 
 function engines(s) {
+  if (isV20(s)) return renderWorkspaceEngines(s, engineName);
   return `<div class="ui-setting-stack">${s.snapshot.engines.map((x) => `<section class="ui-card"><header class="ui-section-header"><h2>${icon(x.id === "fast" ? "Zap" : "Workflow", 17)}${e(engineName(x.id))}</h2>${uiStatus({ label: { unavailable: "等待 Agent 接入", idle: "可领取任务", running: "运行中", error: "连接异常" }[x.status] || "状态未知", icon: x.status === "running" ? "Activity" : "Plug", tone: x.status === "running" ? "info" : x.status === "idle" ? "success" : "neutral" })}</header><dl class="ui-config-grid"><div><dt>适用任务</dt><dd>${x.id === "fast" ? "格式、Lint 与轻量修复" : "诊断、多步骤修复与验证"}</dd></div><div><dt>配置模型</dt><dd>${e(x.model || "未配置")}</dd></div><div><dt>引擎类型</dt><dd><code>${e(x.type)}</code></dd></div><div><dt>关联规则</dt><dd>${uiButton({ label: `${s.snapshot.rules.filter((r) => r.processor.engine === x.id).length} 条路由规则`, action: "navigate", variant: "ghost", attrs: 'data-view="rules"' })}</dd></div></dl></section>`).join("")}<details class="ui-card ui-fold"><summary>执行引擎接入说明</summary><div class="ui-fold-content">当前展示${s.mode === "demo" ? "示例" : "已读取的"}配置，任务由已认证的 Agent 领取并回传进度与结果。显示已配置不代表 Agent 在线，实际运行以任务记录为准。</div></details></div>`;
 }
 
@@ -239,10 +263,11 @@ export function renderTaskDetail(item, s) {
     )
     .join(
       "",
-    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderReconciliation(item, s)}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
+    )}</div><div class="detail-content">${renderTaskFeedback(item)}${renderTaskVerification(item, s)}${renderReconciliation(item, s)}${isV20(s) && tab === "trace" ? renderWorkspaceExecutionDetail(item, s) : ""}${tab === "trace" ? renderTaskSource(item) : ""}${body}</div><div class="detail-bottom"><small>${s.mode === "demo" ? "演示操作 · 不会提交真实变更" : item.execution?.cancelRequested ? "已请求取消，等待 Agent 确认停止" : "操作与执行证据由管理服务保存"}</small><div class="row">${buttons}</div></div>`;
 }
 
 export function renderCreate(s) {
+  if (s.createMode === "ci") return renderCiImport(s);
   const draft = {
     title: "",
     type: "type-error",

@@ -1,3 +1,6 @@
+import { createAdvancedMetrics } from "./advanced-metrics.mjs";
+import { createAdvancedRoutes } from "./advanced-routes.mjs";
+import { createWorkbenchConnectors } from "./workbench-connectors.mjs";
 import { createServer } from "node:http";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import {
@@ -264,6 +267,9 @@ export function createConsoleServer({
   grafanaFetch = globalThis.fetch,
   clock = Date.now,
   leaseMs,
+  integrationsConfig,
+  integrationsFetch = globalThis.fetch,
+  integrationsEnv = process.env,
 } = {}) {
   const assetRoot = resolve(publicDir);
   const storageRoot = resolve(dataDir);
@@ -273,6 +279,9 @@ export function createConsoleServer({
     rootDir: resolve(rootDir),
     dataDir: storageRoot,
     clock,
+    integrationsConfig,
+    integrationsFetch,
+    integrationsEnv,
     ...(leaseMs === undefined ? {} : { leaseMs }),
   });
   const auth = createConsoleAuth({
@@ -282,10 +291,14 @@ export function createConsoleServer({
     secureCookies,
     clock,
   });
+  const workbench=createWorkbenchConnectors({env:integrationsEnv,fetchImpl:integrationsFetch,grafanaFetch,grafanaAllowedOrigins,grafanaToken,clock});
+  const advancedRoutes=createAdvancedRoutes({service,env:integrationsEnv,consoleToken,workerToken,auth,readBody,requireMethod,json,fetchImpl:integrationsFetch,clock});
+  const advancedMetrics=createAdvancedMetrics({service,env:integrationsEnv,rootDir:resolve(rootDir),integrationsConfig,fetchImpl:integrationsFetch,clock});
   let shutdownPromise;
   let closingService;
   const closeService = () => (closingService ||= service.close());
   const server = createServer((request, response) => {
+    advancedMetrics.record(request,response);
     void (async () => {
       const path = pathname(request);
       const [canonicalAssets, canonicalStorage] = await Promise.all([
@@ -305,6 +318,7 @@ export function createConsoleServer({
       if (!path.startsWith("/api/healing/"))
         throw new ConsoleError(404, "NOT_FOUND", "API route not found.");
       const route = path.slice("/api/healing".length);
+      if(await advancedRoutes.machine(route,request,response))return;
       if (route === "/session") {
         requireMethod(request, ["POST", "DELETE"]);
         request.resume();
@@ -334,7 +348,7 @@ export function createConsoleServer({
       if (route.startsWith("/worker/")) {
         const identity = auth.authenticateWorker(request);
         const target =
-          /^\/worker\/tasks\/([^/]+)\/(heartbeat|proposal|complete|cancelled)$/.exec(
+          /^\/worker\/tasks\/([^/]+)\/(heartbeat|proposal|complete|cancelled|observe|quality-gate)$/.exec(
             route,
           );
         if (route !== "/worker/claim" && !target)
@@ -351,6 +365,8 @@ export function createConsoleServer({
             : await service[
                 {
                   heartbeat: "heartbeat",
+                  observe: "observe",
+                  "quality-gate": "checkAdvancedGate",
                   proposal: "proposal",
                   complete: "complete",
                   cancelled: "acknowledgeCancellation",
@@ -360,18 +376,49 @@ export function createConsoleServer({
         return;
       }
       const identity = auth.authenticate(request);
+      if(await advancedRoutes.manager(route,request,response,identity))return;
       if (route === "/snapshot") {
         requireMethod(request, "GET");
         request.resume();
         json(response, 200, auth.decorate(await service.snapshot(), identity));
         return;
       }
+      if(route==="/workbench/records"){
+        requireMethod(request,["GET","POST"]);
+        if(request.method==="GET"){
+          request.resume();
+          const p=new URL(request.url,"http://localhost").searchParams;
+          json(response,200,await service.workbenchRecords({kind:p.get("kind"),key:p.get("key")||undefined,page:Number(p.get("page")||1),pageSize:Number(p.get("pageSize")||20),history:p.get("history")==="1",issueNumber:p.has("issueNumber")?Number(p.get("issueNumber")):undefined,contractHash:p.get("contractHash")||undefined,baselineSha:p.get("baselineSha")||undefined}));
+          return;
+        }
+        auth.assertWrite(request,identity);
+        const body=await readBody(request);
+        let binding;
+        if(body.kind==="review"){
+          const snapshot=await service.snapshot();
+          const current=await workbench.issue(snapshot,body.payload?.issueNumber);
+          if(current.item.state!=="open"||current.item.bodyTruncated||current.item.bodyRedacted) throw new ConsoleError(409,"WORKBENCH_REVIEW_STALE","已关闭或未完整读取的需求不能追加当前评审。");
+          binding={projectId:snapshot.project.id,repo:snapshot.project.repo,issueNumber:current.item.number,contractHash:current.item.contractHash,baselineSha:current.item.baselineSha};
+        }
+        json(response,200,await service.saveWorkbenchRecord(body,identity.actor,binding));
+        return;
+      }
+      const workspaceRead=/^\/workbench\/(github-issues|github-prs|github-issue|github-pr|zentao|metrics|alerts)$/.exec(route);
+      if(workspaceRead){
+        requireMethod(request,"GET");
+        request.resume();
+        const params=new URL(request.url,"http://localhost").searchParams;
+        json(response,200,await workbench.read(workspaceRead[1],await service.snapshot(),params));
+        return;
+      }
       const taskAction = /^\/tasks\/([^/]+)\/(cancel|retry)$/.exec(route);
+      const verification = /^\/tasks\/([^/]+)\/verification$/.exec(route);
       const reconciliation = /^\/tasks\/([^/]+)\/reconcile$/.exec(route);
       const decision = /^\/approvals\/([^/]+)\/decision$/.exec(route);
       const rule = /^\/rules\/([^/]+)$/.exec(route);
       if (
         ![
+          "/integrations/jenkins/builds",
           "/trigger",
           "/tasks/bulk",
           "/monitoring",
@@ -379,6 +426,7 @@ export function createConsoleServer({
         ].includes(route) &&
         !taskAction &&
         !reconciliation &&
+        !verification &&
         !decision &&
         !rule
       )
@@ -406,7 +454,15 @@ export function createConsoleServer({
         });
         return;
       }
-      if (route === "/trigger")
+      if (route === "/integrations/jenkins/builds")
+        result = await service.importJenkinsBuild(body, identity.actor);
+      else if (verification)
+        result = await service.verifyResult(
+          verification[1],
+          body,
+          identity.actor,
+        );
+      else if (route === "/trigger")
         result = await service.trigger(body, identity.actor);
       else if (route === "/tasks/bulk")
         result = await service.bulk(body, identity.actor);
@@ -463,7 +519,10 @@ export function createConsoleServer({
   });
   server.requestTimeout = 30_000;
   server.headersTimeout = 15_000;
+  let sampleTimer;
+  if(service.advanced.enabled&&integrationsEnv.HUB_METRICS_SAMPLING==="1")server.on("listening",()=>{void advancedMetrics.sample();sampleTimer=setInterval(()=>void advancedMetrics.sample(),60000);sampleTimer.unref();});
   server.on("close", () => {
+    clearInterval(sampleTimer);
     void closeService().catch(() => {});
   });
   server.shutdown = () =>

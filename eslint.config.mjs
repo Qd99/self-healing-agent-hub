@@ -10,6 +10,8 @@ export default [
       "**/coverage/**",
       "**/.nyc_output/**",
       "**/.healing/**",
+      // Embedded upstream has an independent toolchain and own tests.
+      "apps/agent-autoloop/**",
     ],
   },
   {
@@ -25,6 +27,8 @@ export default [
   {
     files: [
       "apps/healing-hub/**/*.{js,mjs,cjs}",
+      "apps/healing-worker/**/*.{js,mjs,cjs}",
+      "packages/framework/**/*.mjs",
       "scripts/**/*.{js,mjs,cjs}",
       "tests/**/*.{js,mjs,cjs}",
       "*.config.{js,mjs,cjs}",

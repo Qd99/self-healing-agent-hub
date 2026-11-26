@@ -1,3 +1,4 @@
+import { activityPageSize, isV20 } from "./workspace-model.js";
 import { applyDemoAction } from "./data.js";
 import {
   DEFAULT_ACTIVITY_FILTERS,
@@ -30,9 +31,11 @@ export function createAdministrationController({
       ...DEFAULT_ACTIVITY_FILTERS,
       ...state.activityFilters,
     };
+    state.activityPageSize = isV20(state) ? activityPageSize(state.activityPageSize) : 15;
     state.activityPage = getActivityPage(state.snapshot?.activity, {
       filters: state.activityFilters,
       page: state.activityPage,
+      pageSize: state.activityPageSize,
     }).page;
     state.ruleFilters = { ...DEFAULT_RULE_FILTERS, ...state.ruleFilters };
   }
@@ -72,7 +75,10 @@ export function createAdministrationController({
   function handleChange(event) {
     const id = event.target?.id,
       value = event.target?.value;
-    if (id === "activity-category") {
+    if (id === "activity-page-size" && isV20(state)) {
+      state.activityPageSize = activityPageSize(value);
+      state.activityPage = 1;
+    } else if (id === "activity-category") {
       state.activityFilters.category = ACTIVITY_CATEGORIES.some(
         (x) => x.value === value,
       )
@@ -124,6 +130,7 @@ export function createAdministrationController({
       state.activityPage = getActivityPage(state.snapshot?.activity, {
         filters: state.activityFilters,
         page: button.dataset.page,
+        pageSize: state.activityPageSize,
       }).page;
       redraw(button.id);
       if (typeof document !== "undefined") {
@@ -226,6 +233,7 @@ export function createAdministrationController({
   }
 
   function reset() {
+    state.activityPageSize = 15;
     state.activityFilters = { ...DEFAULT_ACTIVITY_FILTERS };
     state.activityPage = 1;
     state.ruleFilters = { ...DEFAULT_RULE_FILTERS };

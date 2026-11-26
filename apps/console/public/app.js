@@ -1,9 +1,11 @@
+import { createWorkbenchController } from "./workbench-controller.js";
 import { createApiClient } from "./api-client.js";
 import { createDemoSnapshot, applyDemoAction } from "./data.js";
 import { createTaskController } from "./task-controller.js";
 import { createAdministrationController } from "./administration-controller.js";
 import { renderActivityDetail } from "./administration-views.js";
 import { createMonitoringController } from "./monitoring-controller.js";
+import { createCiController } from "./ci-controller.js";
 import { installInteractionFeedback } from "./interaction.js";
 import { uiStatus } from "./ui.js";
 import { getApprovalFlow } from "./approvals.js";
@@ -43,6 +45,7 @@ const readSidebar = () => {
 const state = {
   view: pages[location.hash.slice(1)] ? location.hash.slice(1) : "overview",
   mode: requestedMode === "demo" ? "demo" : "live",
+  presentation: document.documentElement?.dataset?.consoleUi === "v20" ? "v20" : "legacy",
   theme: readTheme() === "dark" ? "dark" : "light",
   snapshot: null,
   error: "",
@@ -54,6 +57,15 @@ const state = {
   authPending: false,
   createDraft: null,
   createError: "",
+  createMode: "task",
+  jenkinsQuery: "",
+  jenkinsStatus: "all",
+  jenkinsPage: 1,
+  jenkinsPageSize: 10,
+  ciImportDraft: null,
+  ciImportError: "",
+  ciImportResult: null,
+  ciVerificationFeedback: null,
   overviewTab: "focus",
   days: 7,
   expandedTask: "",
@@ -104,6 +116,13 @@ const monitoringController = createMonitoringController({
   api,
   runMutation,
 });
+const ciController = createCiController({
+  state,
+  api,
+  runMutation,
+  refreshWorkspace,
+});
+const workbenchController=createWorkbenchController({state,api,render,runMutation,requireAuthentication,refreshSnapshot:()=>loadData()});
 const flowResizeObserver = new ResizeObserver((entries) => {
   for (const { target } of entries) fitFlowCanvas(target);
 });
@@ -190,6 +209,9 @@ function refreshDetail() {
     (element) => [element.scrollTop, element.scrollLeft],
   );
   const receiptOpen = detailDialog.querySelector(".task-receipts")?.open;
+  const ciDisclosures = [".ci-candidate", ".ci-contexts"].filter(
+    (selector) => detailDialog.querySelector(selector)?.open,
+  );
   const selection =
     focused && typeof focused.selectionStart === "number"
       ? [focused.selectionStart, focused.selectionEnd]
@@ -208,6 +230,10 @@ function refreshDetail() {
   if (receiptOpen) {
     const receipts = detailDialog.querySelector(".task-receipts");
     if (receipts) receipts.open = true;
+  }
+  for (const selector of ciDisclosures) {
+    const disclosure = detailDialog.querySelector(selector);
+    if (disclosure) disclosure.open = true;
   }
   if (focused) {
     const replacement = [
@@ -243,6 +269,7 @@ function refreshWorkspace() {
   render();
   refreshDetail();
   refreshCreate();
+  void workbenchController.sync();
 }
 function closeDetail() {
   if (detailDialog.open) detailDialog.close();
@@ -277,6 +304,7 @@ function openTask(id, tab = "trace") {
   state.reconciliationDraft = null;
   state.reconciliationError = "";
   state.reconciliationSuccess = "";
+  state.ciVerificationFeedback = null;
   state.selectedRule = "";
   state.selectedActivity = "";
   state.detailTab = ["trace", "diff", "evidence", "logs"].includes(tab)
@@ -315,7 +343,22 @@ function openActivity(id) {
   if (!detailDialog.open) detailDialog.showModal();
   detailDialog.querySelector('[data-action="close-detail"]')?.focus();
 }
-function openCreate() {
+function openCreate(kind = "task") {
+  if (kind === "ci") {
+    if (!state.snapshot || state.pendingAction || state.authRequired) return;
+    lastFocus = document.activeElement;
+    state.createMode = "ci";
+    const sourceId = state.snapshot.integrations?.jenkins?.sourceId;
+    if (state.ciImportDraft?.sourceId !== sourceId) {
+      state.ciImportDraft = { sourceId, buildNumber: "" };
+      state.ciImportError = "";
+      state.ciImportResult = null;
+    }
+    createDialog.innerHTML = renderCreate(state);
+    createDialog.showModal();
+    createDialog.querySelector("#ci-build-number")?.focus();
+    return;
+  }
   if (
     !state.snapshot?.capabilities.trigger ||
     state.pendingAction ||
@@ -325,6 +368,7 @@ function openCreate() {
     return;
   }
   lastFocus = document.activeElement;
+  state.createMode = "task";
   state.createDraft ||= {
     title: "",
     type: "type-error",
@@ -345,6 +389,7 @@ function go(view) {
   if (location.hash !== `#${view}`) history.pushState(null, "", `#${view}`);
   state.view = view;
   render();
+  void workbenchController.sync();
   window.scrollTo({ top: 0 });
   document.querySelector("#main-content")?.focus({ preventScroll: true });
 }
@@ -376,6 +421,7 @@ window.addEventListener("hashchange", () => {
   closeDetail();
   closeCreate();
   render();
+  void workbenchController.sync();
   window.scrollTo({ top: 0 });
 });
 
@@ -440,7 +486,7 @@ function setSnapshot(next) {
     state.authError = "";
   } else demoSnapshot = next;
   const projectChanged =
-    state.snapshot && state.snapshot.project.id !== next.project.id;
+    state.snapshot && (state.snapshot.project.id !== next.project.id || state.snapshot.project.repo !== next.project.repo);
   if (projectChanged) {
     taskController.reset(true);
     administrationController.reset();
@@ -448,12 +494,15 @@ function setSnapshot(next) {
     closeCreate();
     state.createDraft = null;
     state.approvalComment = "";
+    ciController.reset();
+    workbenchController.reset();
   }
   state.snapshot = next;
   state.error = "";
   return true;
 }
 function requireAuthentication(error) {
+  workbenchController.reset();
   state.authRequired = true;
   state.authError = error?.message || "登录已过期，请重新输入管理令牌。";
   state.resumeCreate = createDialog.open || state.resumeCreate;
@@ -478,6 +527,8 @@ async function loadData(mode = state.mode, { background = false } = {}) {
     state.authRequired = false;
     state.approvalComment = "";
     state.createDraft = null;
+    ciController.reset();
+    workbenchController.reset();
   }
   state.mode = mode;
   state.loading = !state.snapshot;
@@ -553,7 +604,7 @@ async function authenticate(form) {
     state.loading = false;
     if (state.resumeCreate) {
       state.resumeCreate = false;
-      openCreate();
+      openCreate(state.createMode);
     }
     toast(result.message || "已连接管理服务", "success");
   } catch (error) {
@@ -605,6 +656,7 @@ document.addEventListener("click", (event) => {
   if (administrationController.handleClick(event, button)) return;
   if (monitoringController.handleClick(event, button)) return;
   if (!button || button.disabled) return;
+  if(workbenchController.handleClick(event,button))return;
   const { action, id, tab, view, mode, command, theme } = button.dataset;
   if (action === "sidebar-toggle") {
     state.sidebarCollapsed = !state.sidebarCollapsed;
@@ -725,7 +777,8 @@ document.addEventListener("click", (event) => {
     document
       .querySelector(`[data-action="expand-task"][data-id="${CSS.escape(id)}"]`)
       ?.focus();
-  } else if (action === "open-task") openTask(id, tab);
+  } else if(action==="wb-open-trace"){go("trace");workbenchController.selectTask(id);}
+  else if (action === "open-task") openTask(id, tab);
   else if (action === "close-detail") closeDetail();
   else if (action === "detail-tab") {
     state.detailTab = tab;
@@ -734,7 +787,28 @@ document.addEventListener("click", (event) => {
       .querySelector(`[data-action="detail-tab"][data-tab="${tab}"]`)
       ?.focus();
   } else if (action === "new-task") openCreate();
-  else if (action === "close-create") closeCreate();
+  else if (action === "ci-import-open") openCreate("ci");
+  else if (action === "ci-verify") ciController.verifyTask(id);
+  else if (state.view === "jenkins" && action === "jenkins-page") {
+    state.jenkinsPage = Math.max(1, Number(button.dataset.page) || 1);
+    render();
+    document.querySelector('.jenkins-records [aria-current="page"]')?.focus({ preventScroll: true });
+  } else if (state.view === "jenkins" && action === "jenkins-status-filter") {
+    state.jenkinsStatus = button.dataset.value;
+    state.jenkinsPage = 1;
+    render();
+    document.getElementById(button.id)?.focus({ preventScroll: true });
+  } else if (state.view === "jenkins" && action === "jenkins-reset") {
+    state.jenkinsQuery = "";
+    state.jenkinsStatus = "all";
+    state.jenkinsPage = 1;
+    render();
+    document.getElementById("jenkins-search")?.focus({ preventScroll: true });
+  }
+  else if (action === "ci-open-task") {
+    go("tasks");
+    openTask(id);
+  } else if (action === "close-create") closeCreate();
   else if (action === "mode") loadData(mode === "demo" ? "demo" : "live");
   else if (action === "refresh") {
     const expectedSequence = loadSequence + 1;
@@ -763,6 +837,8 @@ document.addEventListener("click", (event) => {
         state.createDraft = null;
         state.approvalComment = "";
         state.monitoringDirty = false;
+        ciController.reset();
+        workbenchController.reset();
         closeDetail();
         closeCreate();
         taskController.reset(true);
@@ -821,12 +897,35 @@ function captureReconciliationDraft(target) {
   return true;
 }
 
+function captureCiImportDraft(target) {
+  if (!target.closest?.("#ci-import-form") || target.name !== "buildNumber")
+    return false;
+  if (state.pendingAction === "ci-import") return true;
+  state.ciImportDraft ||= {
+    sourceId: state.snapshot?.integrations?.jenkins?.sourceId,
+  };
+  state.ciImportDraft.buildNumber = target.value;
+  state.ciImportResult = null;
+  state.ciImportError = "";
+  document.querySelector(".ci-import-result")?.remove?.();
+  const error = document.querySelector("#ci-import-error");
+  if (error) error.textContent = "";
+  return true;
+}
 document.addEventListener("input", (event) => {
+  if(workbenchController.handleInput(event))return;
+  if (captureCiImportDraft(event.target)) return;
   if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
     if (state.pendingAction === "trigger") return;
     state.createDraft ||= {};
     state.createDraft[event.target.name] = event.target.value;
+    return;
+  }
+  if (state.view === "jenkins" && event.target.id === "jenkins-search") {
+    state.jenkinsQuery = event.target.value.slice(0, 200);
+    state.jenkinsPage = 1;
+    if (!event.isComposing) render();
     return;
   }
   if (administrationController.handleInput(event)) return;
@@ -838,15 +937,31 @@ document.addEventListener("input", (event) => {
   taskController.handleInput(event);
 });
 document.addEventListener("compositionend", (event) => {
+  if(event.target.id==="wb-search"&&workbenchController.handleInput(event))return;
+  if (state.view === "jenkins" && event.target.id === "jenkins-search") {
+    state.jenkinsQuery = event.target.value.slice(0, 200);
+    state.jenkinsPage = 1;
+    render();
+    return;
+  }
   if (administrationController.handleCompositionEnd(event)) return;
   if (event.target.id === "task-search") taskController.handleInput(event);
 });
 document.addEventListener("change", (event) => {
+  if(workbenchController.handleChange(event))return;
+  if (captureCiImportDraft(event.target)) return;
   if (captureReconciliationDraft(event.target)) return;
   if (event.target.closest?.("#create-form") && event.target.name) {
     if (state.pendingAction === "trigger") return;
     state.createDraft ||= {};
     state.createDraft[event.target.name] = event.target.value;
+    return;
+  }
+  if (state.view === "jenkins" && ["jenkins-status", "jenkins-page-size"].includes(event.target.id)) {
+    if (event.target.id === "jenkins-status") state.jenkinsStatus = event.target.value;
+    else state.jenkinsPageSize = [10, 20, 50].includes(Number(event.target.value)) ? Number(event.target.value) : 10;
+    state.jenkinsPage = 1;
+    render();
     return;
   }
   if (administrationController.handleChange(event)) return;
@@ -862,6 +977,12 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("submit", (event) => {
+  if(workbenchController.handleSubmit(event))return;
+  if (event.target.id === "ci-import-form") {
+    event.preventDefault();
+    ciController.importBuild(Object.fromEntries(new FormData(event.target)));
+    return;
+  }
   if (event.target.id === "reconciliation-form") {
     event.preventDefault();
     const id = event.target.dataset.taskId;
