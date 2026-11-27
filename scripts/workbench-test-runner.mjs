@@ -1,6 +1,7 @@
 import { spawn, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { findTestFiles, suiteFiles } from "./test-files.mjs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,8 +20,11 @@ if (!["console", "worker", "all"].includes(options.suite) || !/^[A-Za-z0-9][A-Za
 const timeout = Number(options.timeout);
 if (!Number.isSafeInteger(timeout) || timeout < 1 || timeout > 900 || !options.out) throw Error("Provide --out and --timeout 1..900 seconds");
 const out = resolve(options.out);
-const files = (await readdir(join(root, "tests"), { withFileTypes: true })).filter(d => d.isFile() && d.name.endsWith(".test.mjs") && (options.suite === "all" || d.name.startsWith(options.suite + "-"))).map(d => join(root, "tests", d.name)).sort();
+const discovered = suiteFiles(await findTestFiles(root), options.suite);
+const files = discovered.map(path => join(root, path));
 if (!files.length) throw Error("No trusted suite files found");
+// Preserve the single JSON report summary on stdout for existing callers.
+console.error(JSON.stringify({ suite: options.suite, files: discovered }));
 const scratch = await mkdtemp(join(tmpdir(), "hub-test-run-"));
 try {
   const env = { PATH: process.env.PATH || "", HOME: scratch, TMPDIR: scratch, LANG: "C.UTF-8", TZ: "UTC", GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0" };

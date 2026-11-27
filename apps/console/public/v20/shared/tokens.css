@@ -1,0 +1,78 @@
+/* Final Heal V20 palette. These tokens are scoped by the separate entry document. */
+:root {
+  color-scheme: light;
+  --v-bg: #f6f7f9;
+  --v-nav: #eef1f4;
+  --v-paper: #fff;
+  --v-canvas: #f8f9fb;
+  --v-soft: #f5f7fa;
+  --v-line: #e3e7ec;
+  --v-ink: #222a36;
+  --v-muted: #626f7f;
+  --v-faint: #7e8996;
+  --v-hover: #f2f4f7;
+  --v-select: #e6edf8;
+  --v-accent: #365786;
+  --v-active: #294a7a;
+  --v-green: #26816b;
+  --v-red: #b84449;
+  --v-amber: #a06a27;
+  --v-blue: #457db8;
+  --v-code: #f5f6f8;
+  --v-shadow: 0 8px 30px #25344b16;
+  --v-scrim: #17202b33;
+  --v-button: #344b70;
+  --v-button-ink: #fff;
+  --v-font:
+    -apple-system, BlinkMacSystemFont, "Inter", "PingFang SC",
+    "Noto Sans CJK SC", sans-serif;
+  --v-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --v-bg: #151922;
+    --v-nav: #191e27;
+    --v-paper: #202630;
+    --v-canvas: #191e26;
+    --v-soft: #242b36;
+    --v-line: #333c49;
+    --v-ink: #e5eaf2;
+    --v-muted: #a0abba;
+    --v-faint: #7f8999;
+    --v-hover: #29323e;
+    --v-select: #2b3b55;
+    --v-accent: #9db9e7;
+    --v-active: #c3d7f8;
+    --v-green: #77c3ae;
+    --v-red: #f09296;
+    --v-amber: #deb47c;
+    --v-blue: #8ab9f2;
+    --v-code: #191f27;
+    --v-shadow: 0 10px 36px #0005;
+    --v-scrim: #0006;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --v-bg: #151922;
+  --v-nav: #191e27;
+  --v-paper: #202630;
+  --v-canvas: #191e26;
+  --v-soft: #242b36;
+  --v-line: #333c49;
+  --v-ink: #e5eaf2;
+  --v-muted: #a0abba;
+  --v-faint: #7f8999;
+  --v-hover: #29323e;
+  --v-select: #2b3b55;
+  --v-accent: #9db9e7;
+  --v-active: #c3d7f8;
+  --v-green: #77c3ae;
+  --v-red: #f09296;
+  --v-amber: #deb47c;
+  --v-blue: #8ab9f2;
+  --v-code: #191f27;
+  --v-shadow: 0 10px 36px #0005;
+  --v-scrim: #0006;
+}

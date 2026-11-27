@@ -1,3 +1,5 @@
+import { operations } from "./v20/api/contract.generated.js";
+
 /** Same-origin management transport. Management tokens never leave a session request. */
 export class ConsoleApiError extends Error {
   constructor(
@@ -15,6 +17,7 @@ export class ConsoleApiError extends Error {
 export function createApiClient({
   fetch: fetchRequest = globalThis.fetch,
   timeoutMs = 10000,
+  validateResponse = () => {},
 } = {}) {
   let csrfToken = "";
   let revision = -1;
@@ -35,7 +38,8 @@ export function createApiClient({
     sessionGeneration += 1;
     uncertainRequests.clear();
   }
-  async function request(path, { method = "GET", body, token, signal } = {}) {
+  function invalidateReads() { sessionGeneration += 1; }
+  async function request(path, { method = "GET", body, token, signal, acceptSnapshot } = {}) {
     if (method !== "GET" && token === undefined && !csrfToken)
       throw new ConsoleApiError("请先连接管理服务，再执行此操作。", {
         code: "CSRF_REQUIRED",
@@ -92,7 +96,10 @@ export function createApiClient({
         throw new ConsoleApiError("管理服务返回的数据格式不正确。", {
           code: "INVALID_RESPONSE",
         });
-      if (generation === sessionGeneration) setSnapshot(data.snapshot || data);
+      validateResponse({ method, path, data });
+      if (generation === sessionGeneration && (!acceptSnapshot || acceptSnapshot(data.snapshot || data))) {
+        setSnapshot(data.snapshot || data);
+      }
       return data;
     } catch (error) {
       if (error instanceof ConsoleApiError) throw error;
@@ -147,7 +154,8 @@ export function createApiClient({
   return {
     setSnapshot,
     clearSession,
-    getSnapshot: (options = {}) => request("/api/healing/snapshot", options),
+    invalidateReads,
+    getSnapshot: (options = {}) => request(operations.snapshotRead.path, options),
     readWorkbench(kind, params={}, options={}) {
       if(!["github-issues","github-prs","github-issue","github-pr","zentao","metrics","alerts","records"].includes(kind))
         return Promise.reject(new ConsoleApiError("不支持的工作区查询。",{code:"INVALID_ACTION"}));
@@ -165,11 +173,11 @@ export function createApiClient({
     },
     async createSession(token) {
       clearSession();
-      return request("/api/healing/session", { method: "POST", token });
+      return request(operations.sessionCreate.path, { method: operations.sessionCreate.method, token });
     },
     async deleteSession() {
-      const result = await request("/api/healing/session", {
-        method: "DELETE",
+      const result = await request(operations.sessionDelete.path, {
+        method: operations.sessionDelete.method,
       });
       clearSession();
       return result;

@@ -1,3 +1,4 @@
+import { API_PREFIX, operations } from "../../../packages/contract/src/console-p1.mjs";
 import { createAdvancedMetrics } from "./advanced-metrics.mjs";
 import { createAdvancedRoutes } from "./advanced-routes.mjs";
 import { createWorkbenchConnectors } from "./workbench-connectors.mjs";
@@ -312,17 +313,24 @@ export function createConsoleServer({
           "持久数据目录不能位于静态资源目录内，包括符号链接目标。",
         );
       if (path !== "/api" && !path.startsWith("/api/")) {
-        await staticFile(request, response, assetRoot, path, canonicalStorage);
+        if (path === "/v20") {
+          requireMethod(request, ["GET", "HEAD"]);
+          const query = new URL(request.url, "http://localhost").searchParams.toString();
+          response.writeHead(307, { Location: `v20/${query ? `?${query}` : ""}`, "Cache-Control": "no-store" });
+          response.end();
+          return;
+        }
+        await staticFile(request, response, assetRoot, path === "/v20/" ? "/v20/index.html" : path, canonicalStorage);
         return;
       }
-      if (!path.startsWith("/api/healing/"))
+      if (!path.startsWith(API_PREFIX + "/"))
         throw new ConsoleError(404, "NOT_FOUND", "API route not found.");
-      const route = path.slice("/api/healing".length);
+      const route = path.slice(API_PREFIX.length);
       if(await advancedRoutes.machine(route,request,response))return;
-      if (route === "/session") {
-        requireMethod(request, ["POST", "DELETE"]);
+      if (route === operations.sessionCreate.route) {
+        requireMethod(request, [operations.sessionCreate.method, operations.sessionDelete.method]);
         request.resume();
-        if (request.method === "DELETE") {
+        if (request.method === operations.sessionDelete.method) {
           const cookie = auth.logout(request);
           json(
             response,
@@ -377,8 +385,8 @@ export function createConsoleServer({
       }
       const identity = auth.authenticate(request);
       if(await advancedRoutes.manager(route,request,response,identity))return;
-      if (route === "/snapshot") {
-        requireMethod(request, "GET");
+      if (route === operations.snapshotRead.route) {
+        requireMethod(request, operations.snapshotRead.method);
         request.resume();
         json(response, 200, auth.decorate(await service.snapshot(), identity));
         return;
