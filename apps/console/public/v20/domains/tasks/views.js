@@ -20,8 +20,34 @@ function summary(counts, selected = "all") {
 function taskName(row, taskHref) {
   return `<a class="v-task-name" href="${e(taskHref(row.id))}">${e(row.title)}</a><div class="v-meta"><span class="v-id">${e(row.id)}</span><span>${e(row.type)}</span></div>`;
 }
+/** Bars come from real per-day counts; an empty week says so instead of drawing. */
+export function renderTrend(trend = []) {
+  const total = trend.reduce((sum, day) => sum + day.count, 0);
+  if (!total)
+    return empty(
+      "近 7 天没有新建任务",
+      "统计来自任务记录的创建时间；没有记录就不绘制曲线。",
+    );
+  const W = 640,
+    H = 150,
+    L = 30,
+    R = 8,
+    T = 10,
+    B = 24;
+  const max = Math.max(...trend.map((day) => day.count));
+  const width = (W - L - R) / trend.length;
+  const bars = trend
+    .map((day, index) => {
+      const height = (day.count / max) * (H - T - B);
+      const x = L + index * width + width * 0.22;
+      return `<rect x="${x.toFixed(1)}" y="${(H - B - height).toFixed(1)}" width="${(width * 0.56).toFixed(1)}" height="${height.toFixed(1)}" rx="3" class="v-bar"><title>${e(day.key)} · ${day.count} 项</title></rect><text x="${(x + width * 0.28).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="v-axis-label">${e(day.label)}</text>`;
+    })
+    .join("");
+  return `<figure class="v-chart"><figcaption>近 7 天新建 ${total} 项 · 北京时间</figcaption><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="近 7 天新建任务 ${total} 项"><line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" class="v-axis"/>${bars}</svg></figure>`;
+}
+
 export function renderOverview(model, { taskHref = defaultHref } = {}) {
-  return `${summary(model.counts)}<div class="v-workgrid"><section class="v-plane"><header class="v-section-head"><div><h2>最近执行</h2><p>按最近可核时间排序 · 北京时间</p></div><a href="#tasks">全部任务 →</a></header>${model.recent.length ? `<div class="v-feed"><div class="v-feed-head"><span>任务</span><span>当前动作</span><span>状态 / 执行引擎</span></div>${model.recent.map((row) => `<article class="v-feed-row"><div>${taskName(row, taskHref)}</div><p class="v-current">${e(row.currentAction)}</p><div>${status(row.statusLabel, row.tone)}<small>${e(row.engineName)}</small></div></article>`).join("")}</div>` : empty("还没有任务", "连接成功。此项目的管理快照中暂时没有任务。")}</section><aside class="v-rail"><section class="v-plane"><header class="v-section-head"><h2>需要处理</h2><button class="v-link" data-scope="attention">查看全部 →</button></header>${model.attention.length ? model.attention.map((row) => `<a class="v-attention" href="${e(taskHref(row.id))}">${status(row.statusLabel, row.tone)}<strong>${e(row.title)}</strong><small>${e(row.message || row.phase)}</small></a>`).join("") : empty("暂无待处理任务")}</section><section class="v-plane"><h2>数据来源</h2><dl class="v-properties"><div><dt>管理服务</dt><dd>${status("已读取", "success")}</dd></div><div><dt>持久化</dt><dd>${e(model.storage === "ready" ? "可用" : "只读")}</dd></div><div><dt>快照时间</dt><dd>${e(formatTime(model.generatedAt))}</dd></div></dl><p class="v-note">当前展示管理服务的真实任务快照。执行进度以服务端记录和已采集观测为准。</p></section><section class="v-plane"><header class="v-section-head"><h2>执行引擎</h2><a href="#workers">查看执行器 →</a></header>${model.engines?.length ? `<dl class="v-properties">${model.engines.map((engine) => `<div><dt>${e(engine.name || engine.id)}</dt><dd>${e(engine.status)}</dd></div>`).join("")}</dl>` : empty("未登记执行引擎")}</section></aside></div>`;
+  return `${summary(model.counts)}<div class="v-workgrid"><section class="v-plane"><header class="v-section-head"><div><h2>执行态势</h2><p>按任务创建时间统计</p></div><a href="#monitor">性能监控 →</a></header>${renderTrend(model.trend)}</section><section class="v-plane"><header class="v-section-head"><div><h2>最近执行</h2><p>按最近可核时间排序 · 北京时间</p></div><a href="#tasks">全部任务 →</a></header>${model.recent.length ? `<div class="v-feed"><div class="v-feed-head"><span>任务</span><span>当前动作</span><span>状态 / 执行引擎</span></div>${model.recent.map((row) => `<article class="v-feed-row"><div>${taskName(row, taskHref)}</div><p class="v-current">${e(row.currentAction)}</p><div>${status(row.statusLabel, row.tone)}<small>${e(row.engineName)}</small></div></article>`).join("")}</div>` : empty("还没有任务", "连接成功。此项目的管理快照中暂时没有任务。")}</section><aside class="v-rail"><section class="v-plane"><header class="v-section-head"><h2>需要处理</h2><button class="v-link" data-scope="attention">查看全部 →</button></header>${model.attention.length ? model.attention.map((row) => `<a class="v-attention" href="${e(taskHref(row.id))}">${status(row.statusLabel, row.tone)}<strong>${e(row.title)}</strong><small>${e(row.message || row.phase)}</small></a>`).join("") : empty("暂无待处理任务")}</section><section class="v-plane"><h2>数据来源</h2><dl class="v-properties"><div><dt>管理服务</dt><dd>${status("已读取", "success")}</dd></div><div><dt>持久化</dt><dd>${e(model.storage === "ready" ? "可用" : "只读")}</dd></div><div><dt>快照时间</dt><dd>${e(formatTime(model.generatedAt))}</dd></div></dl><p class="v-note">当前展示管理服务的真实任务快照。执行进度以服务端记录和已采集观测为准。</p></section><section class="v-plane"><header class="v-section-head"><h2>执行引擎</h2><a href="#workers">查看执行器 →</a></header>${model.engines?.length ? `<dl class="v-properties">${model.engines.map((engine) => `<div><dt>${e(engine.name || engine.id)}</dt><dd>${e(engine.status)}</dd></div>`).join("")}</dl>` : empty("未登记执行引擎")}</section></aside></div>`;
 }
 export function renderTasks(
   model,

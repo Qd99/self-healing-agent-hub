@@ -96,6 +96,31 @@ export function taskRows(snapshot) {
     );
 }
 
+/**
+ * Daily creation counts for the last seven days, taken only from tasks whose
+ * creation time is known. Days without tasks stay zero because the count is
+ * computed from real records, not from a placeholder series.
+ */
+export function dailyTrend(snapshot, now = Date.now()) {
+  const days = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const day = new Date(now - offset * 86400000);
+    days.push({
+      key: day.toISOString().slice(0, 10),
+      label: `${day.getMonth() + 1}/${day.getDate()}`,
+      count: 0,
+    });
+  }
+  for (const item of snapshot?.tasks ?? []) {
+    const at = item.task.metadata?.createdAt;
+    if (typeof at !== "string" || !Number.isFinite(Date.parse(at))) continue;
+    const key = new Date(at).toISOString().slice(0, 10);
+    const day = days.find((entry) => entry.key === key);
+    if (day) day.count += 1;
+  }
+  return days;
+}
+
 export function overviewModel(snapshot) {
   const rows = taskRows(snapshot);
   return {
@@ -108,6 +133,7 @@ export function overviewModel(snapshot) {
     },
     recent: rows.slice(0, 7),
     attention: rows.filter((x) => x.attention).slice(0, 5),
+    trend: dailyTrend(snapshot),
     generatedAt: snapshot?.generatedAt ?? null,
     project: snapshot?.project,
     storage: snapshot?.storage?.status,

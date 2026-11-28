@@ -5,6 +5,7 @@ import {
   taskDetail,
   overviewModel,
   taskListModel,
+  dailyTrend,
 } from "../public/v20/domains/tasks/model.js";
 import {
   renderOverview,
@@ -129,4 +130,35 @@ test("hash routes round-trip encoded task identities without interpreting them a
   assert.equal(parseRoute("#../../data.js").page, "overview");
   assert.equal(parseRoute("#tasks?scope=unknown").scope, "all");
   assert.equal(parseRoute("#tasks?task=%").taskId, "%");
+});
+
+test("the workbench trend counts only real task creation days", () => {
+  const now = Date.parse("2026-11-28T04:00:00.000Z");
+  const snapshot = {
+    tasks: [
+      { task: { id: "a", metadata: { createdAt: "2026-11-28T01:00:00.000Z" } } },
+      { task: { id: "b", metadata: { createdAt: "2026-11-28T02:00:00.000Z" } } },
+      { task: { id: "c", metadata: { createdAt: "2026-11-26T02:00:00.000Z" } } },
+      { task: { id: "d", metadata: {} } },
+    ],
+  };
+  const trend = dailyTrend(snapshot, now);
+  assert.equal(trend.length, 7);
+  assert.equal(trend.at(-1).count, 2);
+  assert.equal(trend.at(-3).count, 1);
+  assert.equal(trend.reduce((n, d) => n + d.count, 0), 3);
+});
+
+test("an empty week renders an honest empty state instead of a flat line", () => {
+  const html = renderOverview({
+    counts: { total: 0, running: 0, attention: 0, queued: 0, ended: 0 },
+    recent: [],
+    attention: [],
+    trend: dailyTrend({ tasks: [] }, Date.parse("2026-11-28T04:00:00.000Z")),
+    storage: "ready",
+    engines: [],
+    generatedAt: "2026-11-28T04:00:00.000Z",
+  });
+  assert.match(html, /近 7 天没有新建任务/);
+  assert.ok(!html.includes("undefined"));
 });

@@ -898,3 +898,7 @@ small {
 .v-work-panel table {
   margin-top: 4px;
 }
+
+/* Trend bars on the workbench: real per-day counts, no placeholder series. */
+.v-bar { fill: var(--v-blue); }
+.v-axis-label { fill: var(--v-faint); font-size: 10px; }
