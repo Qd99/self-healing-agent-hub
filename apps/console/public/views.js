@@ -29,13 +29,13 @@ import {
 
 export const pages = {
   overview: { title: "工作台", icon: "LayoutDashboard" },
-  tasks: { title: "全部任务", icon: "ListChecks" },
+  tasks: { title: "任务", icon: "ListChecks" },
   approvals: { title: "审批中心", icon: "GitPullRequestArrow" },
   jenkins: { title: "Jenkins", icon: "Workflow" },
-  requirements: {title:"需求与评审",icon:"GitPullRequestArrow"},
-  trace: {title:"全链路观测",icon:"Activity"},
-  tests: {title:"自动化测试",icon:"FlaskConical"},
-  metrics: {title:"性能与告警",icon:"ChartNoAxesCombined"},
+  requirements: {title:"需求与审批",icon:"GitPullRequestArrow"},
+  trace: {title:"全链路",icon:"GitBranch"},
+  tests: {title:"测试",icon:"FlaskConical"},
+  metrics: {title:"性能监控",icon:"Activity"},
   knowledge: {title:"知识与评估",icon:"BookOpen"},
   radar: {title:"技术雷达",icon:"Radar"},
   engines: { title: "执行引擎", icon: "Bot" },
