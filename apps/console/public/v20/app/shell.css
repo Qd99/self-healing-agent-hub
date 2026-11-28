@@ -902,3 +902,4 @@ small {
 /* Trend bars on the workbench: real per-day counts, no placeholder series. */
 .v-bar { fill: var(--v-blue); }
 .v-axis-label { fill: var(--v-faint); font-size: 10px; }
+.v-feed-head { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--v-line); }
