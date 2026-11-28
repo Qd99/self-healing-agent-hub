@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { HealingError } from "./console-store.mjs";
 import { createJsonReader } from "./bounded-json.mjs";
+import { readSecret } from "./secrets.mjs";
 const bad = () => {
   throw new HealingError(
     422,
@@ -91,8 +92,8 @@ export function createJenkinsSource(
         "/";
       const headers = { Accept: "application/json" };
       if (config.usernameEnv || config.tokenEnv) {
-        const user = env[config.usernameEnv],
-          token = env[config.tokenEnv];
+        const user = readSecret(env, config.usernameEnv),
+          token = readSecret(env, config.tokenEnv);
         if (!user || !token)
           throw new HealingError(
             422,

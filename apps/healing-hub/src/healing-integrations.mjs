@@ -8,6 +8,11 @@ import {
   createGithubVerifier,
   normalizeVerificationPolicy,
 } from "./github-verification.mjs";
+import { readSecret } from "./secrets.mjs";
+
+/** Resolves a credential by env name, honouring a `<NAME>_FILE` variant. */
+const credential = (env, name) =>
+  typeof name === "string" && name ? readSecret(env, name) : "";
 export async function loadHealingIntegrations({
   rootDir,
   config,
@@ -31,12 +36,13 @@ export async function loadHealingIntegrations({
     credentials =
       jenkins &&
       ((!jenkins.usernameEnv && !jenkins.tokenEnv) ||
-        (env[jenkins.usernameEnv] && env[jenkins.tokenEnv]));
+        (credential(env, jenkins.usernameEnv) &&
+          credential(env, jenkins.tokenEnv)));
   const policy = normalizeVerificationPolicy(raw?.githubVerification),
     verification =
       raw?.githubVerification?.enabled === true &&
       Boolean(policy) &&
-      Boolean(env[raw.githubVerification.tokenEnv]);
+      Boolean(credential(env, raw.githubVerification.tokenEnv));
   return {
     snapshot: {
       jenkins: {
