@@ -6,6 +6,16 @@ import {
 } from "./process-runner.mjs";
 
 const OWNER_LABEL = "io.self-healing-agent-hub.check-owner";
+/**
+ * A check only has to run the project's tooling against an already prepared
+ * workspace, so it stays small. Dependency preparation writes a full
+ * node_modules tree and needs a working npm cache, which does not fit in the
+ * check budget; it gets its own, still bounded, allowance.
+ */
+const BUDGETS = Object.freeze({
+  check: { cpus: "1", memory: "512m", pids: "128", tmpfs: "64m" },
+  prepare: { cpus: "2", memory: "3g", pids: "256", tmpfs: "512m" },
+});
 const RUN_LABEL = "io.self-healing-agent-hub.check-token";
 const UUID =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -166,6 +176,7 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
       )
     )
       throw new Error("Invalid Docker check configuration");
+    const budget = BUDGETS[kind];
     const active = async () => {
       signal?.throwIfAborted();
       await assertActive?.();
@@ -199,13 +210,13 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--read-only",
-        "--cpus=1",
-        "--memory=512m",
-        "--pids-limit=128",
+        "--cpus=" + budget.cpus,
+        "--memory=" + budget.memory,
+        "--pids-limit=" + budget.pids,
         "--user",
         process.getuid() + ":" + process.getgid(),
         "--tmpfs",
-        "/tmp:rw,noexec,nosuid,size=64m",
+        "/tmp:rw,noexec,nosuid,size=" + budget.tmpfs,
         ...Object.entries(env).flatMap(([key, value]) => [
           "--env",
           key + "=" + value,

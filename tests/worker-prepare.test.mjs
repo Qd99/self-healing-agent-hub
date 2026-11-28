@@ -51,7 +51,7 @@ test("preparation keeps the container hardening that checks rely on", async () =
     "--cap-drop=ALL",
     "--security-opt=no-new-privileges",
     "--read-only",
-    "--pids-limit=128",
+    "--pids-limit=256",
     "--restart=no",
   ])
     assert.ok(args.includes(expected), expected);
@@ -306,4 +306,23 @@ test("populating a gitignored dependency tree does not count as changing the can
     d.artifact.files.map(({ path }) => path),
     ["value.txt"],
   );
+});
+
+test("a check keeps the small budget while preparation gets a larger one", async () => {
+  const transport = createDockerTransport();
+  const run = createCheckRunner({ runCommand: transport.runCommand });
+  await run({ cwd, image, argv: ["npm", "test"] });
+  const checkArgs = createArgs(transport);
+  assert.equal(flag(checkArgs, "--memory"), "--memory=512m");
+  assert.equal(flag(checkArgs, "--cpus"), "--cpus=1");
+  assert.equal(flag(checkArgs, "--pids-limit"), "--pids-limit=128");
+  assert.ok(checkArgs.includes("/tmp:rw,noexec,nosuid,size=64m"));
+
+  transport.calls.length = 0;
+  await run.prepare({ cwd, image, argv: ["npm", "ci"] });
+  const prepareArgs = createArgs(transport);
+  assert.equal(flag(prepareArgs, "--memory"), "--memory=3g");
+  assert.equal(flag(prepareArgs, "--cpus"), "--cpus=2");
+  assert.equal(flag(prepareArgs, "--pids-limit"), "--pids-limit=256");
+  assert.ok(prepareArgs.includes("/tmp:rw,noexec,nosuid,size=512m"));
 });
