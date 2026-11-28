@@ -26,15 +26,23 @@ export function validateCheckResource(resource) {
   if (
     !resource ||
     resource.version !== 1 ||
-    !UUID.test(resource.runId ?? "") ||
-    resource.name !== "healing-check-" + resource.runId ||
-    !validCwd(resource.cwd) ||
-    (resource.containerId !== undefined &&
-      !CONTAINER_ID.test(resource.containerId))
+    !UUID.test(resource.runId ?? "")
+  )
+    throw uncertain();
+  // `kind` was added with dependency preparation; journals written before it
+  // only ever contained check containers.
+  const kind = resource.kind === "prepare" ? "prepare" : "check";
+  if (resource.name !== "healing-" + kind + "-" + resource.runId)
+    throw uncertain();
+  if (!validCwd(resource.cwd)) throw uncertain();
+  if (
+    resource.containerId !== undefined &&
+    !CONTAINER_ID.test(resource.containerId)
   )
     throw uncertain();
   return {
     version: 1,
+    kind,
     name: resource.name,
     runId: resource.runId,
     cwd: resource.cwd,
@@ -123,20 +131,39 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
         : uncertain(error);
     }
   }
-  async function run(
-    { cwd, image, argv, timeoutMs = 120000 },
+  async function execute(
+    {
+      cwd,
+      image,
+      argv,
+      timeoutMs = 120000,
+      kind = "check",
+      network = "none",
+      env = {},
+    },
     { signal, assertActive, onResource } = {},
   ) {
     if (typeof image !== "string" || !/^\S+@sha256:[a-f0-9]{64}$/.test(image))
       throw new Error("Docker image must be pinned by digest");
     if (
+      !["check", "prepare"].includes(kind) ||
+      !["none", "bridge"].includes(network) ||
       !validCwd(cwd) ||
       !Array.isArray(argv) ||
       typeof argv[0] !== "string" ||
       !argv[0].trim() ||
       argv.some((v) => typeof v !== "string" || v.includes("\0")) ||
       !Number.isFinite(timeoutMs) ||
-      timeoutMs <= 0
+      timeoutMs <= 0 ||
+      typeof env !== "object" ||
+      env === null ||
+      Array.isArray(env) ||
+      Object.entries(env).some(
+        ([k, v]) =>
+          !/^[A-Za-z_][A-Za-z0-9_]*$/.test(k) ||
+          typeof v !== "string" ||
+          /[\r\n]/.test(v),
+      )
     )
       throw new Error("Invalid Docker check configuration");
     const active = async () => {
@@ -146,7 +173,13 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
     };
     await active();
     const runId = randomUUID();
-    let resource = { version: 1, name: "healing-check-" + runId, runId, cwd };
+    let resource = {
+      version: 1,
+      kind,
+      name: "healing-" + kind + "-" + runId,
+      runId,
+      cwd,
+    };
     // This must finish before even a stopped container can be created.
     await onResource?.(structuredClone(resource));
     let mayExist = false;
@@ -162,7 +195,7 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
         RUN_LABEL + "=" + runId,
         "--restart=no",
         "--pull=never",
-        "--network=none",
+        "--network=" + network,
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges",
         "--read-only",
@@ -173,6 +206,10 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
         process.getuid() + ":" + process.getgid(),
         "--tmpfs",
         "/tmp:rw,noexec,nosuid,size=64m",
+        ...Object.entries(env).flatMap(([key, value]) => [
+          "--env",
+          key + "=" + value,
+        ]),
         "--mount",
         "type=bind,source=" + cwd + ",target=/workspace",
         "--mount",
@@ -251,6 +288,39 @@ export function createCheckRunner({ runCommand = defaultRunCommand } = {}) {
       await onResource?.(null);
     }
   }
+  /**
+   * A check runs with no network and may not grow the workspace.
+   */
+  const run = (config, hooks) =>
+    execute({ ...config, kind: "check", network: "none", env: {} }, hooks);
+  /**
+   * Dependency preparation runs once after checkout, before the baseline
+   * checks. It needs the network to fetch packages and a writable workspace
+   * to create the dependency tree; the container root stays read-only, the
+   * Git directory stays read-only, and only gitignored paths may be written.
+   */
+  const prepare = (config, hooks) => {
+    if (
+      !config ||
+      !Array.isArray(config.argv) ||
+      !config.argv.length ||
+      config.argv.length > 32
+    )
+      throw new Error("Invalid dependency preparation configuration");
+    return execute(
+      {
+        cwd: config.cwd,
+        image: config.image,
+        argv: config.argv,
+        timeoutMs: config.timeoutMs ?? 600000,
+        kind: "prepare",
+        network: "bridge",
+        env: { HOME: "/tmp", npm_config_cache: "/tmp/.npm" },
+      },
+      hooks,
+    );
+  };
+  run.prepare = prepare;
   run.recover = recover;
   return run;
 }

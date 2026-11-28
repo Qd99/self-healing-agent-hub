@@ -139,31 +139,83 @@ function safePath(path, safety = {}) {
 }
 // Snapshot source AND metadata without invoking Git, following no symlinks.
 // This must run before host Git is reused after every check, even failed checks.
-async function snapshot(root) {
+/**
+ * Hashes every path that counts as candidate source: tracked files plus
+ * untracked files that are not gitignored. Dependency trees and build caches
+ * live in gitignored paths, so populating them is not treated as modifying the
+ * candidate, while any change to real source files still fails the comparison.
+ *
+ * Git metadata stays fully covered except for object contents, which are
+ * summarised by path and size: a check must not be able to rewrite a ref,
+ * config or hook, but it also must not pay for re-hashing large pack files.
+ */
+async function snapshot(root, git) {
   const entries = [];
-  let bytes = 0,
-    count = 0;
-  async function visit(dir, relative = "") {
+  let bytes = 0;
+  const listed = (
+    await git(root, [
+      "ls-files",
+      "-z",
+      "--cached",
+      "--others",
+      "--exclude-standard",
+    ])
+  )
+    .split("\0")
+    .filter(Boolean);
+  if (listed.length > 50000) throw new Error("Workspace file limit exceeded");
+  for (const key of listed.sort()) {
+    const path = join(root, key);
+    let stat;
+    try {
+      stat = await lstat(path);
+    } catch (error) {
+      // A tracked file may legitimately be deleted by the candidate patch.
+      if (error.code === "ENOENT") {
+        entries.push([key, "missing"]);
+        continue;
+      }
+      throw error;
+    }
+    if (stat.isSymbolicLink())
+      entries.push([key, "link", await readlink(path)]);
+    else if (stat.isFile()) {
+      bytes += stat.size;
+      if (bytes > 256 * 1024 * 1024)
+        throw new Error("Workspace size limit exceeded");
+      entries.push([key, stat.mode, sha256(await readFile(path))]);
+    } else if (stat.isDirectory()) entries.push([key, "dir", stat.mode]);
+    else throw new Error("Unsupported workspace file type");
+  }
+  let count = 0;
+  async function visitGit(dir, relative) {
     for (const name of (await readdir(dir)).sort()) {
       const path = join(dir, name),
-        key = relative ? `${relative}/${name}` : name,
-        stat = await lstat(path);
+        key = relative ? `${relative}/${name}` : name;
       if (++count > 50000) throw new Error("Workspace file limit exceeded");
+      const stat = await lstat(path);
       if (stat.isSymbolicLink())
-        entries.push([key, "link", await readlink(path)]);
+        entries.push([".git/" + key, "link", await readlink(path)]);
       else if (stat.isDirectory()) {
-        entries.push([key, "dir", stat.mode]);
-        await visit(path, key);
+        entries.push([".git/" + key, "dir", stat.mode]);
+        await visitGit(path, key);
       } else if (stat.isFile()) {
+        // Object contents are content-addressed; their presence and size are
+        // enough to detect a swap, and hashing packs on every check is not.
+        if (key.startsWith("objects/") && !key.startsWith("objects/info/")) {
+          entries.push([".git/" + key, stat.size]);
+          continue;
+        }
         bytes += stat.size;
         if (bytes > 256 * 1024 * 1024)
           throw new Error("Workspace size limit exceeded");
-        entries.push([key, stat.mode, sha256(await readFile(path))]);
+        entries.push([".git/" + key, stat.mode, sha256(await readFile(path))]);
       } else throw new Error("Unsupported workspace file type");
     }
   }
-  await visit(root);
-  return sha256(JSON.stringify(entries));
+  await visitGit(join(root, ".git"), "");
+  const head = await git(root, ["rev-parse", "HEAD"]);
+  return sha256(JSON.stringify([head, entries]));
 }
 function manifestEqual(a, b) {
   return (
@@ -352,11 +404,51 @@ export function createWorkspaceEngine(
       throw error;
     }
   }
+  /**
+   * Installs dependencies once, before any check runs. The step is optional:
+   * without `checks.prepare` the worker behaves exactly as before, so a
+   * self-contained check keeps working with no network access at all.
+   */
+  async function prepareDependencies(cwd, options) {
+    const prepare = config.checks.prepare;
+    if (!prepare) return;
+    if (typeof runCheck.prepare !== "function")
+      throw new Error("Dependency preparation is not supported by this runner");
+    observe(options, "prepare", "start");
+    try {
+      const result = await runCheck.prepare(
+        {
+          cwd,
+          image: prepare.image ?? config.checks.image,
+          argv: prepare.argv,
+          timeoutMs: prepare.timeoutMs,
+        },
+        {
+          signal: options.signal,
+          assertActive: options.assertActive,
+          onResource: async (check) => {
+            await options.resourceSession.set({
+              ...options.resourceSession.current,
+              check,
+            });
+          },
+        },
+      );
+      if (options.resourceSession.current?.check) throw cleanupUncertain();
+      if (!Number.isInteger(result?.exitCode) || result.exitCode !== 0)
+        throw new Error("Dependency preparation failed");
+      await active(options);
+      observe(options, "prepare", "returned");
+    } catch (error) {
+      if (options.resourceSession.current?.check) throw cleanupUncertain();
+      throw error;
+    }
+  }
   async function checks(cwd, ids, options) {
     const records = [];
     for (const id of ids) {
       await active(options);
-      const before = await snapshot(cwd);
+      const before = await snapshot(cwd, git);
       let result, error;
       try {
         result = await runCheck(
@@ -382,7 +474,7 @@ export function createWorkspaceEngine(
         error = e;
       }
       if (options.resourceSession.current?.check) throw cleanupUncertain();
-      if (before !== (await snapshot(cwd)))
+      if (before !== (await snapshot(cwd, git)))
         throw new Error("Check modified workspace files or Git metadata");
       if (error) throw error;
       await active(options);
@@ -462,7 +554,7 @@ export function createWorkspaceEngine(
     }
   }
   async function measure(cwd, base, safety, signal) {
-    await git(cwd, ["add", "--all", "--force", "--", "."], signal);
+    await git(cwd, ["add", "--all", "--", "."], signal);
     const renameParts = (
       await git(
         cwd,
@@ -648,6 +740,7 @@ export function createWorkspaceEngine(
       const cwd = await checkout(task.commitSha, options);
       observe(options, "checkout", "returned");
       try {
+        await prepareDependencies(cwd, options);
         observe(options, "baseline-checks", "start");
         const before = await checks(cwd, ids, options);
         observe(options, "baseline-checks", "returned");
@@ -744,6 +837,7 @@ export function createWorkspaceEngine(
         throw new Error("Missing, tampered or stale candidate artifact");
       const cwd = await checkout(task.commitSha, options);
       try {
+        await prepareDependencies(cwd, options);
         const patchPath = join(cwd, ".git", "approved.patch");
         await writeFile(patchPath, artifact.patch);
         await git(

@@ -80,7 +80,7 @@ export function resolveConfig(
     ["endpoint", "model", "tokenEnv", "contextPaths", "timeoutMs"],
     "model",
   );
-  object(c.checks, ["image", "commands", "timeoutMs"], "checks");
+  object(c.checks, ["image", "commands", "timeoutMs", "prepare"], "checks");
   c.github ??= {};
   object(c.github, ["tokenEnv"], "github");
   c.publish ??= { enabled: false };
@@ -138,6 +138,26 @@ export function resolveConfig(
     if (!Array.isArray(argv) || !argv.length || argv.length > 50)
       fail("checks argv");
     argv.forEach((x) => text(x, "checks argv"));
+  }
+  if (c.checks.prepare !== undefined) {
+    object(c.checks.prepare, ["argv", "timeoutMs", "image"], "checks.prepare");
+    const argv = c.checks.prepare.argv;
+    if (!Array.isArray(argv) || !argv.length || argv.length > 32)
+      fail("checks.prepare.argv");
+    argv.forEach((x) => text(x, "checks.prepare.argv"));
+    if (
+      c.checks.prepare.image !== undefined &&
+      !/^\S+@sha256:[a-f0-9]{64}$/.test(c.checks.prepare.image)
+    )
+      fail("checks.prepare.image");
+    c.checks.prepare.timeoutMs = number(
+      c.checks.prepare.timeoutMs ?? 600000,
+      600000,
+      1000,
+      1800000,
+      "checks.prepare.timeoutMs",
+    );
+    c.checks.prepare.image ??= c.checks.image;
   }
   for (const [section, fallback] of [
     ["hub", "HEALING_WORKER_TOKEN"],
