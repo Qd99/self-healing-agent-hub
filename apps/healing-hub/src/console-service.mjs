@@ -29,21 +29,14 @@ import {
   normalizeMonitoringConfig,
 } from "../../console/public/monitoring-model.js";
 
+import {
+  taskPriorities,
+  taskTypes,
+} from "../../../packages/contract/src/console-p1.mjs";
+
 const defaultRoot = fileURLToPath(new URL("../../../", import.meta.url));
-const TASK_TYPES = new Set([
-  "lint-error",
-  "format-error",
-  "type-error",
-  "unit-test-failure",
-  "e2e-test-failure",
-  "architecture-violation",
-  "security-issue",
-  "ci-failure",
-  "doc-outdated",
-  "dependency-issue",
-  "performance-regression",
-]);
-const PRIORITIES = new Set(["urgent", "high", "medium", "low"]);
+const TASK_TYPES = new Set(Object.keys(taskTypes));
+const PRIORITIES = new Set(Object.keys(taskPriorities));
 const STATUSES = new Set([
   "pending",
   "running",

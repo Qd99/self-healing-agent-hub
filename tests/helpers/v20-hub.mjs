@@ -48,7 +48,7 @@ export async function createV20Hub(t, options = {}) {
     workerToken,
     clock: options.clock ?? Date.now,
     leaseMs: options.leaseMs,
-    integrationsEnv: {},
+    integrationsEnv: options.integrationsEnv ?? {},
     integrationsConfig: {},
     secureCookies: options.secureCookies ?? false,
   });

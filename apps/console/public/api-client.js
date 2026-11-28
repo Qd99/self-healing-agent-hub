@@ -1,4 +1,4 @@
-import { operations } from "./v20/api/contract.generated.js";
+import { existingOperations, existingPath, operations } from "./v20/api/contract.generated.js";
 
 /** Same-origin management transport. Management tokens never leave a session request. */
 export class ConsoleApiError extends Error {
@@ -39,7 +39,7 @@ export function createApiClient({
     uncertainRequests.clear();
   }
   function invalidateReads() { sessionGeneration += 1; }
-  async function request(path, { method = "GET", body, token, signal, acceptSnapshot } = {}) {
+  async function request(path, { method = "GET", body, token, signal, acceptSnapshot, operationId } = {}) {
     if (method !== "GET" && token === undefined && !csrfToken)
       throw new ConsoleApiError("请先连接管理服务，再执行此操作。", {
         code: "CSRF_REQUIRED",
@@ -65,6 +65,7 @@ export function createApiClient({
         credentials: "same-origin",
         cache: "no-store",
         signal: controller.signal,
+        ...(operationId === undefined ? {} : { redirect: "error" }),
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       if (!response.headers.get("content-type")?.includes("application/json"))
@@ -96,7 +97,7 @@ export function createApiClient({
         throw new ConsoleApiError("管理服务返回的数据格式不正确。", {
           code: "INVALID_RESPONSE",
         });
-      validateResponse({ method, path, data });
+      validateResponse({ method, path, data, operationId });
       if (generation === sessionGeneration && (!acceptSnapshot || acceptSnapshot(data.snapshot || data))) {
         setSnapshot(data.snapshot || data);
       }
@@ -123,7 +124,8 @@ export function createApiClient({
       signal?.removeEventListener("abort", abort);
     }
   }
-  async function idempotentRequest(path, body) {
+  async function idempotentRequest(path, body, options = {}) {
+    const generation = sessionGeneration;
     const signature = JSON.stringify([path, body]);
     const requestId =
       body.requestId ||
@@ -135,18 +137,18 @@ export function createApiClient({
       ).join("");
     try {
       const result = await request(path, {
+        ...options,
         method: "POST",
         body: { ...body, requestId },
       });
-      uncertainRequests.delete(signature);
+      if (generation === sessionGeneration) uncertainRequests.delete(signature);
       return result;
     } catch (error) {
-      if (
-        ["NETWORK_ERROR", "TIMEOUT", "INVALID_RESPONSE"].includes(error.code) ||
-        error.status >= 500
-      )
-        uncertainRequests.set(signature, requestId);
-      else uncertainRequests.delete(signature);
+      if (generation === sessionGeneration) {
+        if (["NETWORK_ERROR", "TIMEOUT", "INVALID_RESPONSE", "STALE_RESPONSE"].includes(error.code) || error.status >= 500)
+          uncertainRequests.set(signature, requestId);
+        else uncertainRequests.delete(signature);
+      }
       throw error;
     }
   }
@@ -155,6 +157,25 @@ export function createApiClient({
     setSnapshot,
     clearSession,
     invalidateReads,
+    async callExisting(action, { id, query, body, signal, acceptSnapshot } = {}) {
+      if (!Object.hasOwn(existingOperations, action))
+        throw new ConsoleApiError("不支持的管理操作。", { code: "INVALID_ACTION" });
+      let path;
+      try {
+        path = existingPath(action, id);
+      } catch {
+        throw new ConsoleApiError("管理操作的目标无效。", { code: "INVALID_ACTION" });
+      }
+      const op = existingOperations[action];
+      if (query && op.method !== "GET")
+        throw new ConsoleApiError("不支持的写入参数。", { code: "INVALID_ACTION" });
+      const params = new URLSearchParams(Object.entries(query ?? {}).filter(([, value]) => ["string", "number"].includes(typeof value)));
+      if (params.size) path += "?" + params;
+      const options = { signal, acceptSnapshot, operationId: action };
+      return op.idempotent
+        ? idempotentRequest(path, body ?? {}, options)
+        : request(path, { ...options, method: op.method, ...(op.method === "GET" ? {} : { body: body ?? {} }) });
+    },
     getSnapshot: (options = {}) => request(operations.snapshotRead.path, options),
     readWorkbench(kind, params={}, options={}) {
       if(!["github-issues","github-prs","github-issue","github-pr","zentao","metrics","alerts","records"].includes(kind))

@@ -45,19 +45,8 @@ export const pages = {
   monitoring: { title: "监控面板", icon: "ChartNoAxesCombined" },
   settings: { title: "连接设置", icon: "Settings2" },
 };
-export const taskTypes = {
-  "lint-error": "Lint 错误",
-  "format-error": "代码格式",
-  "type-error": "类型错误",
-  "unit-test-failure": "单元测试",
-  "e2e-test-failure": "端到端测试",
-  "architecture-violation": "架构检查",
-  "security-issue": "安全检查",
-  "ci-failure": "CI 失败",
-  "doc-outdated": "文档同步",
-  "dependency-issue": "依赖检查",
-  "performance-regression": "性能回归",
-};
+import { taskTypes } from "./v20/api/contract.generated.js";
+export { taskTypes };
 const statusNames = {
   completed: "已完成",
   failed: "失败",

@@ -24,6 +24,106 @@ export const operations = Object.freeze({
   ),
 });
 
+const read = (route, response = "list") =>
+  operation("GET", route, response, "management-session");
+const write = (
+  route,
+  capability,
+  { method = "POST", response = "mutation", idempotent = false } = {},
+) =>
+  Object.freeze({
+    ...operation(method, route, response, "management-session-csrf"),
+    capability,
+    idempotent,
+  });
+const dashboardRead = (path, response) =>
+  Object.freeze({ method: "GET", path, response, auth: "dashboard-basic" });
+
+export const taskTypes = Object.freeze({
+  "lint-error": "Lint 错误",
+  "format-error": "代码格式",
+  "type-error": "类型错误",
+  "unit-test-failure": "单元测试",
+  "e2e-test-failure": "端到端测试",
+  "architecture-violation": "架构检查",
+  "security-issue": "安全检查",
+  "ci-failure": "CI 失败",
+  "doc-outdated": "文档同步",
+  "dependency-issue": "依赖检查",
+  "performance-regression": "性能回归",
+});
+export const taskPriorities = Object.freeze({
+  urgent: "紧急",
+  high: "高",
+  medium: "中",
+  low: "低",
+});
+
+/** Existing human-facing operations only. No worker, telemetry or release endpoints. */
+export const existingOperations = Object.freeze({
+  taskCreate: write("/trigger", "trigger", {
+    response: "task-created",
+    idempotent: true,
+  }),
+  taskCancel: write("/tasks/:id/cancel", "cancel", { idempotent: true }),
+  taskRetry: write("/tasks/:id/retry", "retry", {
+    response: "task-created",
+    idempotent: true,
+  }),
+  taskBulk: write("/tasks/bulk", "bulk", {
+    response: "bulk",
+    idempotent: true,
+  }),
+  approvalDecide: write("/approvals/:id/decision", "approve"),
+  taskVerify: write("/tasks/:id/verification", "verifyResult"),
+  taskReconcile: write("/tasks/:id/reconcile", "reconcile", {
+    idempotent: true,
+  }),
+  jenkinsImport: write("/integrations/jenkins/builds", "importCi", {
+    idempotent: true,
+  }),
+  ruleUpdate: write("/rules/:id", "updateRules", { method: "PATCH" }),
+  monitoringUpdate: write("/monitoring", "updateMonitoring", { method: "PUT" }),
+  monitoringCheck: write("/monitoring/check", "updateMonitoring", {
+    response: "monitor-check",
+  }),
+  githubIssues: read("/workbench/github-issues"),
+  githubIssue: read("/workbench/github-issue", "github-detail"),
+  githubPrs: read("/workbench/github-prs"),
+  githubPr: read("/workbench/github-pr", "github-detail"),
+  zentaoRead: read("/workbench/zentao"),
+  recordsRead: read("/workbench/records"),
+  metricsRead: read("/workbench/metrics", "series"),
+  alertsRead: read("/workbench/alerts"),
+  profilesRead: read("/advanced/profiles", "profiles"),
+  jobsRead: read("/advanced/jobs"),
+  jobRead: read("/advanced/job", "job"),
+  traceRead: read("/advanced/trace"),
+  evidenceRead: read("/advanced/evidence"),
+  effectsRead: read("/advanced/effects"),
+  samplesRead: read("/advanced/samples"),
+  runnerRead: dashboardRead("/api/console/runner", "runner"),
+  feishuRead: dashboardRead("/api/feishu/channel", "feishu"),
+  autoloopRead: read("/workbench/autoloop", "autoloop"),
+});
+
+export function existingPath(action, id) {
+  if (!Object.hasOwn(existingOperations, action))
+    throw new TypeError("Unsupported management operation");
+  const { path } = existingOperations[action];
+  if (path.includes(":id")) {
+    if (
+      typeof id !== "string" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,179}$/.test(id)
+    )
+      throw new TypeError("Invalid management resource id");
+    return path.replace(":id", encodeURIComponent(id));
+  }
+  if (id !== undefined)
+    throw new TypeError("Unexpected management resource id");
+  return path;
+}
+
 const record = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const text = (v) => typeof v === "string";
 const nonempty = (v) => text(v) && v.length > 0;
@@ -153,5 +253,138 @@ export function validateResponse(operationId, value) {
     check(record(value) && text(value.message));
     snapshot(value.snapshot);
   } else check(record(value) && text(value.message));
+  return value;
+}
+
+export function validateExisting(action, value) {
+  check(Object.hasOwn(existingOperations, action) && record(value));
+  switch (existingOperations[action].response) {
+    case "mutation":
+    case "task-created":
+    case "bulk": {
+      check(text(value.message));
+      snapshot(value.snapshot);
+      if (existingOperations[action].response === "task-created")
+        check(nonempty(value.taskId));
+      if (existingOperations[action].response === "bulk") {
+        check(
+          record(value.report) &&
+            Array.isArray(value.report.applied) &&
+            Array.isArray(value.report.skipped),
+        );
+        check(
+          [...value.report.applied, ...value.report.skipped].every(
+            (x) => record(x) && text(x.id) && text(x.title),
+          ),
+        );
+      }
+      break;
+    }
+    case "monitor-check":
+      check(
+        record(value.check) &&
+          record(value.monitoring) &&
+          integer(value.revision),
+      );
+      break;
+    case "list":
+      check(Array.isArray(value.items) && value.items.every(record));
+      break;
+    case "github-detail":
+      check(
+        record(value.item) &&
+          integer(value.item.number) &&
+          text(value.item.title) &&
+          text(value.item.body) &&
+          Array.isArray(value.comments) &&
+          value.comments.every(record),
+      );
+      break;
+    case "series":
+      check(
+        text(value.metric) &&
+          text(value.unit) &&
+          text(value.namespace) &&
+          Array.isArray(value.points),
+      );
+      check(
+        value.points.length <= 241 &&
+          value.points.every(
+            (p, i, all) =>
+              Array.isArray(p) &&
+              p.length === 2 &&
+              Number.isFinite(p[0]) &&
+              (p[1] === null || Number.isFinite(p[1])) &&
+              (!i || p[0] > all[i - 1][0]),
+          ),
+      );
+      break;
+    case "profiles":
+      check(
+        typeof value.enabled === "boolean" && Array.isArray(value.profiles),
+      );
+      break;
+    case "job":
+      check(nonempty(value.id) && text(value.state));
+      break;
+    case "runner":
+      check(text(value.state));
+      break;
+    case "feishu":
+      check(
+        typeof value.online === "boolean" &&
+          text(value.bot) &&
+          text(value.user),
+      );
+      break;
+    case "autoloop":
+      // The Autoloop projection is a snapshot of the live workbench ledger:
+      // counts, runs, cards, agents, lines and channels, each explicitly capped.
+      check(
+        text(value.source) &&
+          value.source === "autoloop" &&
+          text(value.observedAt) &&
+          integer(value.seq) &&
+          record(value.totals) &&
+          Array.isArray(value.runs) &&
+          Array.isArray(value.cards) &&
+          Array.isArray(value.agents) &&
+          Array.isArray(value.lines) &&
+          Array.isArray(value.channels),
+      );
+      check(value.runs.length <= 120 && value.cards.length <= 200);
+      check(value.agents.length <= 60 && value.lines.length <= 60);
+      check(
+        value.runs.every(
+          (row) =>
+            record(row) &&
+            text(row.state) &&
+            text(row.rule) &&
+            text(row.agent) &&
+            Array.isArray(row.events),
+        ),
+      );
+      check(
+        value.cards.every(
+          (row) =>
+            record(row) &&
+            text(row.state) &&
+            text(row.title) &&
+            Array.isArray(row.options),
+        ),
+      );
+      check(
+        value.agents.every(
+          (row) =>
+            record(row) &&
+            text(row.id) &&
+            typeof row.online === "boolean" &&
+            record(row.totals),
+        ),
+      );
+      break;
+    default:
+      check(false);
+  }
   return value;
 }

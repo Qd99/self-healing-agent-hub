@@ -1,5 +1,6 @@
 import { createConsoleServer } from "./console-server.mjs";
 import { isLoopback } from "./console-auth.mjs";
+import { readSecret } from "./secrets.mjs";
 
 const host = process.env.HOST?.trim() || "127.0.0.1";
 const portText = process.env.PORT ?? "8787";
@@ -22,7 +23,7 @@ if (!/^\d+$/.test(portText) || !Number.isSafeInteger(port) || port > 65535) {
     workerToken: process.env.HEALING_WORKER_TOKEN?.trim() || "",
     actor: process.env.CONSOLE_OPERATOR_NAME?.trim() || "管理员",
     secureCookies: process.env.CONSOLE_SECURE_COOKIE === "true",
-    grafanaToken: process.env.GRAFANA_SERVICE_ACCOUNT_TOKEN?.trim() || "",
+    grafanaToken: readSecret(process.env, "GRAFANA_SERVICE_ACCOUNT_TOKEN"),
     grafanaAllowedOrigins: (process.env.GRAFANA_ALLOWED_ORIGINS || "")
       .split(",")
       .map((origin) => origin.trim())

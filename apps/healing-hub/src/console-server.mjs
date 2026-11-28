@@ -2,6 +2,7 @@ import { API_PREFIX, operations } from "../../../packages/contract/src/console-p
 import { createAdvancedMetrics } from "./advanced-metrics.mjs";
 import { createAdvancedRoutes } from "./advanced-routes.mjs";
 import { createWorkbenchConnectors } from "./workbench-connectors.mjs";
+import { createAutoloopConnector } from "./autoloop-connector.mjs";
 import { createServer } from "node:http";
 import { lstat, readFile, realpath, stat } from "node:fs/promises";
 import {
@@ -293,6 +294,7 @@ export function createConsoleServer({
     clock,
   });
   const workbench=createWorkbenchConnectors({env:integrationsEnv,fetchImpl:integrationsFetch,grafanaFetch,grafanaAllowedOrigins,grafanaToken,clock});
+  const autoloop=createAutoloopConnector({env:integrationsEnv,fetchImpl:integrationsFetch,clock});
   const advancedRoutes=createAdvancedRoutes({service,env:integrationsEnv,consoleToken,workerToken,auth,readBody,requireMethod,json,fetchImpl:integrationsFetch,clock});
   const advancedMetrics=createAdvancedMetrics({service,env:integrationsEnv,rootDir:resolve(rootDir),integrationsConfig,fetchImpl:integrationsFetch,clock});
   let shutdownPromise;
@@ -417,6 +419,12 @@ export function createConsoleServer({
         request.resume();
         const params=new URL(request.url,"http://localhost").searchParams;
         json(response,200,await workbench.read(workspaceRead[1],await service.snapshot(),params));
+        return;
+      }
+      if(route==="/workbench/autoloop"){
+        requireMethod(request,"GET");
+        request.resume();
+        json(response,200,await autoloop.read());
         return;
       }
       const taskAction = /^\/tasks\/([^/]+)\/(cancel|retry)$/.exec(route);

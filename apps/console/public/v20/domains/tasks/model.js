@@ -111,6 +111,11 @@ export function overviewModel(snapshot) {
     generatedAt: snapshot?.generatedAt ?? null,
     project: snapshot?.project,
     storage: snapshot?.storage?.status,
+    engines: (snapshot?.engines ?? []).map(({ id, name, status }) => ({
+      id,
+      name,
+      status,
+    })),
   };
 }
 

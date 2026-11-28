@@ -774,3 +774,127 @@ small {
     transition: none !important;
   }
 }
+
+/* Workspace pages: real panels, forms, charts and selection controls. */
+.v-work-panel {
+  margin-top: 18px;
+}
+.v-panel-body {
+  margin-top: 12px;
+}
+.v-work-stack > .v-work-panel:first-child,
+.v-detail-body > .v-work-panel:first-child {
+  margin-top: 0;
+}
+.v-form,
+.v-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+  margin-top: 10px;
+}
+.v-form label,
+.v-inline label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--v-muted);
+}
+.v-form input,
+.v-inline input,
+.v-form select,
+.v-inline select,
+.v-form textarea {
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--v-line);
+  border-radius: 8px;
+  background: var(--v-paper);
+  color: var(--v-ink);
+  font: inherit;
+}
+.v-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+.v-form input[type="number"] {
+  max-width: 110px;
+}
+.v-inline {
+  margin: 0 0 14px;
+}
+.v-bulk {
+  align-items: center;
+  margin: 12px 0;
+}
+.v-banner.is-error {
+  border-color: var(--v-red);
+  color: var(--v-red);
+}
+.v-workrail,
+.v-detail-section {
+  margin-top: 0;
+}
+.v-diffs pre {
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--v-line);
+  border-radius: 8px;
+  background: var(--v-code);
+  font-family: var(--v-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.v-chart {
+  margin: 8px 0 0;
+}
+.v-chart svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: var(--v-paper);
+  border: 1px solid var(--v-line);
+  border-radius: 8px;
+}
+.v-chart .v-axis {
+  stroke: var(--v-line);
+  stroke-width: 1;
+}
+.v-chart .v-series {
+  fill: none;
+  stroke: var(--v-chart-ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.v-chart-point {
+  fill: var(--v-paper);
+  stroke: var(--v-chart-ink);
+  stroke-width: 2;
+}
+.v-chart figcaption,
+.v-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--v-muted);
+  font-size: 12px;
+}
+.v-chart figcaption {
+  margin-bottom: 6px;
+}
+.v-deferred {
+  border: 1px dashed var(--v-line);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.v-deferred b {
+  color: var(--v-amber);
+}
+.v-work-panel .v-empty {
+  margin: 6px 0;
+}
+.v-work-panel table {
+  margin-top: 4px;
+}

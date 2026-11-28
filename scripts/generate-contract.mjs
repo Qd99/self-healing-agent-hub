@@ -16,7 +16,8 @@ export async function renderContract() {
     new URL("packages/contract/src/validate.mjs", root),
     "utf8",
   );
-  const dependency = 'import { operations } from "./console-p1.mjs";\n';
+  const dependency =
+    'import { existingOperations, operations } from "./console-p1.mjs";\n';
   if (!validation.startsWith(dependency))
     throw new Error("Unsupported contract dependency");
   return (

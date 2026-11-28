@@ -1,4 +1,4 @@
-import { operations } from "./console-p1.mjs";
+import { existingOperations, operations } from "./console-p1.mjs";
 
 const record = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
 const text = (v) => typeof v === "string";
@@ -129,5 +129,138 @@ export function validateResponse(operationId, value) {
     check(record(value) && text(value.message));
     snapshot(value.snapshot);
   } else check(record(value) && text(value.message));
+  return value;
+}
+
+export function validateExisting(action, value) {
+  check(Object.hasOwn(existingOperations, action) && record(value));
+  switch (existingOperations[action].response) {
+    case "mutation":
+    case "task-created":
+    case "bulk": {
+      check(text(value.message));
+      snapshot(value.snapshot);
+      if (existingOperations[action].response === "task-created")
+        check(nonempty(value.taskId));
+      if (existingOperations[action].response === "bulk") {
+        check(
+          record(value.report) &&
+            Array.isArray(value.report.applied) &&
+            Array.isArray(value.report.skipped),
+        );
+        check(
+          [...value.report.applied, ...value.report.skipped].every(
+            (x) => record(x) && text(x.id) && text(x.title),
+          ),
+        );
+      }
+      break;
+    }
+    case "monitor-check":
+      check(
+        record(value.check) &&
+          record(value.monitoring) &&
+          integer(value.revision),
+      );
+      break;
+    case "list":
+      check(Array.isArray(value.items) && value.items.every(record));
+      break;
+    case "github-detail":
+      check(
+        record(value.item) &&
+          integer(value.item.number) &&
+          text(value.item.title) &&
+          text(value.item.body) &&
+          Array.isArray(value.comments) &&
+          value.comments.every(record),
+      );
+      break;
+    case "series":
+      check(
+        text(value.metric) &&
+          text(value.unit) &&
+          text(value.namespace) &&
+          Array.isArray(value.points),
+      );
+      check(
+        value.points.length <= 241 &&
+          value.points.every(
+            (p, i, all) =>
+              Array.isArray(p) &&
+              p.length === 2 &&
+              Number.isFinite(p[0]) &&
+              (p[1] === null || Number.isFinite(p[1])) &&
+              (!i || p[0] > all[i - 1][0]),
+          ),
+      );
+      break;
+    case "profiles":
+      check(
+        typeof value.enabled === "boolean" && Array.isArray(value.profiles),
+      );
+      break;
+    case "job":
+      check(nonempty(value.id) && text(value.state));
+      break;
+    case "runner":
+      check(text(value.state));
+      break;
+    case "feishu":
+      check(
+        typeof value.online === "boolean" &&
+          text(value.bot) &&
+          text(value.user),
+      );
+      break;
+    case "autoloop":
+      // The Autoloop projection is a snapshot of the live workbench ledger:
+      // counts, runs, cards, agents, lines and channels, each explicitly capped.
+      check(
+        text(value.source) &&
+          value.source === "autoloop" &&
+          text(value.observedAt) &&
+          integer(value.seq) &&
+          record(value.totals) &&
+          Array.isArray(value.runs) &&
+          Array.isArray(value.cards) &&
+          Array.isArray(value.agents) &&
+          Array.isArray(value.lines) &&
+          Array.isArray(value.channels),
+      );
+      check(value.runs.length <= 120 && value.cards.length <= 200);
+      check(value.agents.length <= 60 && value.lines.length <= 60);
+      check(
+        value.runs.every(
+          (row) =>
+            record(row) &&
+            text(row.state) &&
+            text(row.rule) &&
+            text(row.agent) &&
+            Array.isArray(row.events),
+        ),
+      );
+      check(
+        value.cards.every(
+          (row) =>
+            record(row) &&
+            text(row.state) &&
+            text(row.title) &&
+            Array.isArray(row.options),
+        ),
+      );
+      check(
+        value.agents.every(
+          (row) =>
+            record(row) &&
+            text(row.id) &&
+            typeof row.online === "boolean" &&
+            record(row.totals),
+        ),
+      );
+      break;
+    default:
+      check(false);
+  }
   return value;
 }

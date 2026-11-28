@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { createJsonReader } from "./bounded-json.mjs";
 import { HealingError } from "./console-store.mjs";
 import { normalizeMonitoringConfig } from "../../console/public/monitoring-model.js";
+import { readSecret } from "./secrets.mjs";
 const fail = (status,code,message)=>{throw new HealingError(status,code,message);};
 const invalid=()=>fail(400,"INVALID_WORKBENCH_QUERY","查询参数无效。");
 const unavailable=()=>fail(422,"WORKBENCH_UNCONFIGURED","此数据源尚未配置或未启用。");
@@ -18,9 +19,13 @@ function baseUrl(raw){
 const endpoint=(base,path)=>new URL(base.replace(/\/$/,"")+path);
 const nextPage=link=>typeof link==="string"&&/rel="next"/.test(link);
 export function createWorkbenchConnectors({env=process.env,fetchImpl=globalThis.fetch,grafanaFetch=fetchImpl,grafanaAllowedOrigins=[],grafanaToken="",clock=Date.now}={}){
+  // Tokens may live in a 0600 file instead of the environment; both are read
+  // once so a per-request path never touches the filesystem.
+  const githubToken=readSecret(env,"HUB_GITHUB_READ_TOKEN");
+  const zentaoToken=readSecret(env,"HUB_ZENTAO_TOKEN");
   function clean(v,max=4000){
     let s=typeof v==="string"?v:"";
-    for(const secret of [env.HUB_GITHUB_READ_TOKEN,env.HUB_ZENTAO_TOKEN,grafanaToken])if(typeof secret==="string"&&secret.length>=4)s=s.split(secret).join("[REDACTED]");
+    for(const secret of [githubToken,zentaoToken,grafanaToken])if(typeof secret==="string"&&secret.length>=4)s=s.split(secret).join("[REDACTED]");
     return s.replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]{12,})\b/g,"[REDACTED]").replace(/(authorization\s*[:=]\s*bearer\s+|(?:api[_-]?key|password|token|secret)\s*[:=]\s*)[^\s,;]+/gi,"$1[REDACTED]").slice(0,max);
   }
   const result=(source,data)=>({source,observedAt:new Date(clock()).toISOString(),...data});
@@ -29,7 +34,7 @@ export function createWorkbenchConnectors({env=process.env,fetchImpl=globalThis.
     const repo=snapshot.project.repo;
     if(!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(repo)||[".",".."].includes(repo.split("/")[1]))invalid();
     const headers={Accept:"application/vnd.github+json","X-GitHub-Api-Version":"2022-11-28","User-Agent":"self-healing-agent-hub"};
-    if(env.HUB_GITHUB_READ_TOKEN)headers.Authorization="Bearer "+env.HUB_GITHUB_READ_TOKEN;
+    if(githubToken)headers.Authorization="Bearer "+githubToken;
     return {base:"https://api.github.com/repos/"+repo,reader:createJsonReader({origin:"https://api.github.com",headers,fetchImpl})};
   }
   const summary=x=>{
@@ -68,12 +73,12 @@ export function createWorkbenchConnectors({env=process.env,fetchImpl=globalThis.
     }finally{reader.close();}
   }
   async function zentao(p){
-    if(env.HUB_ZENTAO_ENABLED!=="1"||!env.HUB_ZENTAO_TOKEN||!env.HUB_ZENTAO_BASE_URL||!env.HUB_ZENTAO_PRODUCT_ID)unavailable();
+    if(env.HUB_ZENTAO_ENABLED!=="1"||!zentaoToken||!env.HUB_ZENTAO_BASE_URL||!env.HUB_ZENTAO_PRODUCT_ID)unavailable();
     const base=baseUrl(env.HUB_ZENTAO_BASE_URL),product=pos(env.HUB_ZENTAO_PRODUCT_ID),page=pos(p.get("page")||1,100),api=env.HUB_ZENTAO_API_VERSION||"v1";
     if(!["v1","v2"].includes(api))unavailable();
     const u=endpoint(base,"/api.php/"+api+"/products/"+product+"/testcases");
     u.search=new URLSearchParams(api==="v2"?{pageID:String(page),recPerPage:"20"}:{page:String(page),limit:"20"}).toString();
-    const reader=createJsonReader({origin:u.origin,headers:{Accept:"application/json",Token:env.HUB_ZENTAO_TOKEN},fetchImpl});
+    const reader=createJsonReader({origin:u.origin,headers:{Accept:"application/json",Token:zentaoToken},fetchImpl});
     try{
       const {data}=await reader.get(u);
       if(data?.status==="fail")fail(502,"UPSTREAM_FORMAT","禅道拒绝查询。");

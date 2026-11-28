@@ -13,6 +13,7 @@
   --v-hover: #f2f4f7;
   --v-select: #e6edf8;
   --v-accent: #365786;
+  --v-chart-ink: #457db8;
   --v-active: #294a7a;
   --v-green: #26816b;
   --v-red: #b84449;
@@ -43,6 +44,7 @@
     --v-hover: #29323e;
     --v-select: #2b3b55;
     --v-accent: #9db9e7;
+    --v-chart-ink: #5c93e3;
     --v-active: #c3d7f8;
     --v-green: #77c3ae;
     --v-red: #f09296;
@@ -67,6 +69,7 @@
   --v-hover: #29323e;
   --v-select: #2b3b55;
   --v-accent: #9db9e7;
+  --v-chart-ink: #5c93e3;
   --v-active: #c3d7f8;
   --v-green: #77c3ae;
   --v-red: #f09296;

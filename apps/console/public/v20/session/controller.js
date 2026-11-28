@@ -132,6 +132,69 @@ export function createSessionController({
   }
   return {
     state,
+    async execute(action, options) {
+      if (
+        disposed ||
+        busy ||
+        value.status !== "ready" ||
+        !value.snapshot ||
+        value.snapshot.storage.status !== "ready"
+      )
+        return null;
+      busy = true;
+      invalidate();
+      const g = generation;
+      const before = value.snapshot;
+      emit({ writePending: true });
+      try {
+        const result = await api.mutateExisting(action, options);
+        if (disposed || g !== generation) return null;
+        if (result.snapshot) {
+          if (scope(result.snapshot) !== scope(before))
+            throw Object.assign(new Error(), { code: "PROJECT_CHANGED" });
+          if (result.snapshot.revision < before.revision)
+            throw Object.assign(new Error(), { code: "STALE_RESPONSE" });
+          adopt(result.snapshot);
+        }
+        return result;
+      } catch (error) {
+        if (disposed || g !== generation) return null;
+        if (
+          error.status === 401 ||
+          ["AUTH_REQUIRED", "AUTH_UNCONFIGURED", "PROJECT_CHANGED"].includes(
+            error.code,
+          )
+        ) {
+          deny(error);
+        } else if (
+          error.status === 409 ||
+          error.status >= 500 ||
+          [
+            "CSRF_REJECTED",
+            "CSRF_REQUIRED",
+            "TIMEOUT",
+            "NETWORK_ERROR",
+            "INVALID_RESPONSE",
+            "STALE_RESPONSE",
+          ].includes(error.code)
+        ) {
+          emit({
+            status: "stale",
+            error: {
+              code: error.code,
+              message:
+                error.status === 409
+                  ? "任务或配置已变更，请刷新核对。"
+                  : "上一次写入的状态需要核对，刷新后再决定是否重试。",
+            },
+          });
+        }
+        throw error;
+      } finally {
+        busy = false;
+        emit({ writePending: false });
+      }
+    },
     async refresh() {
       if (value.snapshot) await load();
     },
